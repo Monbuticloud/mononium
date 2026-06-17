@@ -117,4 +117,4 @@ Measure throughput at each phase. Optimize only after measuring. Cap block size 
 
 ---
 
-**Related:** [[V0.0.0/Philosophy]], [[V0.0.0/Network]], [[V0.0.0/Validators]], [[V0.0.0/Architecture]]
+**Related:** [[V0.1.0/Philosophy]], [[V0.1.0/Network]], [[V0.1.0/Validators]], [[V0.1.0/Architecture]]

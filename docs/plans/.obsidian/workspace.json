@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Versioning.md",
+                "file": "V0.1.0/Protocol.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Versioning"
+              "title": "Protocol"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Versioning.md",
+                "file": "V0.1.0/Protocol.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Versioning"
+              "title": "Backlinks for Protocol"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Versioning.md",
+                "file": "V0.1.0/Protocol.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Versioning"
+              "title": "Outgoing links from Protocol"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Versioning.md",
+                "file": "V0.1.0/Protocol.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Versioning"
+              "title": "Outline of Protocol"
             }
           }
         ]
@@ -185,9 +185,18 @@
   },
   "active": "de46f55ff203bfa2",
   "lastOpenFiles": [
-    "Versioning.md",
-    "V0.0.0/Validators.md",
+    "V0.1.0/Architecture.md",
+    "V0.1.0/Consensus.md",
     "V0.0.0/Storage.md",
+    "V0.1.0/Validators.md",
+    "V0.1.0/Storage.md",
+    "V0.1.0/Roadmap.md",
+    "V0.1.0/Protocol.md",
+    "V0.1.0/Philosophy.md",
+    "V0.1.0/Network.md",
+    "V0.1.0/Mainflow.md",
+    "V0.1.0/Cryptography.md",
+    "V0.1.0",
     "V0.0.0/Roadmap.md",
     "V0.0.0/Protocol.md",
     "V0.0.0/Philosophy.md",
@@ -196,6 +205,8 @@
     "V0.0.0/Cryptography.md",
     "V0.0.0/Consensus.md",
     "V0.0.0/Architecture.md",
+    "Versioning.md",
+    "V0.0.0/Validators.md",
     "V0.0.0"
   ]
 }

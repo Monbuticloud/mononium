@@ -95,4 +95,4 @@ Each network gets a unique chain ID to prevent replay attacks across networks:
 
 ---
 
-**Related:** [[V0.0.0/Architecture]], [[V0.0.0/Consensus]], [[V0.0.0/Network]]
+**Related:** [[V0.1.0/Architecture]], [[V0.1.0/Consensus]], [[V0.1.0/Network]]

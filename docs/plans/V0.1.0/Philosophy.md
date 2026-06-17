@@ -61,4 +61,4 @@ This is a systems-level project spanning distributed systems, cryptography, data
 
 ---
 
-**Next:** [[V0.0.0/Architecture]]
+**Next:** [[V0.1.0/Architecture]]
