@@ -25,15 +25,60 @@ An era is the period between **validator set recalculations**. Every N blocks, t
 
 ```
 Era boundary (block % 720 == 0):
-  1. Snapshot candidate pool
-  2. Run ValidatorElection::elect()
-  3. Commit new active set to state
-  4. Reset proposer schedule
+  1. The proposer for block 720 snapshots the candidate pool
+  2. Runs ValidatorElection::elect()
+  3. Commits the new active set to state as part of block 720
+  4. Resets proposer schedule — validators update their local schedule after verifying block 720
+  5. Block 721 is the first block produced under the new set
 ```
 
 ### Era 0 (Bootstrap)
 
-Era 0 has no stake requirement — any registered key participates and earns MONEX. After era 0 ends, normal Top-N election takes over.
+The genesis state has **no validators** — the active set starts empty. A **bootstrap key** designated in the genesis config is the sole proposer for the first N blocks.
+
+#### Bootstrap Phase
+
+The genesis JSON defines a `bootstrap` field:
+
+```json
+{
+  "bootstrap": {
+    "public_key": "0x...",
+    "blocks": 20
+  }
+}
+```
+
+- Block 1 launches the bootstrap phase. Only the bootstrap key's blocks are accepted.
+- The bootstrap proposer includes txs from other validators (RegisterValidator, Stake) as they arrive.
+- On mainnet, the bootstrap proposer earns block rewards (CappedInflation) which fund their own registration fees.
+- On dev tiers, genesis `accounts` supply the MONEX for registration fees.
+
+#### Bootstrap Duration per Tier
+
+| Tier | Bootstrap blocks | Wall clock | Why |
+|------|:-:|:-:|-----|
+| Localnet | **1** | 5s | Single key, proposal starts immediately |
+| Devnet | **20** | 100s | 3-5 validators register in under 2 minutes |
+| Testnet | **100** | ~8 min | Community validators need a wider window |
+| Mainnet | **100** | ~8 min | Same — bootstrap key + inflation handles launch |
+
+#### End of Bootstrap Phase
+
+When the bootstrap phase ends (block N+1), the bootstrap key runs the election:
+
+1. Snapshot all registered validators from the bootstrap blocks
+2. Commit them as era 0's active set (up to `max_validators`)
+3. Normal round-robin proposer schedule begins
+4. Bootstrap key has no special status — they participate as a regular validator if they registered
+
+#### Era 0 Active Set
+
+Once the election runs, all registered validators are automatically active (up to `max_validators`). No stake required — validators earn fees (and on mainnet, block rewards) to accumulate starting stake for era 1+.
+
+#### Era 1+
+
+Normal Top-N election takes over with a minimum 1 MONEX stake requirement.
 
 ```rust
 pub enum ElectionMode {
@@ -107,21 +152,68 @@ CommitVote {
 If a proposer equivocates (proposes two blocks at the same slot), validators:
 
 1. Reject duplicates at the protocol level
-2. **Slash** the validator — lose 90% of stake
-3. The **reporter** (validator who submitted the evidence) receives a **10% bounty** of the slashed amount
+2. **Slash** 90% of the validator's stake (10% remains staked with the validator)
+3. The **reporter** (validator who submitted the evidence) receives a **10% bounty** of the slashed amount, added to their validator stake
 4. The next honest proposer resolves the fork
 
 ### Slashing Details
 
 | Dimension        | Value          |
 | ---------------- | -------------- |
-| **Equivocation** | 90% of stake burned |
+| **Equivocation** | 90% of stake is slashed; 10% remains staked with the validator |
+| **Burn**         | 90% of slashed amount → Burn address (`0x00..00`) |
+| **Reporter bounty** | 10% of slashed amount → added to reporter's **validator stake** |
+| **Validator retains** | 10% of original stake **stays staked** — not ejected from candidate pool |
+| **Burn effect** | Coins at Burn address are permanently destroyed. No effect on inflation cap. |
 | **Liveness**     | Not slashed in V1 (replaced at era boundary if inactive) |
-| **Reporting**    | Any validator submits evidence tx; receives 10% bounty |
 | **Evidence topic** | Gossiped on `mononium/evidence/{chain_id}` |
 | **Unstaking cooldown** | 7 days (constant, prevents gaming after violations) |
 
-Slashing evidence is a self-contained message proving the equivocation (two signed blocks from the same proposer at the same height). Any validator can submit it as an evidence transaction. Detection is automatic — validators see both blocks arrive via gossipsub.
+Example: validator with 1000 MONEX staked equivocates:
+```
+1000 stake
+  ↓
+  900 slashed (90%)   → 810 Burn, 90 to reporter's stake
+  100 remains          → still staked with validator
+```
+
+**Bounty is staked, not liquid:** The 10% reporter bounty is added to the reporter's validator stake, not their transferable balance. This prevents two attack vectors:
+
+1. **Slash-and-dump** — a validator who spots equivocation cannot immediately withdraw and cash out the reward
+2. **Collusion exit** — the attacker and reporter cannot collude to bypass the unstaking cooldown (attacker intentionally equivocates, reporter gets liquid bounty, they split it out-of-band). With the bounty staked, both sides are bound by the 7-day unstaking lock.
+
+**Validator's remaining 10% stays staked** — the validator is not ejected from the candidate pool. They keep a reduced stake and can continue validating (if still in Top-N) or choose to unstake with the standard 7-day cooldown.
+
+**Two special addresses:**
+
+| Address | Role | Effect |
+|---------|------|--------|
+| `0x00..00` | **Burn** | Slashed stake (90%) sent here. Permanently destroyed. No cap effect. |
+| `0x00..01` | **Cap-Refill** | Voluntarily send MONEX here to expand the mainnet inflation cap. Coins are a sink (irreversible). Effective max supply = 10B + cap_refill_balance. |
+
+The Burn address and Cap-Refill address are known protocol constants. Anyone can send to either, but only slashing logic uses Burn automatically.
+
+Slashing evidence is an `EquivocationEvidence` message containing the **block headers + Falcon signatures** (not the full blocks). This keeps evidence small (~1.5 KB per event vs ~1 MB for full blocks).
+
+```rust
+/// Proof that a validator signed two different blocks at the same height
+struct EquivocationEvidence {
+    pub header_a: BlockHeader,
+    pub signature_a: [u8; 666],
+    pub header_b: BlockHeader,
+    pub signature_b: [u8; 666],
+    pub proposer_id: ValidatorId,
+}
+```
+
+**Verification:**
+1. `header_a.height == header_b.height`
+2. `header_a.parent_hash == header_b.parent_hash` (same slot — resolves to same parent)
+3. `header_a != header_b` (distinct blocks — proves equivocation, not re-gossip)
+4. `falcon_verify(proposer_pk, header_a, signature_a)` — both genuinely signed
+5. `falcon_verify(proposer_pk, header_b, signature_b)` — both genuinely signed
+
+If all checks pass, the proposer is slashed 90% and the reporter receives a 10% bounty.
 
 ## Future: GRANDPA (V2.0+)
 
@@ -156,11 +248,24 @@ Transaction pool ordering:
 | 2        | Time received | Earliest first | Fairness           |
 | 3        | Nonce         | Lowest first   | Prevent nonce gaps |
 
+### Nonce Buffering
+
+Out-of-order nonces are **buffered** — the mempool does not relay or select a tx until all lower nonces from the same sender have been received. This prevents nonce gaps from blocking block production.
+
+- **Buffer expiry:** 10 minutes (matches mempool TTL)
+- **Per-sender cap:** 30 buffered nonces — if exceeded, oldest buffered tx is dropped for that sender
+- **Sender spam mitigation:** the cap prevents an adversary from filling the mempool with nonces from a single key
+
+Once the missing lower nonce arrives, all buffered txs from that sender are released into the relay/selection pool in nonce order.
+
+### Configuration
+
 ```rust
 pub struct MempoolConfig {
-    pub max_size: usize,     // 10,000
-    pub ttl: Duration,       // 10 minutes
-    pub min_fee: U256,       // local filter — not a consensus parameter
+    pub max_size: usize,         // 10,000
+    pub ttl: Duration,           // 10 minutes
+    pub min_fee: U256,           // local filter — not a consensus parameter
+    pub max_pending_per_sender: u32,  // 30 — per-sender nonce buffer cap
 }
 ```
 
@@ -195,6 +300,29 @@ slot 4: validator_1  (cycles)
 
 Randomized proposer selection via Verifiable Random Function. Each validator runs VRF each slot; lowest output wins.
 
+### Slot Model
+
+Blocks and slots are **not equivalent**. Slots are time intervals (5s each); blocks are proposals that may or may not fill every slot.
+
+**Option B (adopted): Height = blocks proposed, not slots**
+
+```
+slot  0: V1 proposes Block 10  ✓    → height 10
+slot  1: V2 is offline               → empty slot, no height change
+slot  2: V3 proposes Block 11  ✓    → height 11 (builds on Block 10)
+slot  3: V4 proposes Block 12  ✓    → height 12
+```
+
+- Height increments only when a block is actually proposed
+- Block N always builds on Block N-1
+- Empty slots are transparent to the state machine
+
+**Rejected — Option A (height = slot index):** Would create phantom state gaps
+```
+slot  0: Block 0
+slot  1: (empty) → height 1 exists with no block → complicates sync + state queries
+```
+
 ### Missed Slots
 
 If the proposer for a slot is offline, the **slot goes empty**:
@@ -204,15 +332,9 @@ If the proposer for a slot is offline, the **slot goes empty**:
 - The next proposer in the round-robin schedule builds on the last canonical block
 - Height increments only when a block is actually proposed
 
-Example:
-```
-slot  0: V1 proposes Block 10  ✓
-slot  1: V2 is offline          → empty slot
-slot  2: V3 proposes Block 11  ✓  (builds on Block 10)
-slot  3: V4 proposes Block 12  ✓
-```
+**0.08 MONEX flat penalty** per missed slot. Applied at era boundary during validator set reconciliation (not per-slot slashing — avoids mid-era consensus disputes).
 
-**No liveness penalty** — V1 has no liveness slashing. An inactive validator will be replaced at the next era boundary if their stake drops below the Top-N threshold.
+An inactive validator who accumulates penalties will naturally fall out of the Top-N by stake at the next era boundary.
 
 ### DI Pattern
 

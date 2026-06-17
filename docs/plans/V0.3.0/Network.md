@@ -130,9 +130,21 @@ struct CheckpointResponse {
     pub height: u64,
     pub smt_nodes: Vec<(Vec<u8>, Vec<u8>)>,  // serialized SMT key-value pairs
     pub validator_set_hash: [u8; 32],
-    pub checkpoint_hash: [u8; 32],  // BLAKE3 — verified out-of-band
+    pub checkpoint_block_header: BlockHeader,  // includes BFT commit votes proving finality
+    pub checkpoint_hash: [u8; 32],  // BLAKE3 of the above — verified via commit sigs
 }
 ```
+
+**Checkpoint trust model:**
+
+A checkpoint is trusted because the block at that height was committed via BFT (2/3+ validator signatures). The `checkpoint_block_header` contains the commit votes from the next block proving the checkpoint block was finalized. A syncing node:
+
+1. Fetches the active validator set for the checkpoint's era (from the checkpoint data)
+2. Verifies the commit votes in `checkpoint_block_header` — 2/3+ signatures match the validator set
+3. Verifies the commit votes reference the checkpoint height
+4. Trusts the checkpoint SMT root
+
+Devnet nodes skip this verification and always replay from genesis (small state).
 
 ### Sync Flow
 

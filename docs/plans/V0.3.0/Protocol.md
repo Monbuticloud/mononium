@@ -38,9 +38,10 @@ Account {
 ## Transaction Types (V1)
 
 1. **Transfer** — Move MONEX between accounts
-2. **Stake** — Lock MONEX to become/activate a validator
-3. **Unstake** — Begin withdrawal from validator set (7-day cooldown)
-4. **RegisterValidator** — Declare intent to validate
+2. **RegisterValidator** — Declare intent to validate (one-time, prerequisite for staking)
+3. **Stake** — Lock MONEX to become/activate a validator (requires prior registration)
+4. **RegisterAndStake** — Convenience: registers + stakes atomically for new validators
+5. **Unstake** — Begin withdrawal from validator set (7-day cooldown)
 
 ## Transaction Format (Sketch)
 
@@ -72,11 +73,10 @@ Block {
 BlockHeader {
     height: u64,
     parent_hash: [u8; 32],
-    state_root: [u8; 32],        // Sparse Merkle Tree root over accounts + validators + meta
-    meta_root: [u8; 32],         // flat BLAKE3 hash of chain metadata (height, era, etc.)
-    tx_root: [u8; 32],
+    state_root: [u8; 32],        // Sparse Merkle Tree root (single commitment over all namespaces)
+    tx_root: [u8; 32],           // BLAKE3 Merkle root of transaction hashes
     timestamp: u64,
-    proposer: [u8; 32],
+    proposer_index: u16,         // index into the current era's active validator set
     chain_id: u64,
 }
 ```
@@ -188,11 +188,12 @@ mononium-cli node --genesis configs/genesis.localnet.json
     "election_mode": "Open"
   },
   "accounts": [
-    {"address": "0x...", "balance": "10_000_000_000_000_000_000"}
+    {"address": "0x...", "balance": "100_000_000_000_000_000_000"}
   ],
-  "validators": [
-    {"address": "0x...", "public_key": "0x...", "stake": 0}
-  ]
+  "bootstrap": {
+    "public_key": "0x...",
+    "blocks": 20
+  }
 }
 ```
 
@@ -205,22 +206,22 @@ mononium-cli node --genesis configs/genesis.localnet.json
 
 ### Genesis Files
 
-| File | Network | Supply | Recipients |
+| File | Network | Supply | Validators |
 |------|---------|--------|------------|
-| `configs/genesis.localnet.json` | Localnet | 10 MONEX | 1 test key |
-| `configs/genesis.devnet.json` | Devnet | 10 MONEX | 3-5 test keys |
-| `configs/genesis.testnet.json` | Testnet | 100 MONEX | Community faucet |
-| `configs/genesis.mainnet.json` | Mainnet | 0 MONEX | Fair launch via inflation |
+| `configs/genesis.localnet.json` | Localnet | 10 MONEX (1 key) | Bootstrap only (1 block) |
+| `configs/genesis.devnet.json` | Devnet | 100 MONEX per key (3-5 keys) | Bootstrap (20 blocks) → era 0 Open |
+| `configs/genesis.testnet.json` | Testnet | 100 MONEX | Bootstrap (100 blocks) → era 0 Open |
+| `configs/genesis.mainnet.json` | Mainnet | 0 MONEX | Bootstrap (100 blocks) → era 0 Open + CappedInflation |
 
 ## Token Supply
 
-### V1 Dev (Localnet/Devnet/Testnet): Fixed Supply
+### Dev Networks (Localnet/Devnet/Testnet): Fixed Supply
 
 All MONEX are minted at genesis. No inflation, no block rewards. Validators earn only transaction fees.
 
-### V2 Mainnet: Mixed Supply (Inflation with Cap)
+### Mainnet: Capped Inflation
 
-Mainnet starts at 0 total supply. MONEX is minted via block rewards with a capped maximum supply. This replaces `FixedSupply` via the `SupplyPolicy` trait.
+Mainnet starts at 0 total supply. MONEX is minted via block rewards with a capped maximum supply. Validators earn **transaction fees + block rewards**.
 
 ```rust
 pub trait SupplyPolicy: Send + Sync {
@@ -233,23 +234,54 @@ impl SupplyPolicy for FixedSupply {
         U256::zero() // no inflation
     }
 }
-```
 
-### Future: Mixed Supply (V2.0+)
-
-Inflation is introduced, capped at a maximum total supply. Part minted as block rewards, part as a treasury/development fund.
-
-```rust
 pub struct CappedInflation {
-    max_supply: U256,
-    annual_rate: f64,  // e.g. 0.02 = 2%
+    max_supply: U256,     // 10,000,000,000 MONEX (cap on minted supply)
+    annual_rate: f64,     // 0.035 = 3.5%
 }
 impl SupplyPolicy for CappedInflation {
     fn block_reward(&self, height: u64) -> U256 { ... }
 }
+
+**Parameters:**
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Annual rate | **3.5%** | Applied to current effective max supply |
+| Base cap | **10,000,000,000 MONEX** | Hard floor on minted supply |
+| Effective max | `10B + cap_refill_balance` | Recalculated at each era boundary |
+| Burn coins | Permanently destroyed | No effect on cap |
+
+**Effective max supply:**
+
+The total minting cap = `base_cap + cap_refill_balance`. The `cap_refill_balance` is the amount of MONEX held at the Cap-Refill address (`0x00..01`). Anyone can voluntarily send MONEX there — coins are a sink (irreversible).
+
+**Applied at era boundaries:** At each era transition (block % 720 == 0), the consensus engine snapshots the Cap-Refill balance and recomputes the effective max. Block rewards for the next era use this updated value. This prevents mid-era supply changes from breaking block reward determinism.
+
+**Formula (per block, constant within an era):**
+
+```
+block_reward = effective_max * annual_rate / blocks_per_year
 ```
 
-Swappable via `ConsensusConfig { supply: Box<dyn SupplyPolicy> }`.
+**Example:**
+```
+Year 1: effective_max = 10B, block_reward ≈ 55.5 MONEX/block
+Year 10: 3.5B minted, cap_refill = 100M → effective_max = 10.1B, block_reward ≈ 56.1 MONEX/block
+Year 28: 10B minted, cap_refill = 500M → effective_max = 10.5B, inflation continues at adjusted rate
+```
+
+**Consequences:**
+- Inflation naturally ends around year 28 (with no cap_refill)
+- Cap-Refill contributions extend the tail gradually
+- No mid-era surprises — deterministic within each era
+```
+
+Swappable via `ConsensusConfig { supply: Box<dyn SupplyPolicy> }`. The CLI config for Dev networks injects `FixedSupply`; the Mainnet config injects `CappedInflation`.
+
+### Future Treasury (V2.0+)
+
+A portion of inflation can be diverted to a treasury/development fund, governed by on-chain voting.
 
 ## Chain ID
 

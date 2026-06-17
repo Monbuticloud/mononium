@@ -28,4 +28,8 @@ This doc owns all versioned plan directories (`V0.0.0/`, `V0.1.0/`, etc.) and `V
 
 ## Child DOX Index
 
-No children. Plan versions are snapshots, not independently owned areas.
+| Path          | Scope                                     |
+| ------------- | ----------------------------------------- |
+| `GRILL.md`    | Tracking doc for open questions, deferred decisions, and upcoming grill topics |
+
+Plan version folders (`V0.0.0/`, `V0.1.0/`, etc.) are snapshots, not independently owned areas.

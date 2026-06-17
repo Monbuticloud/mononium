@@ -6,8 +6,8 @@
 
 **Decision:** Two-phase approach via DI:
 
-- **Dev (Localnet/Devnet/Testnet):** Fixed supply. All MONEX minted at genesis. No inflation.
-- **Mainnet:** Mixed supply. Starts at 0, minted via capped inflation. Fair launch.
+- **Dev (Localnet/Devnet/Testnet):** Fixed supply. All MONEX minted at genesis. No inflation, no block rewards.
+- **Mainnet:** Capped inflation. Starts at 0 supply. Block rewards mint new MONEX per block up to a maximum cap. Fair launch — no pre-mine, no insider allocation.
 
 ```rust
 pub trait SupplyPolicy: Send + Sync {

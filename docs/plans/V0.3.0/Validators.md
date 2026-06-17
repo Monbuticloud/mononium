@@ -6,7 +6,7 @@ tags: [consensus, network, staking]
 
 ## Overview
 
-Mononium uses **Proof of Stake (PoS)**. Validators stake **Monium (MONEX)** to participate in block production and consensus. All protocol signatures use **Falcon-512** (post-quantum secure, constant-time).
+Mononium uses **Proof of Stake (PoS)**. The chain starts with a **bootstrap key** (designated in the genesis config) as the sole proposer for the first N blocks, giving time for validators to register before normal consensus begins. After the bootstrap phase, validators stake **Monium (MONEX)** to participate in block production and consensus via era 0 Open election. All protocol signatures use **Falcon-512** (post-quantum secure, constant-time).
 
 ## Target Hardware
 
@@ -15,7 +15,7 @@ The network explicitly targets **cheap VPS** hardware:
 | Resource  | Target                                        |
 | --------- | --------------------------------------------- |
 | CPU       | Low — 1-2 vCPU                                |
-| RAM       | Low — fixed memory footprint                  |
+| RAM       | **~70-120 MB** (Devnet, 21 validators, minimal state) — application footprint is fixed; redb mmap grows with state size but OS-managed |
 | Bandwidth | Low — 500 KB blocks imply modest traffic      |
 | Disk      | Minimal write amplification via redb          |
 
@@ -68,28 +68,45 @@ Full Nominated Proof of Stake with optimal proportional representation:
 ## Validator Lifecycle
 
 ```
-State: Inactive → Staked → Active → Unstaking → Inactive
+Era 0:   Inactive → Registered → Active (no stake needed)
+Era 1+:  Inactive → Registered → Staked → Active → Unstaking → Inactive
 ```
 
-- Stake MONEX to join the candidate pool
-- Top N by stake become active
-- Active validators produce blocks and vote on consensus
-- Unstaking has a **7-day cooldown** — prevents gaming after violations
-- Incentives: transaction fees (no block rewards in V1)
+- **RegisterValidator** — one-time tx declaring intent with public key.
+- **Era 0 (Open):** Registered validators are automatically active (up to `max_validators`). No stake required. They earn fees to accumulate starting stake for era 1+.
+- **Era 1+ (Top-N):** Staking is required. Minimum **1 MONEX** to enter the candidate pool — prevents dust entries.
+- **RegisterAndStake** — convenience tx that registers + stakes atomically for era 1+ onboarding.
+- Staked validators are sorted by stake; Top N become active at each era boundary.
+- Active validators produce blocks and vote on consensus.
+- Unstaking has a **7-day cooldown** — prevents gaming after violations.
+- Incentives: transaction fees (no block rewards in V1).
 
 ### Slashing
 
 If a validator equivocates (signs two blocks at the same height):
 
-| Penalty       | Value |
-| ------------- | ----- |
-| Stake burned  | **90%** of total staked MONEX |
-| Reporter bounty | **10%** of slashed amount (paid to reporting validator) |
+| Penalty          | Value | Destination |
+| ---------------- | ----- | ----------- |
+| Slashed          | **90%** of total staked MONEX | Removed from validator |
+| Burned           | **90% of slashed amount** | Burn address (`0x00..00`) |
+| Reporter bounty  | **10% of slashed amount** | Added to reporter's **validator stake** |
+| Validator retains | **10% of original stake** | **Stays staked** — not moved to transferable balance |
+
+Example: a validator with 1000 MONEX staked equivocates:
+- 900 slashed (90%): 810 → Burn, 90 → reporter's stake
+- 100 remains with validator, still staked
+- Validator stays in the candidate pool with reduced influence
+
+**Bounty is staked, not liquid:** The reporter's bounty is added to their validator stake, not their transferable balance. This prevents both **slash-and-dump** (immediate cash-out by the reporter) and **collusion exit** (attacker + reporter colluding to bypass the unstaking cooldown). The bounty is subject to the same 7-day unstaking cooldown as any other stake.
+
+**Validator's remaining 10% stays staked** — it is not moved to the transferable balance. The validator can continue staking (with reduced weight) or choose to unstake with the standard 7-day cooldown.
 
 - Slashing is **equivocation only** in V1 (no liveness slashing)
 - Inactive validators are simply replaced at the next era boundary
 - Evidence is gossiped on the `mononium/evidence/{chain_id}` topic
 - Any validator can submit evidence as a transaction
+- Coins sent to Burn are permanently destroyed — no effect on supply cap
+- The Cap-Refill address (`0x00..01`) is unrelated to slashing; see [Supply](../plans/V0.3.0/Protocol.md#Token-Supply)
 
 ## Staking
 
@@ -113,13 +130,24 @@ Validator keys use **Falcon-512** and are stored encrypted at rest:
 
 The public key (897 bytes) is stored in plaintext in the key file. Only the 48-byte seed is encrypted. The private key (1281 bytes) is re-derived from the seed at node startup.
 
-## Rewards (V1)
+## Rewards
 
-Validators earn **transaction fees only** — no block rewards, no inflation.
+Validators earn rewards from two sources depending on the network tier:
+
+### Dev Networks (Localnet, Devnet, Testnet)
+
+**Transaction fees only** — no block rewards, no inflation.
 
 - All fees from transactions included in a block go to that block's proposer
 - Fee schedule: flat fee (0.00667 MONEX) + per-byte (0.000467 MONEX/byte) + optional tip
-- In V2.0+, inflation can be added via [Protocol](Protocol.md#Token Supply) DI
+
+### Mainnet
+
+**Transaction fees + block rewards** — capped inflation provides the block reward component.
+
+- Block reward rate defined by `CappedInflation` policy (see [Protocol](Protocol.md#Token Supply))
+- All transaction fees go to the proposer
+- Block rewards are minted per block, up to the capped maximum supply
 
 ## Multi-Validator Simulation
 

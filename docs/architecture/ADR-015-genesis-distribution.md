@@ -6,12 +6,12 @@
 
 **Decision:**
 
-| Network  | Supply    | Recipients       | Notes                     |
-| -------- | --------- | ---------------- | ------------------------- |
-| Localnet | 10 MONEX  | 1 test key       | Single-node dev           |
-| Devnet   | 10 MONEX  | 3-5 test keys    | Multi-validator testing   |
-| Testnet  | 100 MONEX | Community faucet | Public testing            |
-| Mainnet  | 0 MONEX   | —                | Fair launch via inflation |
+| Network  | Supply     | Recipients       | Notes                     |
+| -------- | ---------- | ---------------- | ------------------------- |
+| Localnet | 10 MONEX   | 1 test key       | Single-node dev           |
+| Devnet   | 100 MONEX  | 3-5 test keys    | Multi-validator testing   |
+| Testnet  | 100 MONEX  | Community faucet | Public testing            |
+| Mainnet  | 0 MONEX    | —                | Fair launch via inflation |
 
 **Consequences:**
 

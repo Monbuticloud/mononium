@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "plans/V0.3.0/Network.md",
+                "file": "plans/V0.3.0/Consensus.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Network"
+              "title": "Consensus"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "plans/V0.3.0/Network.md",
+                "file": "plans/V0.3.0/Consensus.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Network"
+              "title": "Backlinks for Consensus"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "plans/V0.3.0/Network.md",
+                "file": "plans/V0.3.0/Consensus.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Network"
+              "title": "Outgoing links from Consensus"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "plans/V0.3.0/Network.md",
+                "file": "plans/V0.3.0/Consensus.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Network"
+              "title": "Outline of Consensus"
             }
           }
         ]
@@ -185,6 +185,8 @@
   },
   "active": "da452a15a9f51dda",
   "lastOpenFiles": [
+    "plans/GRILL.md",
+    "plans/V0.3.0/Network.md",
     "plans/V0.3.0/Protocol.md",
     "plans/V0.3.0/Architecture.md",
     "plans/V0.2.0/Protocol.md",
@@ -193,7 +195,6 @@
     "plans/V0.3.0/Storage.md",
     "plans/V0.3.0/Roadmap.md",
     "plans/V0.3.0/Philosophy.md",
-    "plans/V0.3.0/Network.md",
     "plans/V0.3.0/Mainflow.md",
     "plans/V0.3.0/Cryptography.md",
     "plans/V0.3.0/Consensus.md",
@@ -203,7 +204,6 @@
     "plans/V0.3.0/Testing.md",
     "plans/V0.3.0/Roadmap.md",
     "plans/V0.3.0/Philosophy.md",
-    "plans/V0.3.0/Network.md",
     "plans/V0.3.0/Mainflow.md",
     "plans/V0.3.0/Cryptography.md",
     "plans/V0.3.0/Consensus.md",
