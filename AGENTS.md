@@ -38,24 +38,24 @@ mononium/
 
 ### Key technical decisions (see ADRs for details)
 
-| Area               | Decision                            | ADR     |
-| ------------------ | ----------------------------------- | ------- |
-| Workspace          | 3-crate: lib + cli + gui            | ADR-001 |
-| Validator election | Top-N by stake, Phragmén later (DI) | ADR-002 |
-| Block production   | Round-robin, VRF later (DI)         | ADR-003 |
-| Finality           | BFT commit per block, GRANDPA later | ADR-004 |
-| Token supply       | Fixed devnets, mixed mainnet (DI)   | ADR-005 |
-| Fees               | Per-byte + flat + tip (DI)          | ADR-006 |
-| Database           | redb (DI for RocksDB later)         | ADR-007 |
-| P2P                | libp2p (gossipsub, kademlia)        | ADR-008 |
-| Serialization      | SCALE (wire) + JSON (RPC)           | ADR-009 |
+| Area               | Decision                            | ADR                           |
+| ------------------ | ----------------------------------- | ----------------------------- |
+| Workspace          | 3-crate: lib + cli + gui            | ADR-001                       |
+| Validator election | Top-N by stake, Phragmén later (DI) | ADR-002                       |
+| Block production   | Round-robin, VRF later (DI)         | ADR-003                       |
+| Finality           | BFT commit per block, GRANDPA later | ADR-004                       |
+| Token supply       | Fixed devnets, mixed mainnet (DI)   | ADR-005                       |
+| Fees               | Per-byte + flat + tip (DI)          | ADR-006                       |
+| Database           | redb (DI for RocksDB later)         | ADR-007                       |
+| P2P                | libp2p (gossipsub, kademlia)        | ADR-008                       |
+| Serialization      | SCALE (wire) + JSON (RPC)           | ADR-009                       |
 | Address            | RawHex + BLAKE3 checksum            | ADR-010 (deprecated), ADR-016 |
-| Mempool            | Tip → Time → Nonce                  | ADR-011 |
-| RPC                | jsonrpsee + REST hybrid             | ADR-012 |
-| CLI                | clap derive                         | ADR-013 |
-| Eras               | 720 blocks, era 0 open              | ADR-014 |
-| Genesis            | 10/10/100/0 distribution            | ADR-015 |
-| Cryptography       | Falcon-512, constant-time           | ADR-016 |
+| Mempool            | Tip → Time → Nonce                  | ADR-011                       |
+| RPC                | jsonrpsee + REST hybrid             | ADR-012                       |
+| CLI                | clap derive                         | ADR-013                       |
+| Eras               | 720 blocks, era 0 open              | ADR-014                       |
+| Genesis            | 10/10/100/0 distribution            | ADR-015                       |
+| Cryptography       | Falcon-512, constant-time           | ADR-016                       |
 
 ### Tech stack (standard Rust ecosystem)
 

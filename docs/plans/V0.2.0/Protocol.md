@@ -91,11 +91,11 @@ The state root is computed via a **256-depth Sparse Merkle Tree** using **BLAKE3
 
 The SMT uses a single tree with 3 namespaces:
 
-| Prefix | Namespace | Contents |
-|--------|-----------|----------|
-| `0x00` | Accounts  | `Address → (balance: U256, nonce: u64, code_hash: Option<[u8;32]>)` |
-| `0x01` | Validators | `PublicKey → (stake: U256, status: u8)` |
-| `0x02` | Meta      | Chain-global state: height, era, active set hash, chain_id, total supply |
+| Prefix | Namespace  | Contents                                                                 |
+| ------ | ---------- | ------------------------------------------------------------------------ |
+| `0x00` | Accounts   | `Address → (balance: U256, nonce: u64, code_hash: Option<[u8;32]>)`      |
+| `0x01` | Validators | `PublicKey → (stake: U256, status: u8)`                                  |
+| `0x02` | Meta       | Chain-global state: height, era, active set hash, chain_id, total supply |
 
 Namespacing is implemented via key prefixing: account keys are stored as `0x00 ++ address`, validator keys as `0x01 ++ pubkey`, meta keys as `0x02 ++ key_id`.
 
@@ -147,12 +147,12 @@ pub struct HybridFee {
 }
 ```
 
-| Component  | Value                | Purpose                              | Set by             |
-| ---------- | -------------------- | ------------------------------------ | ------------------ |
-| Flat fee   | **0.00667 MONEX**    | Minimum cost per tx (spam prevention) | Protocol parameter |
-| Per-byte   | **0.000467 MONEX**   | Proportional to state/storage cost    | Protocol parameter |
-| Min fee    | **0.0667 MONEX**     | Mempool entry threshold               | Protocol parameter |
-| Tip        | User-defined         | Priority for block inclusion          | Sender             |
+| Component | Value              | Purpose                               | Set by             |
+| --------- | ------------------ | ------------------------------------- | ------------------ |
+| Flat fee  | **0.00667 MONEX**  | Minimum cost per tx (spam prevention) | Protocol parameter |
+| Per-byte  | **0.000467 MONEX** | Proportional to state/storage cost    | Protocol parameter |
+| Min fee   | **0.0667 MONEX**   | Mempool entry threshold               | Protocol parameter |
+| Tip       | User-defined       | Priority for block inclusion          | Sender             |
 
 ```rust
 impl FeePolicy for HybridFee {
@@ -185,12 +185,8 @@ mononium-cli node --genesis configs/genesis.localnet.json
     "max_validators": 21,
     "election_mode": "Open"
   },
-  "accounts": [
-    {"address": "0x...", "balance": "10_000_000_000_000_000_000"}
-  ],
-  "validators": [
-    {"address": "0x...", "public_key": "0x...", "stake": 0}
-  ]
+  "accounts": [{ "address": "0x...", "balance": "10_000_000_000_000_000_000" }],
+  "validators": [{ "address": "0x...", "public_key": "0x...", "stake": 0 }]
 }
 ```
 
@@ -203,12 +199,12 @@ mononium-cli node --genesis configs/genesis.localnet.json
 
 ### Genesis Files
 
-| File | Network | Supply | Recipients |
-|------|---------|--------|------------|
-| `configs/genesis.localnet.json` | Localnet | 10 MONEX | 1 test key |
-| `configs/genesis.devnet.json` | Devnet | 10 MONEX | 3-5 test keys |
-| `configs/genesis.testnet.json` | Testnet | 100 MONEX | Community faucet |
-| `configs/genesis.mainnet.json` | Mainnet | 0 MONEX | Fair launch via inflation |
+| File                            | Network  | Supply    | Recipients                |
+| ------------------------------- | -------- | --------- | ------------------------- |
+| `configs/genesis.localnet.json` | Localnet | 10 MONEX  | 1 test key                |
+| `configs/genesis.devnet.json`   | Devnet   | 10 MONEX  | 3-5 test keys             |
+| `configs/genesis.testnet.json`  | Testnet  | 100 MONEX | Community faucet          |
+| `configs/genesis.mainnet.json`  | Mainnet  | 0 MONEX   | Fair launch via inflation |
 
 ## Token Supply
 

@@ -44,14 +44,14 @@ redb's table abstraction maps cleanly to our data model:
 
 Validator Falcon-512 keys are stored encrypted at rest in JSON files:
 
-| Component       | Specification                                     |
-| --------------- | ------------------------------------------------- |
-| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                |
-| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel) |
-| **Crate**       | `argon2` (pure Rust, RustCrypto)                  |
+| Component       | Specification                                                                    |
+| --------------- | -------------------------------------------------------------------------------- |
+| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                                               |
+| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel)                                |
+| **Crate**       | `argon2` (pure Rust, RustCrypto)                                                 |
 | **File format** | `{ "public_key": "0x...", "encrypted_seed": "base64...", "nonce": "base64..." }` |
-| **Location**    | `~/.mononium/keys/{name}.json`                    |
-| **Unlock**      | CLI prompts for passphrase, derives key via Argon2id (~5-10s), decrypts seed |
+| **Location**    | `~/.mononium/keys/{name}.json`                                                   |
+| **Unlock**      | CLI prompts for passphrase, derives key via Argon2id (~5-10s), decrypts seed     |
 
 The public key (897 bytes) is stored in plaintext — it's public by definition. The 48-byte Falcon-512 seed is the only secret. The Argon2id memory cost prevents offline brute-force of the encrypted seed file.
 

@@ -12,23 +12,23 @@ Mononium uses **Proof of Stake (PoS)**. The chain starts with a **bootstrap key*
 
 The network explicitly targets **cheap VPS** hardware:
 
-| Resource  | Target                                        |
-| --------- | --------------------------------------------- |
-| CPU       | Low — 1-2 vCPU                                |
+| Resource  | Target                                                                                                                                 |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| CPU       | Low — 1-2 vCPU                                                                                                                         |
 | RAM       | **~70-120 MB** (Devnet, 21 validators, minimal state) — application footprint is fixed; redb mmap grows with state size but OS-managed |
-| Bandwidth | Low — 500 KB blocks imply modest traffic      |
-| Disk      | Minimal write amplification via redb          |
+| Bandwidth | Low — 500 KB blocks imply modest traffic                                                                                               |
+| Disk      | Minimal write amplification via redb                                                                                                   |
 
 The goal is accessibility — running a validator should not require data center infrastructure.
 
 ## Consensus Parameters
 
-| Parameter         | Value                              |
-| ----------------- | ---------------------------------- |
-| Consensus         | PoS                                |
-| Block time        | 5 seconds                          |
-| Finality          | 20 seconds (4 blocks)              |
-| Block size cap    | 500 KB                             |
+| Parameter         | Value                                                |
+| ----------------- | ---------------------------------------------------- |
+| Consensus         | PoS                                                  |
+| Block time        | 5 seconds                                            |
+| Finality          | 20 seconds (4 blocks)                                |
+| Block size cap    | 500 KB                                               |
 | Throughput target | 100–200 TPS (emerges naturally with Falcon-512 sigs) |
 
 ## Bottlenecks
@@ -85,14 +85,15 @@ Era 1+:  Inactive → Registered → Staked → Active → Unstaking → Inactiv
 
 If a validator equivocates (signs two blocks at the same height):
 
-| Penalty          | Value | Destination |
-| ---------------- | ----- | ----------- |
-| Slashed          | **90%** of total staked MONEX | Removed from validator |
-| Burned           | **90% of slashed amount** | Burn address (`0x00..00`) |
-| Reporter bounty  | **10% of slashed amount** | Added to reporter's **validator stake** |
-| Validator retains | **10% of original stake** | **Stays staked** — not moved to transferable balance |
+| Penalty           | Value                         | Destination                                          |
+| ----------------- | ----------------------------- | ---------------------------------------------------- |
+| Slashed           | **90%** of total staked MONEX | Removed from validator                               |
+| Burned            | **90% of slashed amount**     | Burn address (`0x00..00`)                            |
+| Reporter bounty   | **10% of slashed amount**     | Added to reporter's **validator stake**              |
+| Validator retains | **10% of original stake**     | **Stays staked** — not moved to transferable balance |
 
 Example: a validator with 1000 MONEX staked equivocates:
+
 - 900 slashed (90%): 810 → Burn, 90 → reporter's stake
 - 100 remains with validator, still staked
 - Validator stays in the candidate pool with reduced influence
@@ -119,14 +120,14 @@ Example: a validator with 1000 MONEX staked equivocates:
 
 Validator keys use **Falcon-512** and are stored encrypted at rest:
 
-| Step | Description |
-|------|-------------|
-| **Generation** | `mononium-cli wallet keygen --name my-validator` generates Falcon-512 keys (~10ms, offline) |
-| **Encryption** | NaCl secretbox (XSalsa20-Poly1305) |
-| **KDF** | Argon2id (1 GiB memory, 4 iterations, 4 parallel) — `argon2` crate |
-| **File** | `~/.mononium/keys/my-validator.json` — contains public key (plaintext) + encrypted seed |
-| **Loading** | `mononium-cli node --key my-validator` prompts for passphrase, decrypts, re-derives private key |
-| **Unlock time** | ~5-10s due to Argon2id memory cost (one-time at startup) |
+| Step            | Description                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| **Generation**  | `mononium-cli wallet keygen --name my-validator` generates Falcon-512 keys (~10ms, offline)     |
+| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                                                              |
+| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel) — `argon2` crate                              |
+| **File**        | `~/.mononium/keys/my-validator.json` — contains public key (plaintext) + encrypted seed         |
+| **Loading**     | `mononium-cli node --key my-validator` prompts for passphrase, decrypts, re-derives private key |
+| **Unlock time** | ~5-10s due to Argon2id memory cost (one-time at startup)                                        |
 
 The public key (897 bytes) is stored in plaintext in the key file. Only the 48-byte seed is encrypted. The private key (1281 bytes) is re-derived from the seed at node startup.
 
@@ -163,8 +164,8 @@ Each container runs `mononium-cli node` with its own key, data dir, and RPC port
 
 Validators operate on 4 network tiers:
 
-| Tier                                  | Purpose                 |
-| ------------------------------------- | ----------------------- |
+| Tier                                         | Purpose                 |
+| -------------------------------------------- | ----------------------- |
 | [Localnet](plans/V0.3.0/Network.md#Localnet) | Single-node development |
 | [Devnet](plans/V0.3.0/Network.md#Devnet)     | Multi-validator testing |
 | [Testnet](plans/V0.3.0/Network.md#Testnet)   | Public test network     |

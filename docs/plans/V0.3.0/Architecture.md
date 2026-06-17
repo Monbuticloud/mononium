@@ -104,15 +104,15 @@ mononium-rust-lib/src/
     └── types.rs              # RPC response types (JSON serde)
 ```
 
-| Module       | Responsibility                                                    |
-| ------------ | ----------------------------------------------------------------- |
-| `core/`      | Account types, U256, state machine, tx processing                 |
-| `consensus/` | PoS consensus engine                                              |
-| `mempool/`   | Transaction pool (tip → time → nonce ordering)                    |
+| Module       | Responsibility                                                      |
+| ------------ | ------------------------------------------------------------------- |
+| `core/`      | Account types, U256, state machine, tx processing                   |
+| `consensus/` | PoS consensus engine                                                |
+| `mempool/`   | Transaction pool (tip → time → nonce ordering)                      |
 | `crypto/`    | Falcon-512 signing/verification, BLAKE3 hashing, Sparse Merkle Trie |
-| `storage/`   | redb database (mutable + append-only tables, StorageEngine trait) |
-| `network/`   | P2P networking, peer discovery, message gossip                    |
-| `rpc/`       | RPC server (jsonrpsee + REST) and client types                    |
+| `storage/`   | redb database (mutable + append-only tables, StorageEngine trait)   |
+| `network/`   | P2P networking, peer discovery, message gossip                      |
+| `rpc/`       | RPC server (jsonrpsee + REST) and client types                      |
 
 ## mononium-cli
 

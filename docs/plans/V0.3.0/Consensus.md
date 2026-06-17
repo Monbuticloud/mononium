@@ -14,7 +14,7 @@ Proof of Stake consensus with a fixed 5-second block time and 20-second finality
 | ------------------ | ---------- | ------------------------------------- |
 | Type               | PoS        |                                       |
 | Block time         | 5s         | Fixed, not variable                   |
-| Finality           | ~20s       | 4 blocks (BFT commit)                |
+| Finality           | ~20s       | 4 blocks (BFT commit)                 |
 | Block size         | 500 KB     | Hard cap                              |
 | Finality mechanism | BFT commit | Per-block, 2/3+ validator sigs        |
 | Era length         | 720 blocks | ~1 hour — validator set recalculation |
@@ -56,12 +56,12 @@ The genesis JSON defines a `bootstrap` field:
 
 #### Bootstrap Duration per Tier
 
-| Tier | Bootstrap blocks | Wall clock | Why |
-|------|:-:|:-:|-----|
-| Localnet | **1** | 5s | Single key, proposal starts immediately |
-| Devnet | **20** | 100s | 3-5 validators register in under 2 minutes |
-| Testnet | **100** | ~8 min | Community validators need a wider window |
-| Mainnet | **100** | ~8 min | Same — bootstrap key + inflation handles launch |
+| Tier     | Bootstrap blocks | Wall clock | Why                                             |
+| -------- | :--------------: | :--------: | ----------------------------------------------- |
+| Localnet |      **1**       |     5s     | Single key, proposal starts immediately         |
+| Devnet   |      **20**      |    100s    | 3-5 validators register in under 2 minutes      |
+| Testnet  |     **100**      |   ~8 min   | Community validators need a wider window        |
+| Mainnet  |     **100**      |   ~8 min   | Same — bootstrap key + inflation handles launch |
 
 #### End of Bootstrap Phase
 
@@ -158,18 +158,19 @@ If a proposer equivocates (proposes two blocks at the same slot), validators:
 
 ### Slashing Details
 
-| Dimension        | Value          |
-| ---------------- | -------------- |
-| **Equivocation** | 90% of stake is slashed; 10% remains staked with the validator |
-| **Burn**         | 90% of slashed amount → Burn address (`0x00..00`) |
-| **Reporter bounty** | 10% of slashed amount → added to reporter's **validator stake** |
-| **Validator retains** | 10% of original stake **stays staked** — not ejected from candidate pool |
-| **Burn effect** | Coins at Burn address are permanently destroyed. No effect on inflation cap. |
-| **Liveness**     | Not slashed in V1 (replaced at era boundary if inactive) |
-| **Evidence topic** | Gossiped on `mononium/evidence/{chain_id}` |
-| **Unstaking cooldown** | 7 days (constant, prevents gaming after violations) |
+| Dimension              | Value                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| **Equivocation**       | 90% of stake is slashed; 10% remains staked with the validator               |
+| **Burn**               | 90% of slashed amount → Burn address (`0x00..00`)                            |
+| **Reporter bounty**    | 10% of slashed amount → added to reporter's **validator stake**              |
+| **Validator retains**  | 10% of original stake **stays staked** — not ejected from candidate pool     |
+| **Burn effect**        | Coins at Burn address are permanently destroyed. No effect on inflation cap. |
+| **Liveness**           | Not slashed in V1 (replaced at era boundary if inactive)                     |
+| **Evidence topic**     | Gossiped on `mononium/evidence/{chain_id}`                                   |
+| **Unstaking cooldown** | 7 days (constant, prevents gaming after violations)                          |
 
 Example: validator with 1000 MONEX staked equivocates:
+
 ```
 1000 stake
   ↓
@@ -186,9 +187,9 @@ Example: validator with 1000 MONEX staked equivocates:
 
 **Two special addresses:**
 
-| Address | Role | Effect |
-|---------|------|--------|
-| `0x00..00` | **Burn** | Slashed stake (90%) sent here. Permanently destroyed. No cap effect. |
+| Address    | Role           | Effect                                                                                                                                             |
+| ---------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0x00..00` | **Burn**       | Slashed stake (90%) sent here. Permanently destroyed. No cap effect.                                                                               |
 | `0x00..01` | **Cap-Refill** | Voluntarily send MONEX here to expand the mainnet inflation cap. Coins are a sink (irreversible). Effective max supply = 10B + cap_refill_balance. |
 
 The Burn address and Cap-Refill address are known protocol constants. Anyone can send to either, but only slashing logic uses Burn automatically.
@@ -207,6 +208,7 @@ struct EquivocationEvidence {
 ```
 
 **Verification:**
+
 1. `header_a.height == header_b.height`
 2. `header_a.parent_hash == header_b.parent_hash` (same slot — resolves to same parent)
 3. `header_a != header_b` (distinct blocks — proves equivocation, not re-gossip)
@@ -318,6 +320,7 @@ slot  3: V4 proposes Block 12  ✓    → height 12
 - Empty slots are transparent to the state machine
 
 **Rejected — Option A (height = slot index):** Would create phantom state gaps
+
 ```
 slot  0: Block 0
 slot  1: (empty) → height 1 exists with no block → complicates sync + state queries

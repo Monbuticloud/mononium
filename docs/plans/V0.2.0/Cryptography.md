@@ -15,12 +15,12 @@ tags: [cryptography, security]
 
 ### Key Sizes
 
-| Item            | Size      | Notes                                         |
-| --------------- | --------- | --------------------------------------------- |
-| Seed (entropy)  | 48 bytes  | Input to Falcon key generation                |
-| Private key     | 1281 bytes | Stored encrypted at rest                      |
-| Public key      | 897 bytes  | On-chain in validator records, gossiped to peers |
-| Signature       | 666 bytes  | Every transaction, block, and consensus vote   |
+| Item           | Size       | Notes                                            |
+| -------------- | ---------- | ------------------------------------------------ |
+| Seed (entropy) | 48 bytes   | Input to Falcon key generation                   |
+| Private key    | 1281 bytes | Stored encrypted at rest                         |
+| Public key     | 897 bytes  | On-chain in validator records, gossiped to peers |
+| Signature      | 666 bytes  | Every transaction, block, and consensus vote     |
 
 ### Future: No Plan to Change
 
@@ -72,27 +72,27 @@ The checksum catches typos without requiring a full Bech32 library. It's appende
 
 ## Protocol Use
 
-| Component              | Algorithm          | Size                |
-| ---------------------- | ------------------ | ------------------- |
-| Transaction signatures | Falcon-512         | 666 bytes           |
-| Block signatures       | Falcon-512         | 666 bytes           |
-| Consensus votes        | Falcon-512         | 666 bytes           |
-| Block hashing          | BLAKE3             | 32 bytes            |
-| State root             | BLAKE3 SMT         | 32 bytes            |
-| Tx root                | BLAKE3 Merkle tree | 32 bytes            |
-| Address derivation     | BLAKE3(pubkey)     | 32 bytes            |
+| Component              | Algorithm          | Size      |
+| ---------------------- | ------------------ | --------- |
+| Transaction signatures | Falcon-512         | 666 bytes |
+| Block signatures       | Falcon-512         | 666 bytes |
+| Consensus votes        | Falcon-512         | 666 bytes |
+| Block hashing          | BLAKE3             | 32 bytes  |
+| State root             | BLAKE3 SMT         | 32 bytes  |
+| Tx root                | BLAKE3 Merkle tree | 32 bytes  |
+| Address derivation     | BLAKE3(pubkey)     | 32 bytes  |
 
 ## Key Storage
 
 Validator keys are stored encrypted at rest:
 
-| Component       | Mechanism                                    |
-| --------------- | -------------------------------------------- |
-| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)           |
-| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel) |
+| Component       | Mechanism                                                                              |
+| --------------- | -------------------------------------------------------------------------------------- |
+| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                                                     |
+| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel)                                      |
 | **File format** | JSON: `{ "public_key": "0x...", "encrypted_seed": "base64...", "nonce": "base64..." }` |
-| **Location**    | `~/.mononium/keys/{name}.json`              |
-| **Crate**       | `argon2` (pure Rust, RustCrypto)            |
+| **Location**    | `~/.mononium/keys/{name}.json`                                                         |
+| **Crate**       | `argon2` (pure Rust, RustCrypto)                                                       |
 
 Key generation is an **offline CLI operation** (`mononium-cli wallet keygen`). The 48-byte seed is encrypted to disk; the private key is re-derived at node startup. The Argon2id memory cost (~1 GiB) means ~5-10s unlock time — acceptable for a one-time startup operation.
 

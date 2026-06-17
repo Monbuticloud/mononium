@@ -63,8 +63,8 @@ State: Inactive → Staked → Active → Unstaking → Inactive
 
 Validators operate on 4 network tiers:
 
-| Tier                                  | Purpose                 |
-| ------------------------------------- | ----------------------- |
+| Tier                                         | Purpose                 |
+| -------------------------------------------- | ----------------------- |
 | [Localnet](plans/V0.0.0/Network.md#Localnet) | Single-node development |
 | [Devnet](plans/V0.0.0/Network.md#Devnet)     | Multi-validator testing |
 | [Testnet](plans/V0.0.0/Network.md#Testnet)   | Public test network     |

@@ -44,20 +44,20 @@ Mononium uses **libp2p** (rust-libp2p) with:
 
 Four gossipsub topics, each scoped by chain_id:
 
-| Topic | Message Type | Purpose |
-|-------|-------------|---------|
-| `mononium/txs/{chain_id}` | `Vec<Transaction>` (SCALE) | Mempool propagation |
-| `mononium/blocks/{chain_id}` | `Block` (SCALE) | New block announcement |
-| `mononium/votes/{chain_id}` | `CommitVote` (SCALE) | Consensus votes |
-| `mononium/evidence/{chain_id}` | `Evidence` (SCALE) | Slashing evidence |
+| Topic                          | Message Type               | Purpose                |
+| ------------------------------ | -------------------------- | ---------------------- |
+| `mononium/txs/{chain_id}`      | `Vec<Transaction>` (SCALE) | Mempool propagation    |
+| `mononium/blocks/{chain_id}`   | `Block` (SCALE)            | New block announcement |
+| `mononium/votes/{chain_id}`    | `CommitVote` (SCALE)       | Consensus votes        |
+| `mononium/evidence/{chain_id}` | `Evidence` (SCALE)         | Slashing evidence      |
 
 ### Ports
 
-| Service | Default Port | Flag | Notes |
-|---------|-------------|------|-------|
-| P2P (libp2p) | **30333** | `--p2p-port` | Peer-to-peer networking |
-| JSON-RPC (WebSocket) | **9944** | `--rpc-port` | Transaction submission, subscriptions |
-| REST (HTTP) | **9933** | `--rest-port` | Balance queries, block lookups |
+| Service              | Default Port | Flag          | Notes                                 |
+| -------------------- | ------------ | ------------- | ------------------------------------- |
+| P2P (libp2p)         | **30333**    | `--p2p-port`  | Peer-to-peer networking               |
+| JSON-RPC (WebSocket) | **9944**     | `--rpc-port`  | Transaction submission, subscriptions |
+| REST (HTTP)          | **9933**     | `--rest-port` | Balance queries, block lookups        |
 
 Following Polkadot convention — well-known to blockchain operators.
 
@@ -150,11 +150,11 @@ struct CheckpointResponse {
 
 ### Retry Logic
 
-| Attempt | Timeout |
-|---------|---------|
-| 1st     | 5s      |
-| 2nd     | 10s     |
-| 3rd     | 15s     |
+| Attempt | Timeout                     |
+| ------- | --------------------------- |
+| 1st     | 5s                          |
+| 2nd     | 10s                         |
+| 3rd     | 15s                         |
 | 4th     | Give up, try different peer |
 
 After 3 failures on different peers, the node logs a critical error and stays in sync mode.

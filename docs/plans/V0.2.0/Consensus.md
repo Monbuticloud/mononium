@@ -14,7 +14,7 @@ Proof of Stake consensus with a fixed 5-second block time and 20-second finality
 | ------------------ | ---------- | ------------------------------------- |
 | Type               | PoS        |                                       |
 | Block time         | 5s         | Fixed, not variable                   |
-| Finality           | ~20s       | 4 blocks (BFT commit)                |
+| Finality           | ~20s       | 4 blocks (BFT commit)                 |
 | Block size         | 500 KB     | Hard cap                              |
 | Finality mechanism | BFT commit | Per-block, 2/3+ validator sigs        |
 | Era length         | 720 blocks | ~1 hour — validator set recalculation |
@@ -113,13 +113,13 @@ If a proposer equivocates (proposes two blocks at the same slot), validators:
 
 ### Slashing Details
 
-| Dimension        | Value          |
-| ---------------- | -------------- |
-| **Equivocation** | 90% of stake burned |
-| **Liveness**     | Not slashed in V1 (replaced at era boundary if inactive) |
-| **Reporting**    | Any validator submits evidence tx; receives 10% bounty |
-| **Evidence topic** | Gossiped on `mononium/evidence/{chain_id}` |
-| **Unstaking cooldown** | 7 days (constant, prevents gaming after violations) |
+| Dimension              | Value                                                    |
+| ---------------------- | -------------------------------------------------------- |
+| **Equivocation**       | 90% of stake burned                                      |
+| **Liveness**           | Not slashed in V1 (replaced at era boundary if inactive) |
+| **Reporting**          | Any validator submits evidence tx; receives 10% bounty   |
+| **Evidence topic**     | Gossiped on `mononium/evidence/{chain_id}`               |
+| **Unstaking cooldown** | 7 days (constant, prevents gaming after violations)      |
 
 Slashing evidence is a self-contained message proving the equivocation (two signed blocks from the same proposer at the same height). Any validator can submit it as an evidence transaction. Detection is automatic — validators see both blocks arrive via gossipsub.
 

@@ -6,12 +6,12 @@
 
 **Decision:** Falcon-512 across all protocol operations.
 
-| Item              | Size      | Notes                                |
-| ----------------- | --------- | ------------------------------------ |
-| Signature         | 666 bytes | Every transaction, block, vote       |
-| Public key        | 897 bytes | On-chain in validator records        |
-| Private key       | 1281 bytes | Derived from 48-byte seed at startup |
-| Seed (entropy)    | 48 bytes  | Generated via CLI, stored encrypted  |
+| Item           | Size       | Notes                                |
+| -------------- | ---------- | ------------------------------------ |
+| Signature      | 666 bytes  | Every transaction, block, vote       |
+| Public key     | 897 bytes  | On-chain in validator records        |
+| Private key    | 1281 bytes | Derived from 48-byte seed at startup |
+| Seed (entropy) | 48 bytes   | Generated via CLI, stored encrypted  |
 
 **Constant-time requirement:** The Falcon-512 signing implementation must be constant-time (no secret-dependent branches or memory accesses). Key generation does not require constant-time (offline operation).
 

@@ -91,11 +91,11 @@ The state root is computed via a **256-depth Sparse Merkle Tree** using **BLAKE3
 
 The SMT uses a single tree with 3 namespaces:
 
-| Prefix | Namespace | Contents |
-|--------|-----------|----------|
-| `0x00` | Accounts  | `Address → (balance: U256, nonce: u64, code_hash: Option<[u8;32]>)` |
-| `0x01` | Validators | `PublicKey → (stake: U256, status: u8)` |
-| `0x02` | Meta      | Chain-global state: height, era, active set hash, chain_id, total supply |
+| Prefix | Namespace  | Contents                                                                 |
+| ------ | ---------- | ------------------------------------------------------------------------ |
+| `0x00` | Accounts   | `Address → (balance: U256, nonce: u64, code_hash: Option<[u8;32]>)`      |
+| `0x01` | Validators | `PublicKey → (stake: U256, status: u8)`                                  |
+| `0x02` | Meta       | Chain-global state: height, era, active set hash, chain_id, total supply |
 
 Namespacing is implemented via key prefixing: account keys are stored as `0x00 ++ address`, validator keys as `0x01 ++ pubkey`, meta keys as `0x02 ++ key_id`.
 
@@ -147,11 +147,11 @@ pub struct HybridFee {
 }
 ```
 
-| Component  | Value                | Purpose                              | Set by             |
-| ---------- | -------------------- | ------------------------------------ | ------------------ |
-| Flat fee   | **0.00667 MONEX**    | Minimum cost per tx (spam prevention) | Protocol parameter |
-| Per-byte   | **0.000467 MONEX**   | Proportional to state/storage cost    | Protocol parameter |
-| Tip        | User-defined         | Priority for block inclusion          | Sender             |
+| Component | Value              | Purpose                               | Set by             |
+| --------- | ------------------ | ------------------------------------- | ------------------ |
+| Flat fee  | **0.00667 MONEX**  | Minimum cost per tx (spam prevention) | Protocol parameter |
+| Per-byte  | **0.000467 MONEX** | Proportional to state/storage cost    | Protocol parameter |
+| Tip       | User-defined       | Priority for block inclusion          | Sender             |
 
 ```rust
 impl FeePolicy for HybridFee {
@@ -188,7 +188,7 @@ mononium-cli node --genesis configs/genesis.localnet.json
     "election_mode": "Open"
   },
   "accounts": [
-    {"address": "0x...", "balance": "100_000_000_000_000_000_000"}
+    { "address": "0x...", "balance": "100_000_000_000_000_000_000" }
   ],
   "bootstrap": {
     "public_key": "0x...",
@@ -206,12 +206,12 @@ mononium-cli node --genesis configs/genesis.localnet.json
 
 ### Genesis Files
 
-| File | Network | Supply | Validators |
-|------|---------|--------|------------|
-| `configs/genesis.localnet.json` | Localnet | 10 MONEX (1 key) | Bootstrap only (1 block) |
-| `configs/genesis.devnet.json` | Devnet | 100 MONEX per key (3-5 keys) | Bootstrap (20 blocks) → era 0 Open |
-| `configs/genesis.testnet.json` | Testnet | 100 MONEX | Bootstrap (100 blocks) → era 0 Open |
-| `configs/genesis.mainnet.json` | Mainnet | 0 MONEX | Bootstrap (100 blocks) → era 0 Open + CappedInflation |
+| File                            | Network  | Supply                       | Validators                                            |
+| ------------------------------- | -------- | ---------------------------- | ----------------------------------------------------- |
+| `configs/genesis.localnet.json` | Localnet | 10 MONEX (1 key)             | Bootstrap only (1 block)                              |
+| `configs/genesis.devnet.json`   | Devnet   | 100 MONEX per key (3-5 keys) | Bootstrap (20 blocks) → era 0 Open                    |
+| `configs/genesis.testnet.json`  | Testnet  | 100 MONEX                    | Bootstrap (100 blocks) → era 0 Open                   |
+| `configs/genesis.mainnet.json`  | Mainnet  | 0 MONEX                      | Bootstrap (100 blocks) → era 0 Open + CappedInflation |
 
 ## Token Supply
 
@@ -261,14 +261,18 @@ The total minting cap = `base_cap + cap_refill_balance`. The `cap_refill_balance
 **Formula (per block, constant within an era):**
 
 ```
-block_reward = effective_max * annual_rate / blocks_per_year
+
+block_reward = effective_max \* annual_rate / blocks_per_year
+
 ```
 
 **Example:**
 ```
+
 Year 1: effective_max = 10B, block_reward ≈ 55.5 MONEX/block
 Year 10: 3.5B minted, cap_refill = 100M → effective_max = 10.1B, block_reward ≈ 56.1 MONEX/block
 Year 28: 10B minted, cap_refill = 500M → effective_max = 10.5B, inflation continues at adjusted rate
+
 ```
 
 **Consequences:**

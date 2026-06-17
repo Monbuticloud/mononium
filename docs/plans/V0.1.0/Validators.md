@@ -106,8 +106,8 @@ Each container runs `mononium-cli node` with its own key, data dir, and RPC port
 
 Validators operate on 4 network tiers:
 
-| Tier                                  | Purpose                 |
-| ------------------------------------- | ----------------------- |
+| Tier                                         | Purpose                 |
+| -------------------------------------------- | ----------------------- |
 | [Localnet](plans/V0.1.0/Network.md#Localnet) | Single-node development |
 | [Devnet](plans/V0.1.0/Network.md#Devnet)     | Multi-validator testing |
 | [Testnet](plans/V0.1.0/Network.md#Testnet)   | Public test network     |

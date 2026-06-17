@@ -96,20 +96,20 @@ All test files use `#[cfg(test)]` and are compiled only during testing — zero 
 
 **Invariants that MUST be tested:**
 
-| Invariant | Location |
-|-----------|----------|
-| Tx SCALE encode/decode is symmetric | `tests/core/transaction.rs` |
-| Tx JSON serde matches SCALE round-trip | `tests/core/transaction.rs` |
-| Block header hash depends on all fields | `tests/core/block.rs` |
-| SMT insert → get returns same value | `tests/crypto/trie.rs` |
-| SMT root is deterministc for same inserts | `tests/crypto/trie.rs` |
-| SMT proof verify(prove(key)) == true | `tests/crypto/trie.rs` |
-| Falcon-512 sign → verify round-trip | `tests/crypto/falcon.rs` |
-| Fee calculation is deterministic | `tests/core/fee.rs` |
-| Mempool ordering: tip desc, time asc, nonce asc | `tests/mempool/ordering.rs` |
-| Mempool TTL eviction removes stale txs | `tests/mempool/mod.rs` |
+| Invariant                                               | Location                      |
+| ------------------------------------------------------- | ----------------------------- |
+| Tx SCALE encode/decode is symmetric                     | `tests/core/transaction.rs`   |
+| Tx JSON serde matches SCALE round-trip                  | `tests/core/transaction.rs`   |
+| Block header hash depends on all fields                 | `tests/core/block.rs`         |
+| SMT insert → get returns same value                     | `tests/crypto/trie.rs`        |
+| SMT root is deterministc for same inserts               | `tests/crypto/trie.rs`        |
+| SMT proof verify(prove(key)) == true                    | `tests/crypto/trie.rs`        |
+| Falcon-512 sign → verify round-trip                     | `tests/crypto/falcon.rs`      |
+| Fee calculation is deterministic                        | `tests/core/fee.rs`           |
+| Mempool ordering: tip desc, time asc, nonce asc         | `tests/mempool/ordering.rs`   |
+| Mempool TTL eviction removes stale txs                  | `tests/mempool/mod.rs`        |
 | Top-N election sorts by stake desc, tie by registration | `tests/consensus/election.rs` |
-| Equivocation detection catches duplicate blocks | `tests/consensus/slashing.rs` |
+| Equivocation detection catches duplicate blocks         | `tests/consensus/slashing.rs` |
 
 ### Tier 2: State Machine Integration
 
@@ -148,6 +148,7 @@ Uses in-memory redb (no disk I/O), loopback networking (no real TCP). Fast enoug
 ### Tier 4: Docker (Manual)
 
 Docker compose with multiple containers, real libp2p networking, real Falcon-512 keys. Used for:
+
 - Manual testing during development
 - Network behavior under latency
 - Crash recovery scenarios
@@ -158,6 +159,7 @@ Not run in CI (slow, resource-intensive).
 ### Tier 5: Fuzzing (Deferred to Phase 4)
 
 `cargo-fuzz` with libFuzzer for:
+
 - Malformed SCALE-encoded blocks
 - Edge case transaction sequences
 - SMT pathological inputs
@@ -212,17 +214,17 @@ mononium-rust-lib/benches/
 
 ### Target Metrics
 
-| Metric | Suite | Phase 2 Target | Method |
-|--------|-------|----------------|--------|
-| Falcon sign | crypto | <10ms | `criterion` |
-| Falcon verify | crypto | <5ms | `criterion` |
-| Falcon batch verify (10) | crypto | <20ms | `criterion` |
-| SMT insert 1000 accounts | crypto | <50ms | `criterion` |
-| SMT root after 1000 inserts | crypto | <10ms | `criterion` |
-| Block apply 100 tx (all Falcon verify) | state | <200ms | `criterion` |
-| Block apply 500 tx | state | <1s | `criterion` |
-| Mempool insert 10000 | state | <50ms | `criterion` |
-| E2E 3-validator, 100 blocks | e2e | >50 tx/s | `cluster harness` |
+| Metric                                 | Suite  | Phase 2 Target | Method            |
+| -------------------------------------- | ------ | -------------- | ----------------- |
+| Falcon sign                            | crypto | <10ms          | `criterion`       |
+| Falcon verify                          | crypto | <5ms           | `criterion`       |
+| Falcon batch verify (10)               | crypto | <20ms          | `criterion`       |
+| SMT insert 1000 accounts               | crypto | <50ms          | `criterion`       |
+| SMT root after 1000 inserts            | crypto | <10ms          | `criterion`       |
+| Block apply 100 tx (all Falcon verify) | state  | <200ms         | `criterion`       |
+| Block apply 500 tx                     | state  | <1s            | `criterion`       |
+| Mempool insert 10000                   | state  | <50ms          | `criterion`       |
+| E2E 3-validator, 100 blocks            | e2e    | >50 tx/s       | `cluster harness` |
 
 ### Running
 
