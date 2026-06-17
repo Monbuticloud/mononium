@@ -1,0 +1,37 @@
+[package]
+name = "mononium"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+
+[profile.dev]
+overflow-checks = true
+incremental = true
+codegen-units = 256
+opt-level = 2
+debug = "full"
+strip = "none"
+
+[profile.release]
+strip = "symbols"
+lto = true
+debug = "none"
+opt-level = 3
+incremental = false
+overflow-checks = false
+
+[lints.rust]
+unused = "warn"
+dead_code = "warn"
+unused_imports = "warn"
+unused_variables = "warn"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
