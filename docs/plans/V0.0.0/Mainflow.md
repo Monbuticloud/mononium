@@ -19,8 +19,8 @@ graph LR
     A --> J[[Roadmap]]
 ```
 
-| Area            | Doc              | Key Decisions                                 |
-| --------------- | ---------------- | --------------------------------------------- |
+| Area            | Doc                     | Key Decisions                                 |
+| --------------- | ----------------------- | --------------------------------------------- |
 | 🧠 Philosophy   | [[V0.0.0/Philosophy]]   | Account-based, minimalism, portfolio project  |
 | 🏗️ Architecture | [[V0.0.0/Architecture]] | Cargo workspace: lib + CLI + GUI              |
 | 👥 Validators   | [[V0.0.0/Validators]]   | Cheap VPS target, PoS, lightweight            |

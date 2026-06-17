@@ -1,24 +1,24 @@
 {
   "main": {
-    "id": "7ba20bd3280fb10e",
+    "id": "0ef1ab9b354df5fc",
     "type": "split",
     "children": [
       {
-        "id": "3981f9e7c6a9b4d4",
+        "id": "4f02737ea22cf1be",
         "type": "tabs",
         "children": [
           {
-            "id": "de46f55ff203bfa2",
+            "id": "758215a1d0853cdd",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "V0.1.0/Architecture.md",
+                "file": "architecture/ADR-001-workspace-structure.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Architecture"
+              "title": "ADR-001-workspace-structure"
             }
           }
         ]
@@ -27,15 +27,15 @@
     "direction": "vertical"
   },
   "left": {
-    "id": "d2c4d7adb1ae1fdd",
+    "id": "31fa763c5d8cd27f",
     "type": "split",
     "children": [
       {
-        "id": "3c4366335c8d6d6d",
+        "id": "6facb02a33c62e5a",
         "type": "tabs",
         "children": [
           {
-            "id": "dd837b5334c65ab3",
+            "id": "64dd549c87b09fc6",
             "type": "leaf",
             "state": {
               "type": "file-explorer",
@@ -48,7 +48,7 @@
             }
           },
           {
-            "id": "87f30b7399d9a866",
+            "id": "6dcbca0c73a3c6b9",
             "type": "leaf",
             "state": {
               "type": "search",
@@ -65,7 +65,7 @@
             }
           },
           {
-            "id": "55508f6d76a7937b",
+            "id": "ceab617685c2b367",
             "type": "leaf",
             "state": {
               "type": "bookmarks",
@@ -81,20 +81,20 @@
     "width": 300
   },
   "right": {
-    "id": "740f77c834bb25c3",
+    "id": "4e272886f5590d79",
     "type": "split",
     "children": [
       {
-        "id": "69ebf39ce8403dcf",
+        "id": "55da682383ec49ac",
         "type": "tabs",
         "children": [
           {
-            "id": "b08413bec7befc1f",
+            "id": "4a521f8adb077992",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
-                "file": "V0.1.0/Architecture.md",
+                "file": "architecture/ADR-001-workspace-structure.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,25 +104,25 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Architecture"
+              "title": "Backlinks for ADR-001-workspace-structure"
             }
           },
           {
-            "id": "06703517bf1cdeda",
+            "id": "c114a88338c1877d",
             "type": "leaf",
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "V0.1.0/Architecture.md",
+                "file": "architecture/ADR-001-workspace-structure.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Architecture"
+              "title": "Outgoing links from ADR-001-workspace-structure"
             }
           },
           {
-            "id": "c3f6acce323a3811",
+            "id": "e609335a7e31fab2",
             "type": "leaf",
             "state": {
               "type": "tag",
@@ -137,7 +137,7 @@
             }
           },
           {
-            "id": "5d1244f74a64a421",
+            "id": "69e123b2498c17dc",
             "type": "leaf",
             "state": {
               "type": "all-properties",
@@ -151,18 +151,18 @@
             }
           },
           {
-            "id": "08e24e997b8b5f5b",
+            "id": "beba8d3feb933b12",
             "type": "leaf",
             "state": {
               "type": "outline",
               "state": {
-                "file": "V0.1.0/Architecture.md",
+                "file": "architecture/ADR-001-workspace-structure.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Architecture"
+              "title": "Outline of ADR-001-workspace-structure"
             }
           }
         ]
@@ -183,31 +183,10 @@
       "bases:Create new base": false
     }
   },
-  "active": "dd837b5334c65ab3",
+  "active": "64dd549c87b09fc6",
   "lastOpenFiles": [
-    "architecture",
-    "V0.1.0/Validators.md",
-    "V0.1.0/Protocol.md",
-    "V0.1.0/Architecture.md",
-    "V0.1.0/Consensus.md",
-    "V0.0.0/Storage.md",
-    "V0.1.0/Storage.md",
-    "V0.1.0/Roadmap.md",
-    "V0.1.0/Philosophy.md",
-    "V0.1.0/Network.md",
-    "V0.1.0/Mainflow.md",
-    "V0.1.0/Cryptography.md",
-    "V0.1.0",
-    "V0.0.0/Roadmap.md",
-    "V0.0.0/Protocol.md",
-    "V0.0.0/Philosophy.md",
-    "V0.0.0/Network.md",
-    "V0.0.0/Mainflow.md",
-    "V0.0.0/Cryptography.md",
-    "V0.0.0/Consensus.md",
-    "V0.0.0/Architecture.md",
-    "Versioning.md",
-    "V0.0.0/Validators.md",
-    "V0.0.0"
+    "plans/AGENTS.md",
+    "architecture/AGENTS.md",
+    "AGENTS.md"
   ]
 }

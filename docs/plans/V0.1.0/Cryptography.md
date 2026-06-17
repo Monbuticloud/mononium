@@ -36,7 +36,32 @@ BLAKE3 is chosen for its speed — significantly faster than SHA-256 with strong
 
 - Signing key: Ed25519 private key (32 bytes)
 - Verification key: Ed25519 public key (32 bytes)
-- Address: Derived from public key (to be specified — likely BLAKE3 hash prefix)
+
+## Address Format
+
+`0x` + 32 bytes raw hex (64 chars) + 8 byte checksum (16 chars)
+
+```
+0x3a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1 __checksum__
+```
+
+| Component | Size                | Notes                                                     |
+| --------- | ------------------- | --------------------------------------------------------- |
+| Raw bytes | 32 bytes            | BLAKE3-256 hash of public key                             |
+| Checksum  | 8 bytes             | First 8 bytes of BLAKE3(address_bytes) — not the key hash |
+| Display   | `0x` + 80 hex chars | 64 for address + 16 for checksum                          |
+
+```rust
+pub struct Address([u8; 32]);
+
+pub fn format_address(addr: &Address) -> String {
+    let checksum = blake3::hash(&addr.0).as_bytes()[..8];
+    let hex = hex::encode(addr.0) + &hex::encode(checksum);
+    format!("0x{}", hex)
+}
+```
+
+The checksum catches typos without requiring a full Bech32 library. It's appended not interleaved — simple to parse, simple to validate.
 
 ## Protocol Use
 
