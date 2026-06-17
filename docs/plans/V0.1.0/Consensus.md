@@ -150,7 +150,7 @@ The proposer selects the highest-priority txs for their block up to the 500 KB l
 
 ## Validator Election
 
-Validators are elected via **Top-N by stake** (see [[V0.1.0/Validators#Validator Election]]). The election algorithm is swappable via dependency injection for future Phragmén support.
+Validators are elected via **Top-N by stake** (see [Validators](Validators.md#Validator Election)). The election algorithm is swappable via dependency injection for future Phragmén support.
 
 ## Block Production
 
@@ -177,7 +177,7 @@ Randomized proposer selection via Verifiable Random Function. Each validator run
 
 ### DI Pattern
 
-Same trait-based approach as [[V0.1.0/Validators#Validator Election]]:
+Same trait-based approach as [Validators](Validators.md#Validator Election):
 
 ```rust
 #[async_trait]
@@ -216,4 +216,4 @@ ConsensusConfig {
 
 ---
 
-**Related:** [[V0.1.0/Validators]], [[V0.1.0/Protocol]]
+**Related:** [Validators](Validators.md), [Protocol](Protocol.md)

@@ -55,4 +55,4 @@ Every transaction includes the chain ID. A tx signed for Localnet (ID 0) cannot 
 
 ---
 
-**Related:** [[V0.1.0/Validators]], [[V0.1.0/Protocol]], [[V0.1.0/Roadmap]]
+**Related:** [Validators](Validators.md), [Protocol](Protocol.md), [Roadmap](Roadmap.md)

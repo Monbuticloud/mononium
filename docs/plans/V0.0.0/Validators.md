@@ -65,11 +65,11 @@ Validators operate on 4 network tiers:
 
 | Tier                                  | Purpose                 |
 | ------------------------------------- | ----------------------- |
-| [[V0.0.0/Network#Localnet\|Localnet]] | Single-node development |
-| [[V0.0.0/Network#Devnet\|Devnet]]     | Multi-validator testing |
-| [[V0.0.0/Network#Testnet\|Testnet]]   | Public test network     |
-| [[V0.0.0/Network#Mainnet\|Mainnet]]   | Production              |
+| [Localnet](Network.md#Localnet) | Single-node development |
+| [Devnet](Network.md#Devnet)     | Multi-validator testing |
+| [Testnet](Network.md#Testnet)   | Public test network     |
+| [Mainnet](Network.md#Mainnet)   | Production              |
 
 ---
 
-**Related:** [[V0.0.0/Consensus]], [[V0.0.0/Network]]
+**Related:** [Consensus](Consensus.md), [Network](Network.md)

@@ -105,4 +105,4 @@ If performance requirements outgrow redb (larger state, higher throughput), swap
 
 ---
 
-**Related:** [[V0.1.0/Architecture]], [[V0.1.0/Protocol]]
+**Related:** [Architecture](Architecture.md), [Protocol](Protocol.md)

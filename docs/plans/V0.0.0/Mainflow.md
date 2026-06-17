@@ -21,16 +21,16 @@ graph LR
 
 | Area            | Doc                     | Key Decisions                                 |
 | --------------- | ----------------------- | --------------------------------------------- |
-| 🧠 Philosophy   | [[V0.0.0/Philosophy]]   | Account-based, minimalism, portfolio project  |
-| 🏗️ Architecture | [[V0.0.0/Architecture]] | Cargo workspace: lib + CLI + GUI              |
-| 👥 Validators   | [[V0.0.0/Validators]]   | Cheap VPS target, PoS, lightweight            |
-| ⚡ Consensus    | [[V0.0.0/Consensus]]    | PoS, 5s block, 20s finality                   |
-| 💾 Storage      | [[V0.0.0/Storage]]      | ITTIA DB Lite, mutable + append-only tables   |
-| 📋 Protocol     | [[V0.0.0/Protocol]]     | Account model, native tx first, state machine |
-| 🌐 Network      | [[V0.0.0/Network]]      | Localnet → Devnet → Testnet → Mainnet         |
-| 🔐 Cryptography | [[V0.0.0/Cryptography]] | Ed25519, BLAKE3, Falcon later                 |
-| 🗺️ Roadmap      | [[V0.0.0/Roadmap]]      | 5 phases, benchmark early                     |
+| 🧠 Philosophy   | [Philosophy](Philosophy.md)   | Account-based, minimalism, portfolio project  |
+| 🏗️ Architecture | [Architecture](Architecture.md) | Cargo workspace: lib + CLI + GUI              |
+| 👥 Validators   | [Validators](Validators.md)   | Cheap VPS target, PoS, lightweight            |
+| ⚡ Consensus    | [Consensus](Consensus.md)    | PoS, 5s block, 20s finality                   |
+| 💾 Storage      | [Storage](Storage.md)      | ITTIA DB Lite, mutable + append-only tables   |
+| 📋 Protocol     | [Protocol](Protocol.md)     | Account model, native tx first, state machine |
+| 🌐 Network      | [Network](Network.md)      | Localnet → Devnet → Testnet → Mainnet         |
+| 🔐 Cryptography | [Cryptography](Cryptography.md) | Ed25519, BLAKE3, Falcon later                 |
+| 🗺️ Roadmap      | [Roadmap](Roadmap.md)      | 5 phases, benchmark early                     |
 
 ---
 
-> **Next:** Start with [[V0.0.0/Philosophy]] to understand the design rationale.
+> **Next:** Start with [Philosophy](Philosophy.md) to understand the design rationale.

@@ -63,7 +63,7 @@ Full Nominated Proof of Stake with optimal proportional representation:
 - Nominators back validators with their stake
 - Phragmén sequential election algorithm
 - Handles delegation, vote splitting, and optimal representation
-- Swappable via dependency injection (see [[V0.1.0/Architecture#Validator Election DI]])
+- Swappable via dependency injection (see [Architecture](Architecture.md#Validator Election DI))
 
 ## Validator Lifecycle
 
@@ -90,7 +90,7 @@ Validators earn **transaction fees only** — no block rewards, no inflation.
 
 - All fees from transactions included in a block go to that block's proposer
 - Fee schedule: to be determined (flat fee? per-byte? auction?)
-- In V2.0+, inflation can be added via [[V0.1.0/Protocol#Token Supply]] DI
+- In V2.0+, inflation can be added via [Protocol](Protocol.md#Token Supply) DI
 
 ## Multi-Validator Simulation
 
@@ -108,11 +108,11 @@ Validators operate on 4 network tiers:
 
 | Tier                                  | Purpose                 |
 | ------------------------------------- | ----------------------- |
-| [[V0.1.0/Network#Localnet\|Localnet]] | Single-node development |
-| [[V0.1.0/Network#Devnet\|Devnet]]     | Multi-validator testing |
-| [[V0.1.0/Network#Testnet\|Testnet]]   | Public test network     |
-| [[V0.1.0/Network#Mainnet\|Mainnet]]   | Production              |
+| [Localnet](Network.md#Localnet) | Single-node development |
+| [Devnet](Network.md#Devnet)     | Multi-validator testing |
+| [Testnet](Network.md#Testnet)   | Public test network     |
+| [Mainnet](Network.md#Mainnet)   | Production              |
 
 ---
 
-**Related:** [[V0.1.0/Consensus]], [[V0.1.0/Network]]
+**Related:** [Consensus](Consensus.md), [Network](Network.md)

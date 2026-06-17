@@ -135,7 +135,7 @@ Swappable via `FeePolicy` trait.
 | Testnet  | 100 MONEX    | Community faucet | Public test network                     |
 | Mainnet  | 0            | —                | Fair launch, bootstrapped via inflation |
 
-On mainnet, MONEX is minted into existence through block rewards (see [[V0.1.0/Protocol#Token Supply]]). No pre-mine, no allocation, no insider advantage.
+On mainnet, MONEX is minted into existence through block rewards (see [Protocol](Protocol.md#Token Supply)). No pre-mine, no allocation, no insider advantage.
 
 ## Token Supply
 
@@ -189,4 +189,4 @@ Each network gets a unique chain ID to prevent replay attacks across networks:
 
 ---
 
-**Related:** [[V0.1.0/Architecture]], [[V0.1.0/Consensus]], [[V0.1.0/Network]]
+**Related:** [Architecture](Architecture.md), [Consensus](Consensus.md), [Network](Network.md)

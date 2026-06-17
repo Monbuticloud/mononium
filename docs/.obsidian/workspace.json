@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "4f02737ea22cf1be",
+        "id": "13682df5b765c977",
         "type": "tabs",
         "children": [
           {
-            "id": "758215a1d0853cdd",
+            "id": "da452a15a9f51dda",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "architecture/ADR-001-workspace-structure.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "ADR-001-workspace-structure"
+              "title": "New tab"
             }
           }
         ]
@@ -94,7 +90,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "architecture/ADR-001-workspace-structure.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +99,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for ADR-001-workspace-structure"
+              "title": "Backlinks"
             }
           },
           {
@@ -113,12 +108,11 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "architecture/ADR-001-workspace-structure.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from ADR-001-workspace-structure"
+              "title": "Outgoing links"
             }
           },
           {
@@ -156,13 +150,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "architecture/ADR-001-workspace-structure.md",
+                "file": "plans/V0.2.0/Architecture.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of ADR-001-workspace-structure"
+              "title": "Outline of Architecture"
             }
           }
         ]
@@ -185,8 +179,35 @@
   },
   "active": "64dd549c87b09fc6",
   "lastOpenFiles": [
-    "plans/AGENTS.md",
-    "architecture/AGENTS.md",
-    "AGENTS.md"
+    "formatting.md",
+    "plans/V0.2.0/Validators.md",
+    "plans/V0.2.0/Storage.md",
+    "plans/V0.2.0/Roadmap.md",
+    "plans/V0.2.0/Protocol.md",
+    "plans/V0.2.0/Philosophy.md",
+    "plans/V0.2.0/Network.md",
+    "plans/V0.2.0/Mainflow.md",
+    "plans/V0.2.0/Cryptography.md",
+    "plans/V0.2.0/Consensus.md",
+    "plans/V0.2.0/Architecture.md",
+    "plans/V0.2.0",
+    "Untitled.base",
+    "plans/V0.1.0/Protocol.md",
+    "plans/V0.0.0 1/Validators.md",
+    "plans/V0.0.0 1/Storage.md",
+    "plans/V0.0.0 1/Roadmap.md",
+    "plans/V0.0.0 1/Protocol.md",
+    "plans/V0.0.0 1/Philosophy.md",
+    "plans/V0.0.0 1/Network.md",
+    "plans/V0.0.0 1/Mainflow.md",
+    "plans/V0.0.0 1/Cryptography.md",
+    "plans/V0.0.0 1/Consensus.md",
+    "plans/V0.0.0 1/Architecture.md",
+    "plans/V0.0.0 1",
+    "plans/V0.2.0/Validators.md",
+    "plans/V0.2.0/Storage.md",
+    "plans/V0.2.0/Roadmap.md",
+    "plans/V0.2.0/Protocol.md",
+    "plans/V0.2.0"
   ]
 }

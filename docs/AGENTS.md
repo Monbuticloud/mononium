@@ -12,7 +12,7 @@ All project documentation: architecture decisions (ADRs), planning docs, guides.
 ## Local Contracts
 
 - Keep docs concise, current, and operational
-- Use Obsidian-friendly markdown (wikilinks, frontmatter tags)
+- Follow conventions in `docs/formatting.md`
 - Every architectural decision gets an ADR in `docs/architecture/`
 
 ## Work Guidance
@@ -30,5 +30,6 @@ All project documentation: architecture decisions (ADRs), planning docs, guides.
 
 | Path                     | Scope                                  |
 | ------------------------ | -------------------------------------- |
+| `formatting.md`          | Document formatting conventions        |
 | `architecture/AGENTS.md` | ADR format and conventions             |
 | `plans/AGENTS.md`        | Planning docs structure and versioning |

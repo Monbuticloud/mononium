@@ -77,4 +77,4 @@ The checksum catches typos without requiring a full Bech32 library. It's appende
 
 ---
 
-**Related:** [[V0.1.0/Validators]], [[V0.1.0/Protocol]]
+**Related:** [Validators](Validators.md), [Protocol](Protocol.md)
