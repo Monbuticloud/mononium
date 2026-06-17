@@ -24,7 +24,7 @@ graph TD
         Core[Core: Types & State Machine]
         Consensus[Consensus Engine]
         Crypto[Cryptography]
-        Storage[Storage: ITTIA DB]
+        Storage[Storage: redb]
         Network[P2P Networking]
         RPC[RPC Client Types]
     end
@@ -51,12 +51,65 @@ graph TD
 
 The shared library that both CLI and GUI depend on. Contains all blockchain logic:
 
+```
+mononium-rust-lib/src/
+├── lib.rs                    # re-exports, crate-level types
+├── constants.rs              # Shared constants (chain-wide protocol values)
+├── core/
+│   ├── mod.rs
+│   ├── constants.rs          # Core-specific constants (U256 precision, etc.)
+│   ├── account.rs            # Account struct, Address type
+│   ├── transaction.rs        # Transaction, TransactionType enum
+│   ├── block.rs              # Block, BlockHeader, CommitVote
+│   ├── state.rs              # StateMachine (apply_tx, apply_block)
+│   └── fee.rs                # FeePolicy trait, HybridFee impl
+├── crypto/
+│   ├── mod.rs
+│   ├── constants.rs          # Crypto constants (key/sig sizes, etc.)
+│   ├── signature.rs          # SignatureScheme trait
+│   ├── falcon.rs             # Falcon512 impl (wraps falcon crate)
+│   ├── hash.rs               # BLAKE3 wrappers
+│   ├── trie.rs               # SMT: insert, get, root, prove
+│   └── address.rs            # Address derivation, format, checksum
+├── consensus/
+│   ├── mod.rs                # ConsensusEngine, ConsensusConfig
+│   ├── constants.rs          # Consensus constants (block time, era length, etc.)
+│   ├── election.rs           # ValidatorElection trait, TopNElection
+│   ├── proposer.rs           # ProposerSelection trait, RoundRobin
+│   ├── era.rs                # Era calculation, ElectionMode
+│   ├── finality.rs           # BFT commit tracking
+│   ├── slashing.rs           # Evidence types, slash logic (90% + bounty)
+│   └── supply.rs             # SupplyPolicy trait, FixedSupply
+├── mempool/
+│   ├── mod.rs                # Mempool struct, insert/remove/select
+│   ├── constants.rs          # Mempool constants (max_size, ttl, min_fee)
+│   └── ordering.rs           # Tip → Time → Nonce ordering
+├── storage/
+│   ├── mod.rs                # StorageEngine trait
+│   ├── constants.rs          # Storage constants (table names, etc.)
+│   ├── redb.rs               # RedbEngine impl
+│   ├── tables.rs             # Table definitions (accounts, validators, blocks, etc.)
+│   └── genesis.rs            # Genesis loading from JSON
+├── network/
+│   ├── mod.rs                # P2pService, start/stop
+│   ├── constants.rs          # Network constants (topics, default ports, etc.)
+│   ├── topics.rs             # Topic constants, message types per topic
+│   ├── discovery.rs          # Bootstrap + kademlia peer discovery
+│   └── messages.rs           # Wire message types (SCALE encode/decode)
+└── rpc/
+    ├── mod.rs                # Combined RPC service
+    ├── constants.rs          # RPC constants (port numbers, route paths)
+    ├── jsonrpc.rs            # jsonrpsee server setup
+    ├── rest.rs               # axum REST routes
+    └── types.rs              # RPC response types (JSON serde)
+```
+
 | Module       | Responsibility                                                    |
 | ------------ | ----------------------------------------------------------------- |
 | `core/`      | Account types, U256, state machine, tx processing                 |
 | `consensus/` | PoS consensus engine                                              |
 | `mempool/`   | Transaction pool (tip → time → nonce ordering)                    |
-| `crypto/`    | Ed25519 signing/verification, BLAKE3 hashing                      |
+| `crypto/`    | Falcon-512 signing/verification, BLAKE3 hashing, Sparse Merkle Trie |
 | `storage/`   | redb database (mutable + append-only tables, StorageEngine trait) |
 | `network/`   | P2P networking, peer discovery, message gossip                    |
 | `rpc/`       | RPC server (jsonrpsee + REST) and client types                    |
@@ -66,13 +119,13 @@ The shared library that both CLI and GUI depend on. Contains all blockchain logi
 The CLI binary. Has two roles:
 
 - **Node daemon** — runs the validator, participates in consensus, maintains state
-- **CLI wallet** — key generation, tx signing, balance queries via RPC
+- **CLI wallet** — key generation (Falcon-512), tx signing, balance queries via RPC
 
 ```
 mononium-cli
 ├── node          # start the node daemon
 ├── wallet        # wallet commands
-│   ├── keygen    # generate keys
+│   ├── keygen    # generate Falcon-512 keys
 │   ├── balance   # query balance
 │   ├── transfer  # send MONEX
 │   └── stake     # stake/unstake
@@ -128,6 +181,7 @@ mononium-cli node                          # starts RPC server
 - Balances stored as `U256`
 - 18 decimal places
 - Deterministic state transitions — same input → same output
+- State committed via **256-depth Sparse Merkle Tree** (BLAKE3)
 
 ## Key Decisions
 
@@ -191,6 +245,72 @@ ConsensusConfig {
     ...
 }
 ```
+
+## Node Startup Lifecycle
+
+When `mononium-cli node` is invoked, the initialization follows this ordered sequence:
+
+```
+ 1. Parse CLI args (clap) — --genesis, --key, --bootnodes, --p2p-port, etc.
+ 2. Load key metadata — read ~/.mononium/keys/{name}.json, identify validator address
+ 3. Prompt for passphrase — enter to unlock the encrypted seed
+ 4. Derive key — Argon2id (1 GiB, ~5-10s) → NaCl secretbox decrypt → re-derive Falcon-512 private key
+ 5. **[y/N] confirmation prompt** — show startup preview, ask user to confirm before proceeding
+ 6. Open/init redb database — at ~/.mononium/data/{network}/
+ 7. If no DB exists → load genesis JSON → build initial SMT → write genesis block (height 0)
+ 8. Load state from DB — current height, SMT root, validator set, era index
+ 9. Start libp2p host — bind P2P port (default 30333), subscribe to 4 gossipsub topics
+10. Connect to bootstrap peers — kademlia discovers additional peers on same chain_id
+11. Initialize consensus engine — compute proposer schedule for current era
+12. Start slot timer — begin listening for block production / voting slots
+13. Start RPC servers — jsonrpsee (WebSocket) on 9944, axum (REST) on 9933
+14. Register signal handlers — SIGINT/SIGTERM → graceful shutdown
+```
+
+### Startup Preview
+
+Step 5 displays a summary before the node commits to anything:
+
+```
+Mononium Node — Startup Preview
+  Network:     Devnet (chain ID: 1)
+  Validator:   0x3a1b...checksum
+  P2P port:    30333
+  Boot peers:  3
+  Data dir:    ~/.mononium/data/devnet/
+
+Start node? [y/N]
+```
+
+If the user answers N, the process exits cleanly. This prevents accidentally running the wrong key on the wrong network.
+
+## Crash Recovery
+
+If the node crashes, recovery is handled automatically on next startup:
+
+```
+On restart:
+  1. Open redb, read current height from meta table
+  2. Load the latest canonical block from blocks table
+  3. Recompute SMT root from stored state
+  4. If consistent → resume from next height
+  5. If inconsistent → panic (should not happen — redb write transactions are ACID)
+```
+
+**Key guarantee:** redb write transactions are fully atomic. If the process dies mid-`apply_block`, the entire write transaction rolls back. The node restarts at the previous canonical height.
+
+**Missed blocks:** After recovery, the node discovers missed blocks via the sync protocol — it sends `RequestBlocks { from_height, to_height }` to peers and receives `BlockResponse { blocks }` in return. Blocks are validated and applied in order.
+
+### State Checkpoints
+
+Every **120,960 blocks (~7 days)** the node writes a state checkpoint:
+
+- A snapshot of the full SMT at that height
+- Stored as a special checkpoint record in redb
+- Allows fresh nodes to sync from a checkpoint instead of replaying from genesis
+- Checkpoint format: `(height, smt_root, serialized_smt_nodes, validator_set_hash)`
+
+Mainnet nodes would publish checkpoint hashes out-of-band (repo, social) for bootstrapping trust. Devnet nodes always replay from genesis (small state, fast).
 
 ## Dependency Flow
 

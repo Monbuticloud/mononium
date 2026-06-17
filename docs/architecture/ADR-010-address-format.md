@@ -1,6 +1,6 @@
 # ADR-010: Address Format
 
-**Status:** Accepted
+**Status:** Deprecated (superseded by ADR-016)
 
 **Context:** Addresses are the primary user-facing identifier. They must be human-readable, error-resistant, and simple to parse.
 
@@ -21,3 +21,5 @@ Example: 0x3a1b2c3d...[32 bytes]...a7f2b1c9d3e4f5a6
 - Simple to parse and format
 - No Bech32 dependency
 - Long strings (80 hex chars) — trade-off for simplicity
+
+**Note:** This ADR is superseded by ADR-016 for the signature scheme. Address derivation remains `BLAKE3(public_key)[..32]` but the public key input is now Falcon-512 (897 bytes) instead of Ed25519 (32 bytes). The checksum mechanism and display format are unchanged.

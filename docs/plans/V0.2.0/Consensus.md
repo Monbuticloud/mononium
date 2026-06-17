@@ -14,7 +14,7 @@ Proof of Stake consensus with a fixed 5-second block time and 20-second finality
 | ------------------ | ---------- | ------------------------------------- |
 | Type               | PoS        |                                       |
 | Block time         | 5s         | Fixed, not variable                   |
-| Finality           | ~5-10s     | 1-2 blocks (BFT commit)               |
+| Finality           | ~20s       | 4 blocks (BFT commit)                |
 | Block size         | 500 KB     | Hard cap                              |
 | Finality mechanism | BFT commit | Per-block, 2/3+ validator sigs        |
 | Era length         | 720 blocks | ~1 hour — validator set recalculation |
@@ -60,13 +60,15 @@ pub enum ElectionMode {
 After a block is proposed, validators verify and submit a signed commit vote. Once 2/3+ of the active set commits, the block is final.
 
 ```
-slot 0: V1 proposes Block A → validators vote
-slot 1: V2 proposes Block B (includes commit proofs from slot 0) → A is final
+slot 0: V1 proposes Block A → validators verify + vote
+slot 1-3: verification window (validators verify Falcon-512 sigs, state, SMT)
+slot 4: V2 proposes Block B (includes commit proofs from slot 0) → A is final
 ```
 
 - Commits are included in the _next_ block header as proof
 - A block is final as soon as 2/3+ commits for it appear on-chain
-- In practice: 1-2 blocks after proposal (~5-10s)
+- In practice: **~20s (4 blocks)** — proposer submits, validators have 3 blocks to verify and submit commit votes
+- The 20s verification window accounts for Falcon-512 signature verification (~10x slower than Ed25519) and SMT validation
 
 ## Flow
 
@@ -79,12 +81,13 @@ sequenceDiagram
     Note over Proposer,Validators: Slot N
     Proposer->>Proposer: Collect txs from mempool
     Proposer->>Proposer: Build block (≤500 KB)
-    Proposer->>Validators: Propose block
-    Validators->>Validators: Verify txs + state
-    Validators->>Validators: Sign commit vote
-    Validators-->>Proposer: Commit signature
+    Proposer->>Validators: Propose block (gossipsub)
+    Validators->>Validators: Verify Falcon sigs + SMT proofs
+    Validators->>Validators: Sign commit vote (Falcon-512)
+    Validators-->>Proposer: Commit signature (gossipsub)
 
-    Note over Proposer,Validators: Slot N+1 (next proposer)
+    Note over Proposer,Validators: Slots N+1..N+3 (verification window)
+    Note over Proposer,Validators: Slot N+4 (next proposer)
     Validators->>Validators: Include commits in next block
     Note over Proposer,State: Block N is final
 ```
@@ -95,7 +98,7 @@ sequenceDiagram
 CommitVote {
     block_hash: [u8; 32],
     validator: ValidatorId,
-    signature: [u8; 64],
+    signature: [u8; 666],       // Falcon-512
 }
 ```
 
@@ -104,8 +107,21 @@ CommitVote {
 If a proposer equivocates (proposes two blocks at the same slot), validators:
 
 1. Reject duplicates at the protocol level
-2. Slash the validator (lose stake)
-3. The next honest proposer resolves the fork
+2. **Slash** the validator — lose 90% of stake
+3. The **reporter** (validator who submitted the evidence) receives a **10% bounty** of the slashed amount
+4. The next honest proposer resolves the fork
+
+### Slashing Details
+
+| Dimension        | Value          |
+| ---------------- | -------------- |
+| **Equivocation** | 90% of stake burned |
+| **Liveness**     | Not slashed in V1 (replaced at era boundary if inactive) |
+| **Reporting**    | Any validator submits evidence tx; receives 10% bounty |
+| **Evidence topic** | Gossiped on `mononium/evidence/{chain_id}` |
+| **Unstaking cooldown** | 7 days (constant, prevents gaming after violations) |
+
+Slashing evidence is a self-contained message proving the equivocation (two signed blocks from the same proposer at the same height). Any validator can submit it as an evidence transaction. Detection is automatic — validators see both blocks arrive via gossipsub.
 
 ## Future: GRANDPA (V2.0+)
 
@@ -119,14 +135,16 @@ TPS is not a fixed target — it emerges from:
 TPS ≈ block size / avg tx size / block time
 ```
 
-With 500 KB blocks, 5s block time, and typical tx sizes:
+With Falcon-512 signatures (666 bytes per tx), realistic tx sizes are larger than the original Ed25519 estimates:
 
 | Tx Size | TPS (approx) |
 | ------- | ------------ |
-| 100 B   | ~1,000       |
-| 250 B   | ~400         |
 | 500 B   | ~200         |
+| 800 B   | ~125         |
 | 1 KB    | ~100         |
+| 1.5 KB  | ~66          |
+
+Realistic V1 throughput: **100-200 TPS** with Falcon-512 signatures, which aligns with the "Cheap Validators First" philosophy.
 
 ## Mempool
 
@@ -205,12 +223,12 @@ ConsensusConfig {
 ## Consensus Overhead Includes
 
 - Message propagation
-- Signature aggregation
-- State validation per block
+- Falcon-512 signature verification (batch where possible)
+- State validation per block (SMT verification)
 
 ## Attack Resistance
 
-- **Nothing at stake**: To be addressed (slashing, checkpointing)
+- **Nothing at stake**: Addressed via slashing (90% equivocation penalty)
 - **Long-range attack**: To be addressed (key-evolving signatures or checkpointing)
 - **Censorship**: Multiple proposers via round-robin or VRF selection
 

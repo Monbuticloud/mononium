@@ -6,26 +6,32 @@ tags: [cryptography, security]
 
 ## Signature Scheme
 
-### Primary: Ed25519
+### Primary: Falcon-512
 
-- **Ed25519** is the default signing algorithm for V1
-- Fast verification (~60k sigs/sec per core)
-- Well-studied, constant-time implementations available
-- Small signatures (64 bytes)
-- Batch verification support for block validation
+- **Falcon-512** is the signing algorithm for all protocol operations
+- NIST Level I security (≈ AES-128)
+- Post-quantum secure — lattice-based
+- Constant-time signing implementation required
 
-### Future: Falcon (Post-Quantum)
+### Key Sizes
 
-- Falcon is noted as a post-quantum alternative
-- Deferred until post-quantum readiness is needed
-- Ed25519 is adequate for V1
+| Item            | Size      | Notes                                         |
+| --------------- | --------- | --------------------------------------------- |
+| Seed (entropy)  | 48 bytes  | Input to Falcon key generation                |
+| Private key     | 1281 bytes | Stored encrypted at rest                      |
+| Public key      | 897 bytes  | On-chain in validator records, gossiped to peers |
+| Signature       | 666 bytes  | Every transaction, block, and consensus vote   |
+
+### Future: No Plan to Change
+
+Falcon-512 is the permanent choice for V1. Post-quantum is already here — no need to "prepare" for it later. If Falcon-512 is ever broken, the `SignatureScheme` trait allows swapping without consensus changes.
 
 ## Hashing
 
 **BLAKE3** for all hashing needs:
 
 - Block hashing
-- State root computation
+- State root computation (Sparse Merkle Tree)
 - Transaction root (Merkle tree)
 - Address derivation
 - Merkle proofs
@@ -34,8 +40,9 @@ BLAKE3 is chosen for its speed — significantly faster than SHA-256 with strong
 
 ## Key Derivation
 
-- Signing key: Ed25519 private key (32 bytes)
-- Verification key: Ed25519 public key (32 bytes)
+- **Seed:** 48 random bytes (entropy for Falcon-512 keygen)
+- **Private key:** Generated from seed via Falcon-512 key generation (~10ms, offline)
+- **Public key:** 897 bytes, derived from private key
 
 ## Address Format
 
@@ -47,7 +54,7 @@ BLAKE3 is chosen for its speed — significantly faster than SHA-256 with strong
 
 | Component | Size                | Notes                                                     |
 | --------- | ------------------- | --------------------------------------------------------- |
-| Raw bytes | 32 bytes            | BLAKE3-256 hash of public key                             |
+| Raw bytes | 32 bytes            | BLAKE3-256 hash of **Falcon-512 public key**              |
 | Checksum  | 8 bytes             | First 8 bytes of BLAKE3(address_bytes) — not the key hash |
 | Display   | `0x` + 80 hex chars | 64 for address + 16 for checksum                          |
 
@@ -65,15 +72,29 @@ The checksum catches typos without requiring a full Bech32 library. It's appende
 
 ## Protocol Use
 
-| Component              | Algorithm          |
-| ---------------------- | ------------------ |
-| Transaction signatures | Ed25519            |
-| Block signatures       | Ed25519            |
-| Consensus votes        | Ed25519            |
-| Block hashing          | BLAKE3             |
-| State root             | BLAKE3 Merkle tree |
-| Tx root                | BLAKE3 Merkle tree |
-| Address derivation     | BLAKE3 (TBD)       |
+| Component              | Algorithm          | Size                |
+| ---------------------- | ------------------ | ------------------- |
+| Transaction signatures | Falcon-512         | 666 bytes           |
+| Block signatures       | Falcon-512         | 666 bytes           |
+| Consensus votes        | Falcon-512         | 666 bytes           |
+| Block hashing          | BLAKE3             | 32 bytes            |
+| State root             | BLAKE3 SMT         | 32 bytes            |
+| Tx root                | BLAKE3 Merkle tree | 32 bytes            |
+| Address derivation     | BLAKE3(pubkey)     | 32 bytes            |
+
+## Key Storage
+
+Validator keys are stored encrypted at rest:
+
+| Component       | Mechanism                                    |
+| --------------- | -------------------------------------------- |
+| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)           |
+| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel) |
+| **File format** | JSON: `{ "public_key": "0x...", "encrypted_seed": "base64...", "nonce": "base64..." }` |
+| **Location**    | `~/.mononium/keys/{name}.json`              |
+| **Crate**       | `argon2` (pure Rust, RustCrypto)            |
+
+Key generation is an **offline CLI operation** (`mononium-cli wallet keygen`). The 48-byte seed is encrypted to disk; the private key is re-derived at node startup. The Argon2id memory cost (~1 GiB) means ~5-10s unlock time — acceptable for a one-time startup operation.
 
 ---
 

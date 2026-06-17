@@ -20,7 +20,7 @@ UTXO was rejected for V1. Account model maps naturally to the mental model of "b
 
 ### 4. Performance Through Constraints
 
-Block time is fixed at 5s. Finality at 20s (4 blocks). Throughput emerges from block size + block time + tx format — it's not a fixed number. Target range is 100–10,000 TPS, with the actual ceiling determined by validator hardware constraints.
+Block time is fixed at 5s. Finality at 20s (4 blocks). Throughput emerges from block size + block time + tx format — it's not a fixed number. Target range is 100–200 TPS (accounting for Falcon-512 signature sizes), with the actual ceiling determined by validator hardware constraints.
 
 ### 5. Cheap Validators First
 
@@ -43,8 +43,8 @@ This is a systems-level project spanning distributed systems, cryptography, data
 | Decision             | Chose                | Over                     |
 | -------------------- | -------------------- | ------------------------ |
 | Account model        | Simplicity, UX       | UTXO's parallelizability |
-| Ed25519              | Speed, well-studied  | Falcon (post-quantum)    |
-| ITTIA DB Lite        | Determinism, low RAM | General-purpose DBs      |
+| Falcon-512           | Post-quantum ready   | Ed25519 speed            |
+| redb                 | Determinism, low RAM | General-purpose DBs      |
 | No sharding V1       | Complexity avoidance | Scale                    |
 | CLI first, GUI later | Focus                | Parallel delivery        |
 | Fixed 5s block       | Predictability       | Variable timing          |
@@ -57,7 +57,6 @@ This is a systems-level project spanning distributed systems, cryptography, data
 - Governance
 - Wallet UI / block explorer
 - Mobile support
-- Post-quantum security
 
 ---
 
