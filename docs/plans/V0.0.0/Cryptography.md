@@ -52,4 +52,4 @@ BLAKE3 is chosen for its speed — significantly faster than SHA-256 with strong
 
 ---
 
-**Related:** [Validators](Validators.md), [Protocol](Protocol.md)
+**Related:** [Validators](plans/V0.0.0/Validators.md), [Protocol](plans/V0.0.0/Protocol.md)

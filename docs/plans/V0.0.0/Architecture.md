@@ -111,4 +111,4 @@ No circular dependencies. The lib has zero knowledge of CLI or GUI — it's pure
 
 ---
 
-**Related:** [Protocol](Protocol.md), [Storage](Storage.md), [Validators](Validators.md), [Roadmap](Roadmap.md)
+**Related:** [Protocol](plans/V0.0.0/Protocol.md), [Storage](plans/V0.0.0/Storage.md), [Validators](plans/V0.0.0/Validators.md), [Roadmap](plans/V0.0.0/Roadmap.md)

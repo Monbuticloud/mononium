@@ -151,18 +151,20 @@ pub struct HybridFee {
 | ---------- | -------------------- | ------------------------------------ | ------------------ |
 | Flat fee   | **0.00667 MONEX**    | Minimum cost per tx (spam prevention) | Protocol parameter |
 | Per-byte   | **0.000467 MONEX**   | Proportional to state/storage cost    | Protocol parameter |
-| Min fee    | **0.0667 MONEX**     | Mempool entry threshold               | Protocol parameter |
 | Tip        | User-defined         | Priority for block inclusion          | Sender             |
 
 ```rust
 impl FeePolicy for HybridFee {
     fn calculate_fee(&self, tx: &Transaction) -> U256 {
+        // Protocol enforces correct fee calculation
         self.flat_fee + self.per_byte_rate * U256::from(tx.encoded_size()) + tx.tip
     }
 }
 ```
 
 These values are the same across all network tiers (Localnet, Devnet, Testnet, Mainnet). Swappable via `FeePolicy` trait.
+
+**Note on `min_fee`:** The mempool has a `min_fee` threshold (`0.0667 MONEX`) — this is a **local node policy**, not a consensus parameter. Each operator sets their own filter in `config.yaml`. A tx below `min_fee` is rejected from the local mempool but would still be valid in a block proposed by another validator. See [Mempool](../Consensus.md#Mempool).
 
 ## Genesis
 

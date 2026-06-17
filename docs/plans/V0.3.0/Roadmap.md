@@ -30,13 +30,14 @@ Ship `mononium-rust-lib` + `mononium-cli` first. GUI starts later.
 
 - [ ] Cargo workspace: `mononium-rust-lib` + `mononium-cli`
 - [ ] `mononium-rust-lib`: account types, U256, state machine
-- [ ] `mononium-rust-lib`: Ed25519 signing + BLAKE3 hashing
-- [ ] `mononium-rust-lib`: ITTIA DB Lite (mutable + append-only)
-- [ ] `mononium-rust-lib`: transaction types + serialization
+- [ ] `mononium-rust-lib`: Falcon-512 signing + BLAKE3 hashing
+- [ ] `mononium-rust-lib`: redb (mutable + append-only)
+- [ ] `mononium-rust-lib`: Sparse Merkle Tree implementation
+- [ ] `mononium-rust-lib`: transaction types + SCALE/JSON serialization
 - [ ] `mononium-rust-lib`: block structure + hashing
 - [ ] `mononium-rust-lib`: basic mempool
 - [ ] `mononium-cli`: node daemon (single-node mode)
-- [ ] `mononium-cli`: wallet keygen, transfer command
+- [ ] `mononium-cli`: wallet keygen (Falcon-512), transfer command
 
 **Goal:** `mononium-cli node` produces blocks locally. `mononium-cli wallet transfer` sends txs.
 

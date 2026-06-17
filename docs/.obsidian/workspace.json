@@ -11,10 +11,14 @@
             "id": "da452a15a9f51dda",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {},
+              "type": "markdown",
+              "state": {
+                "file": "plans/V0.3.0/Network.md",
+                "mode": "source",
+                "source": false
+              },
               "icon": "lucide-file",
-              "title": "New tab"
+              "title": "Network"
             }
           }
         ]
@@ -90,6 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "plans/V0.3.0/Network.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -99,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks"
+              "title": "Backlinks for Network"
             }
           },
           {
@@ -108,11 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "plans/V0.3.0/Network.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links"
+              "title": "Outgoing links from Network"
             }
           },
           {
@@ -150,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "plans/V0.2.0/Architecture.md",
+                "file": "plans/V0.3.0/Network.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Architecture"
+              "title": "Outline of Network"
             }
           }
         ]
@@ -177,37 +183,39 @@
       "bases:Create new base": false
     }
   },
-  "active": "64dd549c87b09fc6",
+  "active": "da452a15a9f51dda",
   "lastOpenFiles": [
-    "formatting.md",
-    "plans/V0.2.0/Validators.md",
-    "plans/V0.2.0/Storage.md",
-    "plans/V0.2.0/Roadmap.md",
+    "plans/V0.3.0/Protocol.md",
+    "plans/V0.3.0/Architecture.md",
     "plans/V0.2.0/Protocol.md",
-    "plans/V0.2.0/Philosophy.md",
-    "plans/V0.2.0/Network.md",
-    "plans/V0.2.0/Mainflow.md",
-    "plans/V0.2.0/Cryptography.md",
+    "plans/V0.3.0/Validators.md",
+    "plans/V0.3.0/Testing.md",
+    "plans/V0.3.0/Storage.md",
+    "plans/V0.3.0/Roadmap.md",
+    "plans/V0.3.0/Philosophy.md",
+    "plans/V0.3.0/Network.md",
+    "plans/V0.3.0/Mainflow.md",
+    "plans/V0.3.0/Cryptography.md",
+    "plans/V0.3.0/Consensus.md",
+    "plans/V0.3.0",
+    "plans/V0.3.0/Storage.md",
+    "plans/V0.3.0/Validators.md",
+    "plans/V0.3.0/Testing.md",
+    "plans/V0.3.0/Roadmap.md",
+    "plans/V0.3.0/Philosophy.md",
+    "plans/V0.3.0/Network.md",
+    "plans/V0.3.0/Mainflow.md",
+    "plans/V0.3.0/Cryptography.md",
+    "plans/V0.3.0/Consensus.md",
+    "plans/V0.3.0",
     "plans/V0.2.0/Consensus.md",
-    "plans/V0.2.0/Architecture.md",
+    "plans/V0.3.0/Validators.md",
+    "plans/V0.3.0/Testing.md",
+    "plans/V0.3.0",
+    "plans/V0.2.0",
     "plans/V0.2.0",
     "Untitled.base",
-    "plans/V0.1.0/Protocol.md",
-    "plans/V0.0.0 1/Validators.md",
-    "plans/V0.0.0 1/Storage.md",
-    "plans/V0.0.0 1/Roadmap.md",
-    "plans/V0.0.0 1/Protocol.md",
-    "plans/V0.0.0 1/Philosophy.md",
-    "plans/V0.0.0 1/Network.md",
-    "plans/V0.0.0 1/Mainflow.md",
-    "plans/V0.0.0 1/Cryptography.md",
-    "plans/V0.0.0 1/Consensus.md",
-    "plans/V0.0.0 1/Architecture.md",
     "plans/V0.0.0 1",
-    "plans/V0.2.0/Validators.md",
-    "plans/V0.2.0/Storage.md",
-    "plans/V0.2.0/Roadmap.md",
-    "plans/V0.2.0/Protocol.md",
     "plans/V0.2.0"
   ]
 }

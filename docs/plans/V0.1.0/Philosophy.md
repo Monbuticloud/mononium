@@ -61,4 +61,4 @@ This is a systems-level project spanning distributed systems, cryptography, data
 
 ---
 
-**Next:** [Architecture](Architecture.md)
+**Next:** [Architecture](plans/V0.1.0/Architecture.md)

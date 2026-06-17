@@ -49,12 +49,13 @@ mononium/
 | Database           | redb (DI for RocksDB later)         | ADR-007 |
 | P2P                | libp2p (gossipsub, kademlia)        | ADR-008 |
 | Serialization      | SCALE (wire) + JSON (RPC)           | ADR-009 |
-| Address            | RawHex + BLAKE3 checksum            | ADR-010 |
+| Address            | RawHex + BLAKE3 checksum            | ADR-010 (deprecated), ADR-016 |
 | Mempool            | Tip → Time → Nonce                  | ADR-011 |
 | RPC                | jsonrpsee + REST hybrid             | ADR-012 |
 | CLI                | clap derive                         | ADR-013 |
 | Eras               | 720 blocks, era 0 open              | ADR-014 |
 | Genesis            | 10/10/100/0 distribution            | ADR-015 |
+| Cryptography       | Falcon-512, constant-time           | ADR-016 |
 
 ### Tech stack (standard Rust ecosystem)
 

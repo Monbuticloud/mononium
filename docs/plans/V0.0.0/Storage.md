@@ -77,4 +77,4 @@ graph LR
 
 ---
 
-**Related:** [Architecture](Architecture.md), [Protocol](Protocol.md)
+**Related:** [Architecture](plans/V0.0.0/Architecture.md), [Protocol](plans/V0.0.0/Protocol.md)

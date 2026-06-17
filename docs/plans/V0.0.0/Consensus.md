@@ -70,4 +70,4 @@ Validator set rotates via staking. Active validators are selected from the stake
 
 ---
 
-**Related:** [Validators](Validators.md), [Protocol](Protocol.md)
+**Related:** [Validators](plans/V0.0.0/Validators.md), [Protocol](plans/V0.0.0/Protocol.md)

@@ -21,16 +21,16 @@ graph LR
 
 | Area            | Doc                     | Key Decisions                                 |
 | --------------- | ----------------------- | --------------------------------------------- |
-| 🧠 Philosophy   | [Philosophy](Philosophy.md)   | Account-based, minimalism, portfolio project  |
-| 🏗️ Architecture | [Architecture](Architecture.md) | Cargo workspace: lib + CLI + GUI              |
-| 👥 Validators   | [Validators](Validators.md)   | Cheap VPS target, PoS, lightweight            |
-| ⚡ Consensus    | [Consensus](Consensus.md)    | PoS, 5s block, 20s finality                   |
-| 💾 Storage      | [Storage](Storage.md)      | ITTIA DB Lite, mutable + append-only tables   |
-| 📋 Protocol     | [Protocol](Protocol.md)     | Account model, native tx first, state machine |
-| 🌐 Network      | [Network](Network.md)      | Localnet → Devnet → Testnet → Mainnet         |
-| 🔐 Cryptography | [Cryptography](Cryptography.md) | Ed25519, BLAKE3, Falcon later                 |
-| 🗺️ Roadmap      | [Roadmap](Roadmap.md)      | 5 phases, benchmark early                     |
+| 🧠 Philosophy   | [Philosophy](plans/V0.0.0/Philosophy.md)   | Account-based, minimalism, portfolio project  |
+| 🏗️ Architecture | [Architecture](plans/V0.0.0/Architecture.md) | Cargo workspace: lib + CLI + GUI              |
+| 👥 Validators   | [Validators](plans/V0.0.0/Validators.md)   | Cheap VPS target, PoS, lightweight            |
+| ⚡ Consensus    | [Consensus](plans/V0.0.0/Consensus.md)    | PoS, 5s block, 20s finality                   |
+| 💾 Storage      | [Storage](plans/V0.0.0/Storage.md)      | ITTIA DB Lite, mutable + append-only tables   |
+| 📋 Protocol     | [Protocol](plans/V0.0.0/Protocol.md)     | Account model, native tx first, state machine |
+| 🌐 Network      | [Network](plans/V0.0.0/Network.md)      | Localnet → Devnet → Testnet → Mainnet         |
+| 🔐 Cryptography | [Cryptography](plans/V0.0.0/Cryptography.md) | Ed25519, BLAKE3, Falcon later                 |
+| 🗺️ Roadmap      | [Roadmap](plans/V0.0.0/Roadmap.md)      | 5 phases, benchmark early                     |
 
 ---
 
-> **Next:** Start with [Philosophy](Philosophy.md) to understand the design rationale.
+> **Next:** Start with [Philosophy](plans/V0.0.0/Philosophy.md) to understand the design rationale.

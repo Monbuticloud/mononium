@@ -160,9 +160,11 @@ Transaction pool ordering:
 pub struct MempoolConfig {
     pub max_size: usize,     // 10,000
     pub ttl: Duration,       // 10 minutes
-    pub min_fee: U256,       // minimum fee to enter pool
+    pub min_fee: U256,       // local filter — not a consensus parameter
 }
 ```
+
+The `min_fee` is a local node policy. Each operator sets their own threshold (default: `0.0667 MONEX`). A tx below this fee is rejected from the local mempool but is still valid if included by another validator. This lets operators tune their own spam tolerance without affecting consensus.
 
 The proposer selects the highest-priority txs for their block up to the 500 KB limit.
 
@@ -192,6 +194,25 @@ slot 4: validator_1  (cycles)
 ### Future: VRF Leader Election (V2.0+)
 
 Randomized proposer selection via Verifiable Random Function. Each validator runs VRF each slot; lowest output wins.
+
+### Missed Slots
+
+If the proposer for a slot is offline, the **slot goes empty**:
+
+- After 5s (block time elapses) with no block from the expected proposer, validators do nothing
+- No votes are cast (nothing to vote on)
+- The next proposer in the round-robin schedule builds on the last canonical block
+- Height increments only when a block is actually proposed
+
+Example:
+```
+slot  0: V1 proposes Block 10  ✓
+slot  1: V2 is offline          → empty slot
+slot  2: V3 proposes Block 11  ✓  (builds on Block 10)
+slot  3: V4 proposes Block 12  ✓
+```
+
+**No liveness penalty** — V1 has no liveness slashing. An inactive validator will be replaced at the next era boundary if their stake drops below the Top-N threshold.
 
 ### DI Pattern
 
