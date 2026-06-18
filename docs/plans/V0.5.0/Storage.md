@@ -60,21 +60,13 @@ enum ValidatorStatus {
 | `tx_body`    | `(u64, u32)` (height, idx)| `Transaction`        | Full SCALE-encoded tx, indexed in-block |
 | `block_votes`| `u64` (height)            | `Vec<CommitVote>`    | All commit votes for a block            |
 
+`BlockHeader` structure is defined in [Protocol](plans/V0.5.0/Protocol.md#Block-Structure).
+
 ```rust
 struct BlockEntry {
-    header: BlockHeader,
+    header: BlockHeader,  // defined in Protocol.md
     tx_count: u32,
     total_bytes: u32,           // sum of all tx + vote SCALE sizes
-}
-
-struct BlockHeader {
-    height: u64,
-    parent_hash: [u8; 32],
-    state_root: [u8; 32],
-    tx_root: [u8; 32],
-    timestamp: u64,
-    proposer: [u8; 32],
-    chain_id: u64,
 }
 
 struct TxLocation {
@@ -83,20 +75,7 @@ struct TxLocation {
 }
 ```
 
-## Key Storage
-
-Validator Falcon-512 keys are stored encrypted at rest in JSON files:
-
-| Component       | Specification                                     |
-| --------------- | ------------------------------------------------- |
-| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                |
-| **KDF**         | Argon2id (512 MiB memory, 4 iterations, 4 parallel) |
-| **Crate**       | `argon2` (pure Rust, RustCrypto)                  |
-| **File format** | `{ "public_key": "0x...", "encrypted_seed": "base64...", "nonce": "base64..." }` |
-| **Location**    | `~/.mononium/keys/{name}.json`                    |
-| **Unlock**      | CLI prompts for passphrase, derives key via Argon2id (~2.5-5s), decrypts seed |
-
-The public key (897 bytes) is stored in plaintext — it's public by definition. The 48-byte Falcon-512 seed is the only secret. The Argon2id memory cost prevents offline brute-force of the encrypted seed file.
+Key storage is documented in [Cryptography](plans/V0.5.0/Cryptography.md#Key-Storage).
 
 ## Storage Engine DI
 
@@ -278,4 +257,4 @@ Written at every era boundary (720 blocks @ 5s = 1 per hour). Archive nodes reta
 
 ---
 
-**Related:** [Architecture](plans/V0.5.0/Architecture.md), [Protocol](plans/V0.5.0/Protocol.md)
+**Related:** [Architecture](plans/V0.5.0/Architecture.md), [Protocol](plans/V0.5.0/Protocol.md), [Cryptography](plans/V0.5.0/Cryptography.md)

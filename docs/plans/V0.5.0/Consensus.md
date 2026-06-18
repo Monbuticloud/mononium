@@ -152,73 +152,7 @@ CommitVote {
 
 ## Forks
 
-If a proposer equivocates (proposes two blocks at the same slot), validators:
-
-1. Reject duplicates at the protocol level
-2. **Slash** 90% of the validator's stake (10% remains staked with the validator)
-3. The **reporter** (validator who submitted the evidence) receives a **10% bounty** of the slashed amount, added to their validator stake
-4. The next honest proposer resolves the fork
-
-### Slashing Details
-
-| Dimension              | Value                                                                        |
-| ---------------------- | ---------------------------------------------------------------------------- |
-| **Equivocation**       | 90% of stake is slashed; 10% remains staked with the validator               |
-| **Burn**               | 90% of slashed amount → Burn address (`0x00..00`)                            |
-| **Reporter bounty**    | 10% of slashed amount → added to reporter's **validator stake**              |
-| **Validator retains**  | 10% of original stake **stays staked** — not ejected from candidate pool     |
-| **Burn effect**        | Coins at Burn address are permanently destroyed. No effect on inflation cap. |
-| **Liveness**           | Not slashed in V1 (replaced at era boundary if inactive)                     |
-| **Evidence topic**     | Gossiped on `mononium/evidence/{chain_id}`                                   |
-| **Unstaking cooldown** | 7 days (constant, prevents gaming after violations)                          |
-
-Example: validator with 1000 MONEX staked equivocates:
-
-```
-1000 stake
-  ↓
-  900 slashed (90%)   → 810 Burn, 90 to reporter's stake
-  100 remains          → still staked with validator
-```
-
-**Bounty is staked, not liquid:** The 10% reporter bounty is added to the reporter's validator stake, not their transferable balance. This prevents two attack vectors:
-
-1. **Slash-and-dump** — a validator who spots equivocation cannot immediately withdraw and cash out the reward
-2. **Collusion exit** — the attacker and reporter cannot collude to bypass the unstaking cooldown (attacker intentionally equivocates, reporter gets liquid bounty, they split it out-of-band). With the bounty staked, both sides are bound by the 7-day unstaking lock.
-
-**Validator's remaining 10% stays staked** — the validator is not ejected from the candidate pool. They keep a reduced stake and can continue validating (if still in Top-N) or choose to unstake with the standard 7-day cooldown.
-
-**Two special addresses:**
-
-| Address    | Role           | Effect                                                                                                                                             |
-| ---------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0x00..00` | **Burn**       | Slashed stake (90%) sent here. Permanently destroyed. No cap effect.                                                                               |
-| `0x00..01` | **Cap-Refill** | Voluntarily send MONEX here to expand the mainnet inflation cap. Coins are a sink (irreversible). Effective max supply = 10B + cap_refill_balance. |
-
-The Burn address and Cap-Refill address are known protocol constants. Anyone can send to either, but only slashing logic uses Burn automatically.
-
-Slashing evidence is an `EquivocationEvidence` message containing the **block headers + Falcon signatures** (not the full blocks). This keeps evidence small (~1.5 KB per event vs ~1 MB for full blocks).
-
-```rust
-/// Proof that a validator signed two different blocks at the same height
-struct EquivocationEvidence {
-    pub header_a: BlockHeader,
-    pub signature_a: [u8; 666],
-    pub header_b: BlockHeader,
-    pub signature_b: [u8; 666],
-    pub proposer: [u8; 32],       // validator address — evidence must be verifiable outside era context
-}
-```
-
-**Verification:**
-
-1. `header_a.height == header_b.height`
-2. `header_a.parent_hash == header_b.parent_hash` (same slot — resolves to same parent)
-3. `header_a != header_b` (distinct blocks — proves equivocation, not re-gossip)
-4. `falcon_verify(proposer_pk, header_a, signature_a)` — both genuinely signed
-5. `falcon_verify(proposer_pk, header_b, signature_b)` — both genuinely signed
-
-If all checks pass, the proposer is slashed 90% and the reporter receives a 10% bounty.
+Slashing is documented in a separate file: [Slashing](plans/V0.5.0/Slashing.md).
 
 ## Future: GRANDPA (V2.0+)
 
@@ -243,49 +177,7 @@ With Falcon-512 signatures (666 bytes per tx), realistic tx sizes are larger tha
 
 Realistic V1 throughput: **100-200 TPS** with Falcon-512 signatures, which aligns with the "Cheap Validators First" philosophy.
 
-## Mempool
-
-Transaction pool ordering:
-
-| Priority | Field         | Order          | Why                |
-| -------- | ------------- | -------------- | ------------------ |
-| 1        | Tip           | Highest first  | Economic incentive |
-| 2        | Time received | Earliest first | Fairness           |
-| 3        | Nonce         | Lowest first   | Prevent nonce gaps |
-
-### Nonce Buffering
-
-Out-of-order nonces are **buffered** — the mempool does not relay or select a tx until all lower nonces from the same sender have been received. This prevents nonce gaps from blocking block production.
-
-- **Buffer expiry:** 10 minutes (matches mempool TTL)
-- **Per-sender cap:** 30 buffered nonces — if exceeded, oldest buffered tx is dropped for that sender
-- **Sender spam mitigation:** the cap prevents an adversary from filling the mempool with nonces from a single key
-
-Once the missing lower nonce arrives, all buffered txs from that sender are released into the relay/selection pool in nonce order.
-
-### Configuration
-
-```rust
-pub struct MempoolConfig {
-    pub max_size: usize,              // 10,000
-    pub ttl: Duration,                // 10 minutes
-    pub min_fee: U256,                // local filter — see [NodeConfig](./NodeConfig.md#mempoolmin_fee)
-    pub max_pending_per_sender: u32,  // 30 — per-sender nonce buffer cap
-    pub max_tx_per_account_per_block: u32, // 50 — per-account rate limit
-}
-```
-
-The `min_fee` is a local node policy. Each operator sets their own threshold (default: `0.0667 MONEX`). A tx below this fee is rejected from the local mempool but is still valid if included by another validator. This lets operators tune their own spam tolerance without affecting consensus.
-
-### Block Hard Cap
-
-Blocks are limited to **500 transactions OR 1 MB of SCALE-encoded block data**, whichever is hit first. The proposer selects the highest-priority txs from the mempool up to this limit.
-
-With the per-account rate limit of 50 txs/block, at least 10 distinct accounts are needed to fill a block. Batch operations (e.g., distributing rewards to 200 recipients) will span ~4 blocks (20s). Wallet and tooling developers should account for this constraint.
-
-### Rate Limit
-
-Each account is limited to **50 transactions per block** at the mempool level. This is a local node policy (like `min_fee`), not a consensus rule — a validator can tighten their own limit. Combined with the per-tx deposit model, this creates two independent anti-spam layers: economic (capital locks) and congestion (block space).
+Mempool is documented in a separate file: [Mempool](plans/V0.5.0/Mempool.md).
 
 ## Validator Election
 
@@ -458,4 +350,4 @@ If VRF leader election or GRANDPA finality is added, explicit fork-choice rules 
 
 ---
 
-**Related:** [Validators](plans/V0.5.0/Validators.md), [Protocol](plans/V0.5.0/Protocol.md)
+**Related:** [Validators](plans/V0.5.0/Validators.md), [Protocol](plans/V0.5.0/Protocol.md), [Slashing](plans/V0.5.0/Slashing.md), [Mempool](plans/V0.5.0/Mempool.md)

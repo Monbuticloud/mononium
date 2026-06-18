@@ -83,31 +83,7 @@ Era 1+:  Inactive → Registered → Staked → Active → Unstaking → Inactiv
 
 ### Slashing
 
-If a validator equivocates (signs two blocks at the same height):
-
-| Penalty           | Value                         | Destination                                          |
-| ----------------- | ----------------------------- | ---------------------------------------------------- |
-| Slashed           | **90%** of total staked MONEX | Removed from validator                               |
-| Burned            | **90% of slashed amount**     | Burn address (`0x00..00`)                            |
-| Reporter bounty   | **10% of slashed amount**     | Added to reporter's **validator stake**              |
-| Validator retains | **10% of original stake**     | **Stays staked** — not moved to transferable balance |
-
-Example: a validator with 1000 MONEX staked equivocates:
-
-- 900 slashed (90%): 810 → Burn, 90 → reporter's stake
-- 100 remains with validator, still staked
-- Validator stays in the candidate pool with reduced influence
-
-**Bounty is staked, not liquid:** The reporter's bounty is added to their validator stake, not their transferable balance. This prevents both **slash-and-dump** (immediate cash-out by the reporter) and **collusion exit** (attacker + reporter colluding to bypass the unstaking cooldown). The bounty is subject to the same 7-day unstaking cooldown as any other stake.
-
-**Validator's remaining 10% stays staked** — it is not moved to the transferable balance. The validator can continue staking (with reduced weight) or choose to unstake with the standard 7-day cooldown.
-
-- Slashing is **equivocation only** in V1 (no liveness slashing)
-- Inactive validators are simply replaced at the next era boundary
-- Evidence is gossiped on the `mononium/evidence/{chain_id}` topic
-- Any validator can submit evidence as a transaction
-- Coins sent to Burn are permanently destroyed — no effect on supply cap
-- The Cap-Refill address (`0x00..01`) is unrelated to slashing; see [Supply](../plans/V0.5.0/Protocol.md#Token-Supply)
+Slashing mechanics are documented in [Slashing](plans/V0.5.0/Slashing.md).
 
 ## Staking
 
@@ -118,22 +94,11 @@ Example: a validator with 1000 MONEX staked equivocates:
 
 ## Key Management
 
-Validator keys use **Falcon-512** and are stored encrypted at rest:
-
-| Step            | Description                                                                                     |
-| --------------- | ----------------------------------------------------------------------------------------------- |
-| **Generation**  | `mononium-cli wallet keygen --name my-validator` generates Falcon-512 keys (~10ms, offline)     |
-| **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                                                              |
-| **KDF**         | Argon2id (512 MiB memory, 4 iterations, 4 parallel) — `argon2` crate                            |
-| **File**        | `~/.mononium/keys/my-validator.json` — contains public key (plaintext) + encrypted seed         |
-| **Loading**     | `mononium-cli node --key my-validator` (or via config file, see [NodeConfig](./NodeConfig.md)) prompts for passphrase, decrypts, re-derives private key |
-| **Unlock time** | ~2.5-5s due to Argon2id memory cost (one-time at startup)                                      |
-
-The public key (897 bytes) is stored in plaintext in the key file. Only the 48-byte seed is encrypted. The private key (1281 bytes) is re-derived from the seed at node startup.
+Key generation, storage, and loading are documented in [Cryptography](plans/V0.5.0/Cryptography.md#Key-Storage).
 
 ## Rewards
 
-Fee income is distributed **pro-rata by stake** across all active validators at the end of every block — **not** kept by the proposer. See [Protocol](Protocol.md#Fee-Distribution) for the full distribution mechanics.
+Fee income is distributed **pro-rata by stake** across all active validators at the end of every block — **not** kept by the proposer. See [Fees](plans/V0.5.0/Fees.md) for the full distribution mechanics.
 
 ### Dev Networks (Localnet, Devnet, Testnet)
 
@@ -147,7 +112,7 @@ Fee income is distributed **pro-rata by stake** across all active validators at 
 **Transaction fees + block rewards** — capped inflation provides the block reward component.
 
 - Fees distributed identically to dev networks (pro-rata by stake, per block)
-- Block rewards defined by `CappedInflation` policy (see [Protocol](Protocol.md#Token-Supply))
+- Block rewards defined by `CappedInflation` policy (see [Genesis](plans/V0.5.0/Genesis.md#Token-Supply))
 - Block rewards are minted per block and added to the fee pool before distribution, or distributed separately — the state machine handles both identically (both go to validators pro-rata by stake)
 
 ## Multi-Validator Simulation
@@ -173,4 +138,4 @@ Validators operate on 4 network tiers:
 
 ---
 
-**Related:** [Consensus](plans/V0.5.0/Consensus.md), [Network](plans/V0.5.0/Network.md)
+**Related:** [Consensus](plans/V0.5.0/Consensus.md), [Network](plans/V0.5.0/Network.md), [Slashing](plans/V0.5.0/Slashing.md), [Cryptography](plans/V0.5.0/Cryptography.md)
