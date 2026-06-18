@@ -22,6 +22,8 @@ gantt
     Public testnet                :p4, after p3, 60d
     section Phase 5
     Mainnet + GUI complete        :p5, after p4, 60d
+    section V2
+    Native AMM + Bridge           :v2, after p5, 90d
 ```
 
 ## Phase 1 — Workspace Setup + Local Prototype
@@ -90,6 +92,19 @@ Ship `mononium-rust-lib` + `mononium-cli` first. GUI starts later.
 - [ ] `mononium-cli`: all commands stable
 
 **Goal:** Production.
+
+## V2 — DeFi (developed late V1, ships after mainnet)
+
+- [ ] **Native stableswap AMM** — built-in constant-product pools for MONEX trading. No LP-token dependency — pools are protocol-level, not contract-level
+- [ ] Bridge to external chains (wrapped MONEX on Solana/Ethereum, or cross-chain messaging)
+- [ ] VRF leader election (replaces round-robin)
+- [ ] GRANDPA finality gadget (optional — only if BFT per block proves insufficient)
+- [ ] Governance / upgrade mechanism
+- [ ] Phragmén NPoS (replaces Top-N)
+- [ ] Treasury / dev fund from inflation
+- [ ] Smart contracts (WASM or EVM)
+
+**Goal:** DeFi ecosystem, cross-chain interoperability, permissionless application layer.
 
 ## Workspace Progression
 

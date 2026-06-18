@@ -80,6 +80,9 @@ mononium-rust-lib/src/
 │   ├── finality.rs           # BFT commit tracking
 │   ├── slashing.rs           # Evidence types, slash logic (90% + bounty)
 │   └── supply.rs             # SupplyPolicy trait, FixedSupply
+├── config/
+│   ├── mod.rs                # Config struct, load (YAML + TOML), merge with CLI
+│   └── constants.rs          # Default ports, paths, field bounds
 ├── mempool/
 │   ├── mod.rs                # Mempool struct, insert/remove/select
 │   ├── constants.rs          # Mempool constants (max_size, ttl, min_fee)
@@ -109,6 +112,7 @@ mononium-rust-lib/src/
 | `core/`      | Account types, U256, state machine, tx processing                   |
 | `consensus/` | PoS consensus engine                                                |
 | `mempool/`   | Transaction pool (tip → time → nonce ordering)                      |
+| `config/`    | Node config load/merge (YAML + TOML), CLI flag binding              |
 | `crypto/`    | Falcon-512 signing/verification, BLAKE3 hashing, Sparse Merkle Trie |
 | `storage/`   | redb database (mutable + append-only tables, StorageEngine trait)   |
 | `network/`   | P2P networking, peer discovery, message gossip                      |
@@ -251,20 +255,22 @@ ConsensusConfig {
 When `mononium-cli node` is invoked, the initialization follows this ordered sequence:
 
 ```
- 1. Parse CLI args (clap) — --genesis, --key, --bootnodes, --p2p-port, etc.
- 2. Load key metadata — read ~/.mononium/keys/{name}.json, identify validator address
- 3. Prompt for passphrase — enter to unlock the encrypted seed
- 4. Derive key — Argon2id (1 GiB, ~5-10s) → NaCl secretbox decrypt → re-derive Falcon-512 private key
- 5. **[y/N] confirmation prompt** — show startup preview, ask user to confirm before proceeding
- 6. Open/init redb database — at ~/.mononium/data/{network}/
- 7. If no DB exists → load genesis JSON → build initial SMT → write genesis block (height 0)
- 8. Load state from DB — current height, SMT root, validator set, era index
- 9. Start libp2p host — bind P2P port (default 30333), subscribe to 4 gossipsub topics
-10. Connect to bootstrap peers — kademlia discovers additional peers on same chain_id
-11. Initialize consensus engine — compute proposer schedule for current era
-12. Start slot timer — begin listening for block production / voting slots
-13. Start RPC servers — jsonrpsee (WebSocket) on 9944, axum (REST) on 9933
-14. Register signal handlers — SIGINT/SIGTERM → graceful shutdown
+ 1. Parse CLI args (clap) — identify --config path if present
+ 2. Load config file — resolve via search order (see [NodeConfig](./NodeConfig.md))
+ 3. Merge settings — CLI flags override config file override defaults
+ 4. Load key metadata — read ~/.mononium/keys/{name}.json, identify validator address
+ 5. Prompt for passphrase — enter to unlock the encrypted seed
+ 6. Derive key — Argon2id (512 MiB, ~2.5-5s) → NaCl secretbox decrypt → re-derive Falcon-512 private key
+ 7. **[y/N] confirmation prompt** — show startup preview, ask user to confirm before proceeding
+ 8. Open/init redb database — at {data_dir}/{chain_id}/
+ 9. If no DB exists → load genesis JSON → build initial SMT → write genesis block (height 0)
+10. Load state from DB — current height, SMT root, validator set, era index
+11. Start libp2p host — bind P2P port, subscribe to 4 gossipsub topics
+12. Connect to bootstrap peers — kademlia discovers additional peers on same chain_id
+13. Initialize consensus engine — compute proposer schedule for current era
+14. Start slot timer — begin listening for block production / voting slots
+15. Start RPC servers — jsonrpsee (WebSocket) on rpc_port, axum (REST) on rest_port
+16. Register signal handlers — SIGINT/SIGTERM → graceful shutdown
 ```
 
 ### Startup Preview

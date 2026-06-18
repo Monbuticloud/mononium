@@ -89,12 +89,12 @@ Validator keys are stored encrypted at rest:
 | Component       | Mechanism                                    |
 | --------------- | -------------------------------------------- |
 | **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)           |
-| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel) |
+| **KDF**         | Argon2id (512 MiB memory, 4 iterations, 4 parallel) |
 | **File format** | JSON: `{ "public_key": "0x...", "encrypted_seed": "base64...", "nonce": "base64..." }` |
 | **Location**    | `~/.mononium/keys/{name}.json`              |
 | **Crate**       | `argon2` (pure Rust, RustCrypto)            |
 
-Key generation is an **offline CLI operation** (`mononium-cli wallet keygen`). The 48-byte seed is encrypted to disk; the private key is re-derived at node startup. The Argon2id memory cost (~1 GiB) means ~5-10s unlock time — acceptable for a one-time startup operation.
+Key generation is an **offline CLI operation** (`mononium-cli wallet keygen`). The 48-byte seed is encrypted to disk; the private key is re-derived at node startup. The Argon2id memory cost (512 MiB) means ~2.5-5s unlock time — acceptable for a one-time startup operation.
 
 ---
 

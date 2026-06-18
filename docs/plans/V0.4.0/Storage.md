@@ -25,20 +25,63 @@ redb's table abstraction maps cleanly to our data model:
 
 ### Mutable (Live State)
 
-| Table        | Key                  | Value                   | Notes                                      |
-| ------------ | -------------------- | ----------------------- | ------------------------------------------ |
-| `accounts`   | `[u8; 32]` (address) | `(U256, u64, [u8; 32])` | balance, nonce, code_hash                  |
-| `validators` | `[u8; 32]` (pubkey)  | `(U256, u8)`            | stake, status (active/staking/unstaking)   |
-| `meta`       | string key           | any                     | Chain metadata, current height, state root |
+| Table        | Key                      | Value                     | Notes                                      |
+| ------------ | ------------------------ | ------------------------- | ------------------------------------------ |
+| `accounts`   | `[u8; 32]` (address)     | `Account`                 | balance, nonce, code_hash                  |
+| `validators` | `[u8; 32]` (pubkey)      | `Validator`               | stake, status                              |
+| `meta`       | string key               | `Vec<u8>`                 | Chain metadata, current height, state root |
+
+```rust
+struct Account {
+    balance: U256,              // MOXX
+    nonce: u64,
+    code_hash: Option<[u8; 32]>,
+}
+
+struct Validator {
+    stake: U256,                // MOXX
+    status: ValidatorStatus,    // Active | Staking | Unstaking | Slashed
+}
+
+enum ValidatorStatus {
+    Active,
+    Staking,
+    Unstaking { release_era: u64 },
+    Slashed,
+}
+```
 
 ### Append-Only (History/Ledger)
 
-| Table          | Key                  | Value                   | Notes                   |
-| -------------- | -------------------- | ----------------------- | ----------------------- |
-| `blocks`       | `u64` (height)       | Block header + tx count | Canonical chain         |
-| `tx_by_hash`   | `[u8; 32]` (tx hash) | `(u64, u32, u32)`       | height → index → offset |
-| `tx_by_height` | `(u64, u32)`         | Transaction bytes       | Order within block      |
-| `votes`        | `(u64, u32)`         | Consensus votes         | Per-block commit votes  |
+| Table        | Key                       | Value                | Notes                                   |
+| ------------ | ------------------------- | -------------------- | --------------------------------------- |
+| `blocks`     | `u64` (height)            | `BlockEntry`         | Header only, canonical chain            |
+| `tx_lookup`  | `[u8; 32]` (tx hash)      | `TxLocation`         | Maps tx hash → position in chain        |
+| `tx_body`    | `(u64, u32)` (height, idx)| `Transaction`        | Full SCALE-encoded tx, indexed in-block |
+| `block_votes`| `u64` (height)            | `Vec<CommitVote>`    | All commit votes for a block            |
+
+```rust
+struct BlockEntry {
+    header: BlockHeader,
+    tx_count: u32,
+    total_bytes: u32,           // sum of all tx + vote SCALE sizes
+}
+
+struct BlockHeader {
+    height: u64,
+    parent_hash: [u8; 32],
+    state_root: [u8; 32],
+    tx_root: [u8; 32],
+    timestamp: u64,
+    proposer: [u8; 32],
+    chain_id: u64,
+}
+
+struct TxLocation {
+    height: u64,
+    index: u32,                  // position within the block
+}
+```
 
 ## Key Storage
 
@@ -47,11 +90,11 @@ Validator Falcon-512 keys are stored encrypted at rest in JSON files:
 | Component       | Specification                                     |
 | --------------- | ------------------------------------------------- |
 | **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                |
-| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel) |
+| **KDF**         | Argon2id (512 MiB memory, 4 iterations, 4 parallel) |
 | **Crate**       | `argon2` (pure Rust, RustCrypto)                  |
 | **File format** | `{ "public_key": "0x...", "encrypted_seed": "base64...", "nonce": "base64..." }` |
 | **Location**    | `~/.mononium/keys/{name}.json`                    |
-| **Unlock**      | CLI prompts for passphrase, derives key via Argon2id (~5-10s), decrypts seed |
+| **Unlock**      | CLI prompts for passphrase, derives key via Argon2id (~2.5-5s), decrypts seed |
 
 The public key (897 bytes) is stored in plaintext — it's public by definition. The 48-byte Falcon-512 seed is the only secret. The Argon2id memory cost prevents offline brute-force of the encrypted seed file.
 
@@ -76,9 +119,12 @@ pub trait StorageEngine: Send + Sync {
 ```rust
 use redb::{Database, TableDefinition, ReadableTable, WriteTransaction};
 
-// Column families defined at compile time
-const ACCOUNTS: TableDefinition<[u8; 32], [u8; 64]> = TableDefinition::new("accounts");
-const BLOCKS: TableDefinition<u64, &[u8]> = TableDefinition::new("blocks");
+// redb table definitions (value is always SCALE-encoded bytes of the struct)
+const ACCOUNTS:     TableDefinition<[u8; 32], &[u8]> = TableDefinition::new("accounts");
+const BLOCKS:       TableDefinition<u64, &[u8]>     = TableDefinition::new("blocks");
+const TX_LOOKUP:    TableDefinition<[u8; 32], &[u8]> = TableDefinition::new("tx_lookup");
+const TX_BODY:      TableDefinition<&[u8], &[u8]>   = TableDefinition::new("tx_body");
+const BLOCK_VOTES:  TableDefinition<u64, &[u8]>     = TableDefinition::new("block_votes");
 
 pub struct RedbEngine {
     db: Database,
@@ -103,6 +149,117 @@ If performance requirements outgrow redb (larger state, higher throughput), swap
 | --------------------- | -------------------------------------------------------------------------- |
 | Mutable ≠ Append-only | State tables use write transactions; history is append-only with iterators |
 | By content type       | accounts, validators, blocks, and txs have different access patterns       |
+
+## Checkpoints
+
+### Purpose
+
+Full state snapshots taken at every **era boundary** (block height % 720 == 0). Enable fast sync for nodes that have been offline >2 eras — replay from checkpoint instead of genesis.
+
+### Tables
+
+| Table              | Key                         | Value              | Notes                                          |
+| ------------------ | --------------------------- | ------------------ | ---------------------------------------------- |
+| `checkpoint_meta`  | `u64` (era)                 | `CheckpointMeta`   | Era metadata, state root, timestamp            |
+| `checkpoint_data`  | `&[u8]` (SCALE(era, shard)) | `&[u8]` (SCALE)    | Full per-shard state dump at era boundary      |
+
+```rust
+struct CheckpointMeta {
+    era: u64,
+    height: u64,                // era * 720
+    state_root: [u8; 32],       // SMT root — trust anchor for verification
+    timestamp: u64,
+    num_shards: u16,            // shard count at this era
+}
+
+struct ShardSnapshot {
+    accounts: Vec<Account>,
+    validators: Vec<ValidatorEntry>,
+}
+
+struct ValidatorEntry {
+    address: [u8; 32],
+    data: Validator,
+}
+```
+
+The `checkpoint_data` key is SCALE-encoded `(era, shard_id)`. Since shard count can increase via governance, no fixed table-per-shard — a single table with composite key works regardless of shard count.
+
+### Retention Policy
+
+| Mode     | Checkpoints Retained | `checkpoint_server` default |
+| -------- | -------------------- | --------------------------- |
+| **Full** | Latest 2             | `true` (serves last 2)      |
+| **Compact** | None              | `false`                     |
+| **Archive** | All                | `true` (serves all)         |
+
+- New checkpoints written at each era boundary. Full mode: `checkpoint_era_N` overwrites `checkpoint_era_N-2` (oldest dropped). Archive mode: no overwrite.
+- Compact mode skips checkpoint production entirely — saves write IO and disk.
+
+### Serving Protocol
+
+Hybrid: **P2P discovery + HTTP preferred, libp2p stream fallback.**
+
+1. Syncing node discovers peers via gossipsub
+2. Requests checkpoint at era N via libp2p request/response
+3. Responding peer provides:
+   - HTTP URL (if peer has `checkpoint_server: true`): `http://{peer_ip}:{rpc_port}/checkpoint/{era}`
+   - OR direct libp2p stream if no HTTP
+4. Syncing node prefers HTTP (resumable, faster), falls back to libp2p stream
+5. On success: start block replay from era N+1
+
+`checkpoint_server` field in `NodeConfig` (default varies by storage mode — see table above).
+
+### Sync Threshold
+
+```
+gap = network_tip_height - local_tip_height
+
+if gap > (2 * ERA_LENGTH) blocks:     # >2 eras behind
+    request latest checkpoint
+    verify state_root
+    replay blocks from checkpoint height + 1
+else:
+    replay blocks from local tip + 1   # ≤2 eras, just catch up
+```
+
+Threshold: **2 eras** (1440 blocks, ~2 hours). Under that, block replay is faster than checkpoint download + rebuild.
+
+### Verification Chain
+
+1. **Download checkpoint** for era N (height H, state_root R, accounts list A)
+2. **Rebuild SMT** from account list A across all shards → `computed_state_root`
+3. **Assert** `computed_state_root == R`
+4. **Fetch block header** at height H from trusted peers
+5. **Assert** `block_header.state_root == R`
+6. **Checkpoint is valid** — start replaying from H+1
+
+If SMT rebuild fails or state_roots mismatch, discard checkpoint and retry from a different peer.
+
+### Size Estimate
+
+| Component               | Size (10M accounts) |
+| ----------------------- | ------------------- |
+| Accounts (10M × ~40 B)  | ~400 MB             |
+| Validators (~1000 × ~80 B) | ~80 KB           |
+| Meta                     | ~100 B              |
+| **Total per checkpoint** | **~400 MB**        |
+| Peak (full mode, latest 2) | **~800 MB**      |
+
+Written at every era boundary (720 blocks @ 5s = 1 per hour). Archive nodes retain all:
+
+- Steady rate: ~400 MB/era ≈ **9.6 GB/day** ≈ **3.5 TB/year**
+- Full mode peak: ~800 MB (latest 2 checkpoints)
+- Archive mode growth is acceptable — archive nodes opt in to massive storage
+- Full mode is the default and keeps storage flat at ~800 MB for checkpoints
+
+### Implementation Notes
+
+- Checkpoint production: after applying block at era boundary, atomic write-transaction to checkpoint_meta + checkpoint_data for each shard
+- Checkpoint reading: separate redb read transaction, open checkpoint_meta + checkpoint_data tables
+- SMT rebuild is CPU-intensive (10M accounts). Show progress via tracing. Estimate: 5-15 seconds on modern hardware.
+- No compression on the SCALE bytes within redb — redb uses its own page-level management
+- Future optimization: snappy-compressed checkpoint blobs before SCALE encoding inside redb (deferred)
 
 ## Design Decisions
 

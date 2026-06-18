@@ -28,6 +28,7 @@
 mononium/
 ├── Cargo.toml                # workspace root
 ├── AGENTS.md                 # ← this file
+├── README.md                 # project overview, architecture, quick start
 ├── mononium-rust-lib/        # core blockchain library
 ├── mononium-cli/             # CLI binary (node + wallet)
 ├── mononium-gui/             # GUI binary (desktop app)

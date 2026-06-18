@@ -4,18 +4,20 @@ Open questions and decisions deferred for upcoming grilling sessions.
 
 ## Protocol & Encoding
 
-- [ ] **SCALE encoding spec** — exact field ordering, sizes, and encoding for all wire types: Transaction, Block, BlockHeader, CommitVote, EquivocationEvidence, sync messages
-- [ ] **Block format** — exact SCALE struct layout, what goes in the body vs header
-- [ ] **Transaction format** — exact field types, encoding order, payload constraints
-- [ ] **Failed tx handling** — skip failed txs within a block or invalidate the whole block?
-- [ ] **Fee burning on mainnet** — burn a portion of fees (now) or let proposers keep 100% (deferred to V2)?
+- [x] **SCALE encoding spec** — settled. Transaction (common envelope + TxBody enum), Block (header + body, votes separate DB), CommitVote struct. Rust enums over flat structs.
+- [x] **Block format** — header + body. tx_root = BLAKE3 Merkle over tx hashes. Votes in DB, not block.
+- [x] **Transaction format** — common fields in struct, type-specific fields in TxBody enum. Falcon-512 sig over envelope.
+- [x] **Burn tx type** — added to V1 tx set. Burn sends to 0x00..00 or 0x00..01, 10 MOXX flat fee. No WithdrawTxDeposit needed — deposits auto-return at era boundary.
+- [x] **Failed tx handling** — skip-and-continue, fee still paid to proposer. Settled in V0.4.0 session.
+- [x] **Fee burning on mainnet** — deferred. Fees go to validators pro-rata by stake; no burning in V1.
+- [x] **Validator rewards distribution** — pro-rata by stake, per-block, all active validators. Settled V0.4.0.
 
 ## Validators & Consensus
 
-- [ ] **ValidtorId type** — how does `proposer_index: u16` in the block header resolve to a full public key? Lookup by era?
-- [ ] **Clock drift tolerance** — validators need to agree on when a slot starts. What tolerance before a block is rejected as "too early" or "too late"? NTP dependency?
-- [ ] **Fork handling** — beyond equivocation (BFT resolves). What if 2/3+ validators commit two different chains (network partition)? Social consensus or on-chain fork-choice rule?
-- [ ] **CommitVote timing** — validators vote immediately after verifying, or wait until a specific point in the slot? How are commit votes gossiped and aggregated?
+- [x] **ValidtorId type** — `[u8; 32]` (address) everywhere. Header proposer, commit votes, evidence, transactions all use the full address. No index-based resolution needed. Settled V0.4.0.
+- [x] **Clock drift tolerance** — ±2s. Unix timestamp seconds, validated locally, rejected blocks treated as missed slots. Settled V0.4.0.
+- [x] **Fork handling** — no explicit fork-choice rule in V1. Follow proposer schedule + heaviest-by-stake-weight for ambiguous chains. Equivocators lose 90% → honest chain becomes heavier. Settled.
+- [x] **CommitVote timing** — validators vote immediately after verification. Next proposer collects via gossip. Settled V0.4.0.
 
 ## Networking & Sync
 
@@ -25,14 +27,14 @@ Open questions and decisions deferred for upcoming grilling sessions.
 
 ## Storage
 
-- [ ] **State pruning** — permanent vs prunable table design (flagged for Phase 4 but designed from V1). What gets pruned, when, how?
-- [ ] **Checkpoint format** — exact schema for 7-day state checkpoints in redb. Size estimate? Verification chain?
+- [x] **State pruning** — resolved via storage modes: full (default, everything forever), compact (opt-in, 2 eras full → headers only + proxy). Designed in NodeConfig.md, implementation deferred to Phase 3+.
+- [x] **Checkpoint format** — full state snapshot at every era boundary (720 blocks). checkpoints_meta + checkpoint_data tables in chain.redb. Latest 2 retained (full), all (archive), none (compact). Hybrid P2P+HTTP serving protocol. Threshold: >2 eras triggers checkpoint sync. Verification: rebuild SMT, match state_root against block header. ~400 MB/era at 10M accounts. Documented in Storage.md.
 
 ## CLI & Config
 
-- [ ] **Config file schema** — `config.yaml` fields, override precedence (defaults < file < CLI flags)
+- [x] **Config file schema** — resolved. YAML + TOML, ~/.mononium/config, schema in NodeConfig.md
 - [ ] **Docker setup** — multi-validator compose file, image sizes (scratch vs distroless), docker-compose for localnet/devnet
-- [ ] **CLI flag inventory** — complete list of `mononium-cli node` flags (p2p-port, rpc-port, rest-port, genesis, key, key-file, bootnodes, data-dir, config, etc.)
+- [x] **CLI flag inventory** — documented in NodeConfig.md. --genesis, --key, --key-file, --observer, --p2p-port, --rpc-port, --rest-port, --bootnodes, --data-dir, --log-level, --log-format, --config
 
 ## CI & Tooling
 
@@ -54,16 +56,25 @@ Open questions and decisions deferred for upcoming grilling sessions.
 
 ## Economics
 
-- [ ] **Fee burning mechanics** — if introduced, what portion? Burn address or new mechanism?
-- [ ] **Validator rewards distribution** — fees split among all active validators, or go entirely to the proposer? (Currently: proposer keeps 100%. Confirm or reconsider.)
+- [x] **Fee burning mechanics** — burn tx to 0x00..00 or 0x00..01 at 10 MOXX flat fee. Normal fees unchanged (pro-rata by stake distribution).
+- [x] **Validator rewards distribution** — pro-rata by stake per block. Settled V0.4.0.
 - [ ] **Inflation curve later** — does 3.5% stay constant until the cap or decay over time?
+- [x] **Burn tx fee discount** — 10 MOXX flat for Burn and WithdrawTxDeposit types (bypasses standard fee calculation).
+- [x] **Anti-spam deposit** — 1 MONEX per tx, held from sender's balance until era boundary. Auto-returned (no reclaim tx). Scales with volume.
+- [x] **Per-account rate limit** — 50 txs/account/block, local mempool policy.
+- [x] **Block hard cap** — 500 txs OR 1 MB.
 
-## Future Phases (Noted, Not Urgent)
+## V2 (DeFi, developed late V1)
 
-- [ ] Governance / upgrade mechanism (Phase 4)
-- [ ] Phragmén NPoS (V2+)
-- [ ] VRF leader election (V2+)
-- [ ] GRANDPA finality gadget (V2+)
-- [ ] Treasury / dev fund from inflation (V2+)
+- [ ] **Native stableswap AMM** — built-in constant-product pools for MONEX trading
+- [ ] **Bridge** — wrapped MONEX on Solana/Ethereum, or cross-chain messaging
+- [ ] VRF leader election
+- [ ] GRANDPA finality gadget
+- [ ] Phragmén NPoS
+- [ ] Treasury / dev fund from inflation
 - [ ] Smart contracts
-- [ ] Sharding
+- [x] **State sharding** — hash prefix partitioning (`blake3(address)[0..2] % N` as u16), 2 shards genesis, gov-voted increase (2/3 quorum, 24-era grace, stake-weighted), full SMT per shard, snapshot sync on restart, cross-shard proofs pulled on demand from peers. Doc'd in StateSharding.md.
+
+## V2 Governance
+
+- [ ] Governance / upgrade mechanism

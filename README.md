@@ -65,14 +65,14 @@ Bootstrap key (genesis-designated, N blocks)
 
 ## Key Security
 
-Private keys are protected with memory-hard password derivation (Argon2id, 1 GiB memory, 4 iterations, 4 parallel). The 48-byte Falcon-512 seed is encrypted at rest using NaCl secretbox (XSalsa20-Poly1305) and stored at `~/.mononium/keys/{name}.json`. The public key (897 bytes) is stored in plaintext — it is public by definition.
+Private keys are protected with memory-hard password derivation (Argon2id, 512 MiB memory, 4 iterations, 4 parallel). The 48-byte Falcon-512 seed is encrypted at rest using NaCl secretbox (XSalsa20-Poly1305) and stored at `~/.mononium/keys/{name}.json`. The public key (897 bytes) is stored in plaintext — it is public by definition.
 
-Initial key unlock on node startup requires ~5-10s due to Argon2id memory cost. This is a one-time operation at node launch. After unlock, the validator runs at the standard low-memory profile.
+Initial key unlock on node startup requires ~2.5-5s due to Argon2id memory cost. This is a one-time operation at node launch. After unlock, the validator runs at the standard low-memory profile.
 
 ## Resource Profile
 
 - **Idle validator:** ~100 MB RAM target
-- **Startup/unlock:** up to ~1 GB RAM (Argon2 key derivation)
+- **Startup/unlock:** up to ~512 MB RAM (Argon2 key derivation)
 - **Runtime:** optimized for low-memory VPS environments
 
 ## Project Status
@@ -140,7 +140,7 @@ cargo clippy -p mononium-rust-lib -- -D warnings
 
 ## Documentation
 
-- `docs/plans/V0.4.0/` — Current planning docs (Philosophy, Architecture, Consensus, Protocol, Cryptography, Network, Storage, Validators, Testing, Roadmap)
+- `docs/plans/V0.4.0/` — Current planning docs (Philosophy, Architecture, Consensus, Protocol, Cryptography, Network, Storage, Validators, Testing, Roadmap, NodeConfig)
 - `docs/architecture/` — ADRs (Architectural Decision Records)
 - `docs/plans/GRILL.md` — Open questions and deferred decisions
 

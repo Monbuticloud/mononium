@@ -105,15 +105,17 @@ pub enum ElectionMode {
 After a block is proposed, validators verify and submit a signed commit vote. Once 2/3+ of the active set commits, the block is final.
 
 ```
-slot 0: V1 proposes Block A → validators verify + vote
-slot 1-3: verification window (validators verify Falcon-512 sigs, state, SMT)
-slot 4: V2 proposes Block B (includes commit proofs from slot 0) → A is final
+slot 0: V1 proposes Block A → validators verify + vote immediately
+slot 1-3: verification window (validators continue verifying and gossiping votes)
+slot 4: V2 proposes Block B (includes any CommitVotes for Block A received via gossip) → A is final
 ```
 
+- Validators **vote immediately** after they finish verifying — no waiting for slot boundaries or explicit requests
+- The next proposer includes whatever CommitVotes they've collected via gossipsub during the verification window
+- The proposer does **not** need to collect 2/3+ before proposing — they publish what they have; subsequent blocks accumulate additional votes
+- **Verification window:** ~20s (4 blocks) — enough time for Falcon-512 verification (~10x slower than Ed25519) on cheap VPS hardware
 - Commits are included in the _next_ block header as proof
-- A block is final as soon as 2/3+ commits for it appear on-chain
-- In practice: **~20s (4 blocks)** — proposer submits, validators have 3 blocks to verify and submit commit votes
-- The 20s verification window accounts for Falcon-512 signature verification (~10x slower than Ed25519) and SMT validation
+- A block is final as soon as 2/3+ commits for it appear on-chain (via any later block's header)
 
 ## Flow
 
@@ -129,12 +131,13 @@ sequenceDiagram
     Proposer->>Validators: Propose block (gossipsub)
     Validators->>Validators: Verify Falcon sigs + SMT proofs
     Validators->>Validators: Sign commit vote (Falcon-512)
-    Validators-->>Proposer: Commit signature (gossipsub)
+    Validators-->>Validators: Gossip CommitVote immediately (gossipsub)
 
     Note over Proposer,Validators: Slots N+1..N+3 (verification window)
+    Note over Validators: Next proposer collects CommitVotes via gossip
     Note over Proposer,Validators: Slot N+4 (next proposer)
-    Validators->>Validators: Include commits in next block
-    Note over Proposer,State: Block N is final
+    Validators->>Validators: Include collected commits in next block header
+    Note over Proposer,State: Block N is final (2/3+ commits appear on-chain)
 ```
 
 ## Commit Format (Sketch)
@@ -142,8 +145,8 @@ sequenceDiagram
 ```
 CommitVote {
     block_hash: [u8; 32],
-    validator: ValidatorId,
-    signature: [u8; 666],       // Falcon-512
+    validator: [u8; 32],       // validator address — self-describing
+    signature: [u8; 666],      // Falcon-512
 }
 ```
 
@@ -203,7 +206,7 @@ struct EquivocationEvidence {
     pub signature_a: [u8; 666],
     pub header_b: BlockHeader,
     pub signature_b: [u8; 666],
-    pub proposer_id: ValidatorId,
+    pub proposer: [u8; 32],       // validator address — evidence must be verifiable outside era context
 }
 ```
 
@@ -264,16 +267,25 @@ Once the missing lower nonce arrives, all buffered txs from that sender are rele
 
 ```rust
 pub struct MempoolConfig {
-    pub max_size: usize,         // 10,000
-    pub ttl: Duration,           // 10 minutes
-    pub min_fee: U256,           // local filter — not a consensus parameter
+    pub max_size: usize,              // 10,000
+    pub ttl: Duration,                // 10 minutes
+    pub min_fee: U256,                // local filter — see [NodeConfig](./NodeConfig.md#mempoolmin_fee)
     pub max_pending_per_sender: u32,  // 30 — per-sender nonce buffer cap
+    pub max_tx_per_account_per_block: u32, // 50 — per-account rate limit
 }
 ```
 
 The `min_fee` is a local node policy. Each operator sets their own threshold (default: `0.0667 MONEX`). A tx below this fee is rejected from the local mempool but is still valid if included by another validator. This lets operators tune their own spam tolerance without affecting consensus.
 
-The proposer selects the highest-priority txs for their block up to the 500 KB limit.
+### Block Hard Cap
+
+Blocks are limited to **500 transactions OR 1 MB of SCALE-encoded block data**, whichever is hit first. The proposer selects the highest-priority txs from the mempool up to this limit.
+
+With the per-account rate limit of 50 txs/block, at least 10 distinct accounts are needed to fill a block. Batch operations (e.g., distributing rewards to 200 recipients) will span ~4 blocks (20s). Wallet and tooling developers should account for this constraint.
+
+### Rate Limit
+
+Each account is limited to **50 transactions per block** at the mempool level. This is a local node policy (like `min_fee`), not a consensus rule — a validator can tighten their own limit. Combined with the per-tx deposit model, this creates two independent anti-spam layers: economic (capital locks) and congestion (block space).
 
 ## Validator Election
 
@@ -339,6 +351,30 @@ If the proposer for a slot is offline, the **slot goes empty**:
 
 An inactive validator who accumulates penalties will naturally fall out of the Top-N by stake at the next era boundary.
 
+### Clock Drift Tolerance
+
+Each block includes a `timestamp` set by the proposer from their local wall clock. Validators verify this timestamp when receiving a block:
+
+```
+if abs(block.timestamp - local_wall_clock) > 2s → REJECT block
+```
+
+**Why ±2s:**
+- Target hardware is cheap VPS with standard NTP — typical drift between syncs is <50ms
+- ±2s provides generous slack for warm CPUs, Docker containers without `chronyd`, and VM scheduler jitter
+- A drifted node's blocks will be rejected by the honest majority regardless; this is a polite rejection window, not a security boundary
+
+**Effects of a drifted timestamp:**
+- Rejected block → slot goes empty (same as offline proposer)
+- Proposer pays the 0.08 MONEX missed slot penalty at era boundary
+- If a node's clock consistently drifts beyond ±2s, all its proposals fail and its penalty accumulates. The node should log a warning: `Clock drift exceeds ±2s — verify NTP configuration`
+
+**Implementation:**
+- `block.timestamp` is a `u64` Unix timestamp (seconds since epoch, not milliseconds — second granularity is sufficient for 5s slots)
+- Validation is purely local: each validator compares against their own clock
+- Timestamps must be monotonic within the chain: `block.timestamp >= parent_block.timestamp` (enforced by parent_hash ordering — can't build on a future block)
+- No global slot-zero coordination is needed — validators reject implausible timestamps independently
+
 ### DI Pattern
 
 Same trait-based approach as [Validators](Validators.md#Validator Election):
@@ -371,6 +407,48 @@ ConsensusConfig {
 - Message propagation
 - Falcon-512 signature verification (batch where possible)
 - State validation per block (SMT verification)
+
+## Fork Handling
+
+### Design Principle
+
+V1 has no explicit fork-choice rule beyond **following the proposer schedule**. Fork resolution emerges naturally from slot timing and slashing economics.
+
+### Temporary Partition (no BFT commit on either side)
+
+The partition heals and validators see two chains of equal length from the same parent. Resolution:
+
+1. Each validator follows the block from the **scheduled proposer** for each slot
+2. If the scheduled proposer didn't produce (missed slot), the slot moves on
+3. One side will eventually have more scheduled proposers than the other and naturally become the heavier chain
+4. Validators on the shorter chain sync to the longer one at the next opportunity
+
+### BFT Equivocation Fork (2/3+ commits on both sides)
+
+Validators who signed both competing blocks are **equivocating** and get slashed 90% of their stake. Resolution:
+
+1. Whichever chain has more **total validator stake backing it** is canonical
+2. Since equivocators lose 90% stake, the honest chain becomes heavier immediately
+3. Validators on the lighter chain switch to the heavier one, accepting the fork
+4. The equivocators' stake on the losing chain is also slashed (they lose either way)
+
+### Implementation
+
+```rust
+// No special ForkChoice trait in V1.
+// Validators use the heaviest-by-stake rule:
+fn select_canonical(chain_a: &ChainState, chain_b: &ChainState) -> ChainId {
+    if chain_a.total_stake_weight > chain_b.total_stake_weight {
+        chain_a
+    } else {
+        chain_b
+    }
+}
+```
+
+### Future (V2+)
+
+If VRF leader election or GRANDPA finality is added, explicit fork-choice rules (e.g., GHOST) may replace this simple approach.
 
 ## Attack Resistance
 

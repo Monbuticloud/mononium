@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "plans/V0.3.0/Consensus.md",
+                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Consensus"
+              "title": "ADR-016-cryptographic-signature-scheme"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "plans/V0.3.0/Consensus.md",
+                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Consensus"
+              "title": "Backlinks for ADR-016-cryptographic-signature-scheme"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "plans/V0.3.0/Consensus.md",
+                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Consensus"
+              "title": "Outgoing links from ADR-016-cryptographic-signature-scheme"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "plans/V0.3.0/Consensus.md",
+                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Consensus"
+              "title": "Outline of ADR-016-cryptographic-signature-scheme"
             }
           }
         ]
@@ -185,32 +185,35 @@
   },
   "active": "da452a15a9f51dda",
   "lastOpenFiles": [
+    "architecture/ADR-010-address-format.md",
+    "architecture/ADR-008-p2p-networking.md",
+    "architecture/ADR-007-database.md",
+    "architecture/ADR-005-token-supply.md",
+    "architecture/ADR-004-finality.md",
+    "architecture/ADR-003-block-production.md",
+    "architecture/ADR-002-validator-election.md",
+    "architecture/ADR-001-workspace-structure.md",
+    "formatting.md",
+    "AGENTS.md",
     "plans/GRILL.md",
-    "plans/V0.3.0/Network.md",
-    "plans/V0.3.0/Protocol.md",
-    "plans/V0.3.0/Architecture.md",
-    "plans/V0.2.0/Protocol.md",
-    "plans/V0.3.0/Validators.md",
-    "plans/V0.3.0/Testing.md",
-    "plans/V0.3.0/Storage.md",
-    "plans/V0.3.0/Roadmap.md",
-    "plans/V0.3.0/Philosophy.md",
-    "plans/V0.3.0/Mainflow.md",
-    "plans/V0.3.0/Cryptography.md",
+    "plans/AGENTS.md",
+    "plans/V0.4.0/Validators.md",
+    "plans/V0.4.0/Architecture.md",
+    "plans/V0.4.0/NodeConfig.md",
+    "plans/V0.4.0/Mainflow.md",
+    "plans/V0.4.0/Cryptography.md",
+    "plans/V0.4.0/Consensus.md",
+    "plans/V0.4.0/StateSharding.md",
     "plans/V0.3.0/Consensus.md",
+    "plans/V0.4.0/Testing.md",
+    "plans/V0.4.0/Storage.md",
+    "plans/V0.4.0/Roadmap.md",
+    "plans/V0.4.0/Protocol.md",
+    "plans/V0.4.0/Philosophy.md",
+    "plans/V0.4.0/Network.md",
+    "plans/V0.4.0",
     "plans/V0.3.0",
-    "plans/V0.3.0/Storage.md",
-    "plans/V0.3.0/Validators.md",
-    "plans/V0.3.0/Testing.md",
-    "plans/V0.3.0/Roadmap.md",
-    "plans/V0.3.0/Philosophy.md",
-    "plans/V0.3.0/Mainflow.md",
-    "plans/V0.3.0/Cryptography.md",
-    "plans/V0.3.0/Consensus.md",
     "plans/V0.3.0",
-    "plans/V0.2.0/Consensus.md",
-    "plans/V0.3.0/Validators.md",
-    "plans/V0.3.0/Testing.md",
     "plans/V0.3.0",
     "plans/V0.2.0",
     "plans/V0.2.0",

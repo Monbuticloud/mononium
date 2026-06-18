@@ -64,7 +64,10 @@ Following Polkadot convention — well-known to blockchain operators.
 ### Peer Discovery
 
 ```bash
-# Start node with bootstrap peers
+# Start node with bootstrap peers (config file approach)
+mononium-cli node --config configs/node.devnet.yaml
+
+# Or via CLI flags (overrides config)
 mononium-cli node \
   --genesis configs/genesis.devnet.json \
   --key my-validator \

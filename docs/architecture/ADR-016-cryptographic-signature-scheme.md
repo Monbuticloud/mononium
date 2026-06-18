@@ -22,7 +22,7 @@
 - **Affects ADR-006 (Fees):** Larger signature size increases average transaction size by ~600 bytes, raising total fee per tx proportionally.
 - **Affects ADR-004 (Finality):** Falcon verification is ~10x slower than Ed25519, contributing to the 20s verification window.
 
-**Key storage (new, not covered by prior ADRs):** Validator Falcon-512 keys are stored encrypted at rest using NaCl secretbox (XSalsa20-Poly1305) with a key derived via Argon2id (1 GiB memory, 4 iterations, 4 parallel). The `argon2` crate (pure Rust, RustCrypto) provides the KDF.
+**Key storage (new, not covered by prior ADRs):** Validator Falcon-512 keys are stored encrypted at rest using NaCl secretbox (XSalsa20-Poly1305) with a key derived via Argon2id (512 MiB memory, 4 iterations, 4 parallel). The `argon2` crate (pure Rust, RustCrypto) provides the KDF.
 
 **Consequences:**
 

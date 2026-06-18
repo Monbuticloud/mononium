@@ -124,31 +124,31 @@ Validator keys use **Falcon-512** and are stored encrypted at rest:
 | --------------- | ----------------------------------------------------------------------------------------------- |
 | **Generation**  | `mononium-cli wallet keygen --name my-validator` generates Falcon-512 keys (~10ms, offline)     |
 | **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                                                              |
-| **KDF**         | Argon2id (1 GiB memory, 4 iterations, 4 parallel) — `argon2` crate                              |
+| **KDF**         | Argon2id (512 MiB memory, 4 iterations, 4 parallel) — `argon2` crate                            |
 | **File**        | `~/.mononium/keys/my-validator.json` — contains public key (plaintext) + encrypted seed         |
-| **Loading**     | `mononium-cli node --key my-validator` prompts for passphrase, decrypts, re-derives private key |
-| **Unlock time** | ~5-10s due to Argon2id memory cost (one-time at startup)                                        |
+| **Loading**     | `mononium-cli node --key my-validator` (or via config file, see [NodeConfig](./NodeConfig.md)) prompts for passphrase, decrypts, re-derives private key |
+| **Unlock time** | ~2.5-5s due to Argon2id memory cost (one-time at startup)                                      |
 
 The public key (897 bytes) is stored in plaintext in the key file. Only the 48-byte seed is encrypted. The private key (1281 bytes) is re-derived from the seed at node startup.
 
 ## Rewards
 
-Validators earn rewards from two sources depending on the network tier:
+Fee income is distributed **pro-rata by stake** across all active validators at the end of every block — **not** kept by the proposer. See [Protocol](Protocol.md#Fee-Distribution) for the full distribution mechanics.
 
 ### Dev Networks (Localnet, Devnet, Testnet)
 
 **Transaction fees only** — no block rewards, no inflation.
 
-- All fees from transactions included in a block go to that block's proposer
+- Fees from all transactions in a block are pooled, then split among all active validators in proportion to each validator's stake
 - Fee schedule: flat fee (0.00667 MONEX) + per-byte (0.000467 MONEX/byte) + optional tip
 
 ### Mainnet
 
 **Transaction fees + block rewards** — capped inflation provides the block reward component.
 
-- Block reward rate defined by `CappedInflation` policy (see [Protocol](Protocol.md#Token Supply))
-- All transaction fees go to the proposer
-- Block rewards are minted per block, up to the capped maximum supply
+- Fees distributed identically to dev networks (pro-rata by stake, per block)
+- Block rewards defined by `CappedInflation` policy (see [Protocol](Protocol.md#Token-Supply))
+- Block rewards are minted per block and added to the fee pool before distribution, or distributed separately — the state machine handles both identically (both go to validators pro-rata by stake)
 
 ## Multi-Validator Simulation
 

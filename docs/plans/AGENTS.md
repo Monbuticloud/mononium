@@ -21,6 +21,7 @@ This doc owns all versioned plan directories (`V0.0.0/`, `V0.1.0/`, etc.) and `V
 - Create new plan versions (V0.1.0, V0.2.0...) when the plan has meaningful changes
 - Update `Versioning.md` when the version scheme changes
 - Planning docs should link to the relevant ADRs where decisions are finalized
+- **Writing standard:** Be as explicit as possible. Every parameter, invariant, edge case, and state machine behavior must be spelled out in concrete terms. Avoid assumptions, implicit behaviors, and hand-waving. If a decision has trade-offs, document both the chosen path and the rejected alternatives with rationale. The plan must be unambiguous enough to implement from directly without needing to ask clarifying questions.
 
 ## Verification
 
