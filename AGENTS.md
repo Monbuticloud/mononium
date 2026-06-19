@@ -29,9 +29,10 @@ mononium/
 ├── Cargo.toml                # workspace root
 ├── AGENTS.md                 # ← this file
 ├── README.md                 # project overview, architecture, quick start
-├── mononium-rust-lib/        # core blockchain library
-├── mononium-cli/             # CLI binary (node + wallet)
-├── mononium-gui/             # GUI binary (desktop app)
+├── src/
+│   ├── mononium-rust-lib/        # core blockchain library
+│   └── mononium-cli/             # CLI binary (node + wallet)
+├── mononium-gui/             # GUI binary (desktop app, Phase 3)
 ├── docs/
 │   ├── architecture/         # ADRs — architectural decision records
 │   └── plans/                # versioned planning docs (V0.x.x)

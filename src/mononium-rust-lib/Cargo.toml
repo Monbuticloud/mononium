@@ -1,0 +1,43 @@
+[package]
+name = "mononium-rust-lib"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[dependencies]
+# Workspace shared
+serde.workspace = true
+serde_json.workspace = true
+parity-scale-codec.workspace = true
+blake3.workspace = true
+hex.workspace = true
+subtle.workspace = true
+primitive-types.workspace = true
+redb.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+libp2p.workspace = true
+
+# Crypto crates (ADR-019)
+falcon = "0.2"
+argon2 = "0.5"
+chacha20poly1305 = "0.10"
+
+# Config
+serde_yaml.workspace = true
+toml.workspace = true
+
+# HTTP/RPC
+axum.workspace = true
+
+# Compression
+snap.workspace = true
+
+[features]
+default = []
+gui = []
+
+[lints]
+workspace = true

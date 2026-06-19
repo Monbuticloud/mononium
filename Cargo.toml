@@ -1,14 +1,54 @@
-[package]
-name = "mononium"
-version = "0.1.0"
-edition = "2021"
-license = "AGPL-3.0-only"
+[workspace]
+resolver = "2"
+members = [
+    "src/mononium-rust-lib",
+    "src/mononium-cli",
+]
 
-[dependencies]
-anyhow = "1"
-thiserror = "2"
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+parity-scale-codec = { version = "3", features = ["derive"] }
+
+# Cryptography
+blake3 = "1"
+hex = "0.4"
+subtle = "2"
+primitive-types = { version = "0.12", features = ["scale-codec"] }
+
+# Database
+redb = "2"
+
+# Networking
+libp2p = { version = "0.54", default-features = false, features = [
+    "gossipsub", "kademlia", "identify", "mdns", "ping", "tokio"
+] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json"] }
+
+# Async traits
+async-trait = "0.1"
+
+# Config (YAML + TOML)
+serde_yaml = "0.9"
+toml = "0.8"
+
+# HTTP/RPC
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# Compression
+snap = "1"
 
 [profile.dev]
 overflow-checks = true

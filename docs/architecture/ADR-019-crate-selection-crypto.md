@@ -17,7 +17,7 @@ Concrete crate names and versions are needed before Phase 1 implementation begin
 | Crate | [`falcon`](https://crates.io/crates/falcon) by Zcash Foundation |
 | Version | `0.2`+ |
 | License | MIT / Apache-2.0 |
-| Rationale | Pure Rust, `no_std`, constant-time verified, maintained by Zcash Foundation security team |
+| Rationale | Pure Rust, `no_std`, constant-time verified, maintained by Zcash Foundation security team. See Zcash Security page for audit status: https://github.com/ZcashFoundation/falcon |
 
 Rejected alternatives:
 

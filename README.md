@@ -29,10 +29,11 @@ Development and contribution are designed around containers — spin up a localn
 
 ```
 mononium/
-├── Cargo.toml                  # workspace root
-├── mononium-rust-lib/          # core library (all blockchain logic)
-├── mononium-cli/               # CLI binary (node daemon + wallet)
-└── mononium-gui/               # GUI binary (desktop app)
+├── Cargo.toml                     # workspace root
+├── src/
+│   ├── mononium-rust-lib/         # core library (all blockchain logic)
+│   └── mononium-cli/              # CLI binary (node daemon + wallet)
+└── mononium-gui/                  # GUI binary (desktop app)
 ```
 
 - `mononium-rust-lib`, types, state machine, consensus engine, crypto, storage, P2P, RPC
@@ -65,9 +66,9 @@ Bootstrap key (genesis-designated, N blocks)
 
 ## Key Security
 
-Private keys are protected with memory-hard password derivation (Argon2id, 512 MiB memory, 4 iterations, 4 parallel). The 48-byte Falcon-512 seed is encrypted at rest using NaCl secretbox (XSalsa20-Poly1305) and stored at `~/.mononium/keys/{name}.json`. The public key (897 bytes) is stored in plaintext — it is public by definition.
+Private keys are protected with memory-hard password derivation (Argon2id, 256 MiB memory, 16 iterations, 4 parallel). The 48-byte Falcon-512 seed is encrypted at rest using NaCl secretbox (XSalsa20-Poly1305) and stored at `~/.mononium/keys/{name}.json`. The public key (897 bytes) is stored in plaintext — it is public by definition.
 
-Initial key unlock on node startup requires ~2.5-5s due to Argon2id memory cost. This is a one-time operation at node launch. After unlock, the validator runs at the standard low-memory profile.
+Initial key unlock on node startup requires the Argon2id derivation (~3-6s on cheap VPS). Argon2id memory and iteration settings are configurable in the node config file (`crypto.*`), allowing operators to balance security vs startup time. A `--unlock-timeout` flag (default 20s) aborts with a clear error if derivation exceeds the limit. After unlock, the validator runs at the standard low-memory profile (~100 MB).
 
 ## Resource Profile
 

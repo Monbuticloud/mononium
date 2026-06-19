@@ -1,0 +1,16 @@
+# Disallowed patterns — blocklisted from the codebase
+disallowed-macros = [
+    "todo",      # Must use unimplemented!() or actual implementation
+]
+
+# Allowed characters for identifiers
+allowed-idents-below-min-chars = false
+
+# Maximum number of arguments a function can have
+too-many-arguments-threshold = 8
+
+# Type complexity threshold
+type-complexity-threshold = 350
+
+# Allow expect() in tests only
+# (enforced via clippy lint attributes in #[cfg(test)] modules)
