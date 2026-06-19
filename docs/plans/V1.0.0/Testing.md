@@ -254,4 +254,4 @@ Benchmark results are tracked: regressions in critical paths (Falcon verify, blo
 
 ---
 
-**Related:** [Architecture](plans/V0.8.0/Architecture.md), [Roadmap](plans/V0.8.0/Roadmap.md)
+**Related:** [Architecture](plans/V1.0.0/Architecture.md), [Roadmap](plans/V1.0.0/Roadmap.md)

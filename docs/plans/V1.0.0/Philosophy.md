@@ -65,4 +65,4 @@ Both are designed and spec'd during planning but implemented during late V1 deve
 
 ---
 
-**Next:** [Architecture](plans/V0.8.0/Architecture.md)
+**Next:** [Architecture](plans/V1.0.0/Architecture.md)

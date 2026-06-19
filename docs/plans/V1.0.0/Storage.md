@@ -66,7 +66,7 @@ enum ValidatorStatus {
 | `tx_body`     | `(u64, u32)` (height, idx) | `Transaction`     | Full SCALE-encoded tx, indexed in-block |
 | `block_votes` | `u64` (height)             | `Vec<CommitVote>` | All commit votes for a block            |
 
-`BlockHeader` structure is defined in [Protocol](plans/V0.8.0/Protocol.md#Block-Structure).
+`BlockHeader` structure is defined in [Protocol](plans/V1.0.0/Protocol.md#Block-Structure).
 
 ```rust
 struct BlockEntry {
@@ -81,7 +81,7 @@ struct TxLocation {
 }
 ```
 
-Key storage is documented in [Cryptography](plans/V0.8.0/Cryptography.md#Key-Storage).
+Key storage is documented in [Cryptography](plans/V1.0.0/Cryptography.md#Key-Storage).
 
 ## Storage Engine DI
 
@@ -265,4 +265,4 @@ Written at every era boundary (720 blocks @ 5s = 1 per hour). Archive nodes reta
 
 ---
 
-**Related:** [Architecture](plans/V0.8.0/Architecture.md), [Protocol](plans/V0.8.0/Protocol.md), [Cryptography](plans/V0.8.0/Cryptography.md)
+**Related:** [Architecture](plans/V1.0.0/Architecture.md), [Protocol](plans/V1.0.0/Protocol.md), [Cryptography](plans/V1.0.0/Cryptography.md)

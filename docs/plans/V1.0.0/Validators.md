@@ -88,7 +88,7 @@ Era 1+:  Inactive → Registered → Staked → Active ──→ Unstaking → I
 
 ### Slashing
 
-Slashing mechanics are documented in [Slashing](plans/V0.8.0/Slashing.md). In summary: equivocation causes 90% stake loss plus a **72-era freeze** during which the validator cannot propose, vote, or earn rewards. See [ADR-017](../../architecture/ADR-017-slashing-freeze.md) for the freeze design rationale.
+Slashing mechanics are documented in [Slashing](plans/V1.0.0/Slashing.md). In summary: equivocation causes 90% stake loss plus a **72-era freeze** during which the validator cannot propose, vote, or earn rewards. See [ADR-017](../../architecture/ADR-017-slashing-freeze.md) for the freeze design rationale.
 
 ## Staking
 
@@ -99,11 +99,11 @@ Slashing mechanics are documented in [Slashing](plans/V0.8.0/Slashing.md). In su
 
 ## Key Management
 
-Key generation, storage, and loading are documented in [Cryptography](plans/V0.8.0/Cryptography.md#Key-Storage).
+Key generation, storage, and loading are documented in [Cryptography](plans/V1.0.0/Cryptography.md#Key-Storage).
 
 ## Rewards
 
-Fee income is distributed **pro-rata by stake** across all active validators at the end of every block — **not** kept by the proposer. See [Fees](plans/V0.8.0/Fees.md) for the full distribution mechanics.
+Fee income is distributed **pro-rata by stake** across all active validators at the end of every block — **not** kept by the proposer. See [Fees](plans/V1.0.0/Fees.md) for the full distribution mechanics.
 
 ### Dev Networks (Localnet, Devnet, Testnet)
 
@@ -117,7 +117,7 @@ Fee income is distributed **pro-rata by stake** across all active validators at 
 **Transaction fees + block rewards** — capped inflation provides the block reward component.
 
 - Fees distributed identically to dev networks (pro-rata by stake, per block)
-- Block rewards defined by `CappedInflation` policy (see [Genesis](plans/V0.8.0/Genesis.md#Token-Supply))
+- Block rewards defined by `CappedInflation` policy (see [Genesis](plans/V1.0.0/Genesis.md#Token-Supply))
 - Block rewards are minted per block and added to the fee pool before distribution, or distributed separately — the state machine handles both identically (both go to validators pro-rata by stake)
 
 ## Multi-Validator Simulation
@@ -136,11 +136,11 @@ Validators operate on 4 network tiers:
 
 | Tier                                         | Purpose                 |
 | -------------------------------------------- | ----------------------- |
-| [Localnet](plans/V0.8.0/Network.md#Localnet) | Single-node development |
-| [Devnet](plans/V0.8.0/Network.md#Devnet)     | Multi-validator testing |
-| [Testnet](plans/V0.8.0/Network.md#Testnet)   | Public test network     |
-| [Mainnet](plans/V0.8.0/Network.md#Mainnet)   | Production              |
+| [Localnet](plans/V1.0.0/Network.md#Localnet) | Single-node development |
+| [Devnet](plans/V1.0.0/Network.md#Devnet)     | Multi-validator testing |
+| [Testnet](plans/V1.0.0/Network.md#Testnet)   | Public test network     |
+| [Mainnet](plans/V1.0.0/Network.md#Mainnet)   | Production              |
 
 ---
 
-**Related:** [Consensus](plans/V0.8.0/Consensus.md), [Network](plans/V0.8.0/Network.md), [Slashing](plans/V0.8.0/Slashing.md), [Cryptography](plans/V0.8.0/Cryptography.md)
+**Related:** [Consensus](plans/V1.0.0/Consensus.md), [Network](plans/V1.0.0/Network.md), [Slashing](plans/V1.0.0/Slashing.md), [Cryptography](plans/V1.0.0/Cryptography.md)

@@ -153,7 +153,7 @@ Validator status values:
 | ----- | ------ | ------------------------------------------------------------------------------------------------------- |
 | `0`   | Staked | Candidate in pool, not currently in active set                                                          |
 | `1`   | Active | In the active validator set, proposing and voting                                                       |
-| `2`   | Frozen | Slashed — excluded from active set for 72 eras (see [Slashing](plans/V0.8.0/Slashing.md#freeze-period)) |
+| `2`   | Frozen | Slashed — excluded from active set for 72 eras (see [Slashing](plans/V1.0.0/Slashing.md#freeze-period)) |
 | `3`   | Thawed | Freeze expired, re-entered candidate pool with remaining stake                                          |
 
 `frozen_until` is the era number at which the validator thaws. Set at slashing time to `current_era + 72` and checked at era boundaries. Non-frozen validators (status ≠ 2) have `frozen_until = 0`.
@@ -245,9 +245,9 @@ When a node applies a block, these steps execute in strict sequence:
 - State root after block = SMT root committing to full state
 - Re-execute any block → deterministic state
 
-Fees, fee distribution, and anti-spam deposits are documented in [Fees](plans/V0.8.0/Fees.md).
+Fees, fee distribution, and anti-spam deposits are documented in [Fees](plans/V1.0.0/Fees.md).
 
-Genesis format, loading, and token supply are documented in [Genesis](plans/V0.8.0/Genesis.md).
+Genesis format, loading, and token supply are documented in [Genesis](plans/V1.0.0/Genesis.md).
 
 ## Chain ID
 
@@ -302,4 +302,4 @@ pub enum LibError {
 
 The CLI binary wraps `LibError` into `anyhow::Error` for user-facing messages. The GUI uses `LibError` directly since it handles errors in its own UI layer.
 
-**Related:** [Architecture](plans/V0.8.0/Architecture.md), [Consensus](plans/V0.8.0/Consensus.md), [Network](plans/V0.8.0/Network.md), [Fees](plans/V0.8.0/Fees.md), [Genesis](plans/V0.8.0/Genesis.md)
+**Related:** [Architecture](plans/V1.0.0/Architecture.md), [Consensus](plans/V1.0.0/Consensus.md), [Network](plans/V1.0.0/Network.md), [Fees](plans/V1.0.0/Fees.md), [Genesis](plans/V1.0.0/Genesis.md)

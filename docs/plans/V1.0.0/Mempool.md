@@ -63,4 +63,4 @@ Each account is limited to **50 transactions per block** at the mempool level. T
 
 ---
 
-**Related:** [Consensus](plans/V0.8.0/Consensus.md), [NodeConfig](plans/V0.8.0/NodeConfig.md)
+**Related:** [Consensus](plans/V1.0.0/Consensus.md), [NodeConfig](plans/V1.0.0/NodeConfig.md)

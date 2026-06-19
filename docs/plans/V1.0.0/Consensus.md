@@ -155,7 +155,7 @@ CommitVote {
 
 ## Forks
 
-Slashing is documented in a separate file: [Slashing](plans/V0.8.0/Slashing.md).
+Slashing is documented in a separate file: [Slashing](plans/V1.0.0/Slashing.md).
 
 ## Future: GRANDPA (V2.0+)
 
@@ -180,7 +180,7 @@ With Falcon-512 signatures (666 bytes per tx), realistic tx sizes are larger tha
 
 Realistic V1 throughput: **100-200 TPS** with Falcon-512 signatures, which aligns with the "Cheap Validators First" philosophy.
 
-Mempool is documented in a separate file: [Mempool](plans/V0.8.0/Mempool.md).
+Mempool is documented in a separate file: [Mempool](plans/V1.0.0/Mempool.md).
 
 ## Validator Election
 
@@ -203,7 +203,7 @@ slot 4: validator_1  (cycles)
 
 - Order is determined at era boundaries (when active set is elected)
 - All validators can compute the proposer for any slot independently
-- **Frozen validators** (see [Slashing](plans/V0.8.0/Slashing.md#freeze-period)) are excluded from the schedule — the active set passed to `RoundRobin` filters out frozen entries
+- **Frozen validators** (see [Slashing](plans/V1.0.0/Slashing.md#freeze-period)) are excluded from the schedule — the active set passed to `RoundRobin` filters out frozen entries
 - Simple, predictable, easy to debug with Docker
 
 ### Future: VRF Leader Election (V2.0+)
@@ -365,4 +365,4 @@ If VRF leader election or GRANDPA finality is added, explicit fork-choice rules 
 
 ---
 
-**Related:** [Validators](plans/V0.8.0/Validators.md), [Protocol](plans/V0.8.0/Protocol.md), [Slashing](plans/V0.8.0/Slashing.md), [Mempool](plans/V0.8.0/Mempool.md), [ADR-017](../../architecture/ADR-017-slashing-freeze.md)
+**Related:** [Validators](plans/V1.0.0/Validators.md), [Protocol](plans/V1.0.0/Protocol.md), [Slashing](plans/V1.0.0/Slashing.md), [Mempool](plans/V1.0.0/Mempool.md), [ADR-017](../../architecture/ADR-017-slashing-freeze.md)

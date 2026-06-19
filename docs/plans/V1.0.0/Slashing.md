@@ -192,4 +192,4 @@ If all checks pass, the proposer is slashed 90% and the reporter receives a 10% 
 
 ---
 
-**Related:** [Consensus](plans/V0.8.0/Consensus.md), [Validators](plans/V0.8.0/Validators.md), [Protocol](plans/V0.8.0/Protocol.md), [ADR-017](../../architecture/ADR-017-slashing-freeze.md)
+**Related:** [Consensus](plans/V1.0.0/Consensus.md), [Validators](plans/V1.0.0/Validators.md), [Protocol](plans/V1.0.0/Protocol.md), [ADR-017](../../architecture/ADR-017-slashing-freeze.md)

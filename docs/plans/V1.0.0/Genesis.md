@@ -174,5 +174,5 @@ A portion of inflation can be diverted to a treasury/development fund, governed 
 
 ---
 
-**Related:** [Protocol](plans/V0.8.0/Protocol.md), [Fees](plans/V0.8.0/Fees.md), [Consensus](plans/V0.8.0/Consensus.md)
+**Related:** [Protocol](plans/V1.0.0/Protocol.md), [Fees](plans/V1.0.0/Fees.md), [Consensus](plans/V1.0.0/Consensus.md)
 ```

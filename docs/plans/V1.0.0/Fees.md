@@ -125,5 +125,5 @@ The fee and staking model is designed to resist economic attacks. The table belo
 
 ---
 
-**Related:** [Protocol](plans/V0.8.0/Protocol.md), [Genesis](plans/V0.8.0/Genesis.md), [Mempool](plans/V0.8.0/Mempool.md), [Validators](plans/V0.8.0/Validators.md)
+**Related:** [Protocol](plans/V1.0.0/Protocol.md), [Genesis](plans/V1.0.0/Genesis.md), [Mempool](plans/V1.0.0/Mempool.md), [Validators](plans/V1.0.0/Validators.md)
 ```

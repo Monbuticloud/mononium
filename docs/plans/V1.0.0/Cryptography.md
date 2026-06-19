@@ -122,4 +122,4 @@ The key file (`~/.mononium/keys/{name}.json`) is the **operational secret** for 
 
 ---
 
-**Related:** [Validators](plans/V0.8.0/Validators.md), [Protocol](plans/V0.8.0/Protocol.md)
+**Related:** [Validators](plans/V1.0.0/Validators.md), [Protocol](plans/V1.0.0/Protocol.md)

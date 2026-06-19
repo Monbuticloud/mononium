@@ -354,7 +354,7 @@ On restart:
 
 ### State Checkpoints
 
-Full state snapshots are taken at every **era boundary** (720 blocks, ~1 hour). The snapshot is written to redb in a **background task** — block production continues without blocking. See [Storage — Checkpoints](./plans/V0.8.0/Storage.md) for the full protocol, retention policy, size estimates, and implementation details.
+Full state snapshots are taken at every **era boundary** (720 blocks, ~1 hour). The snapshot is written to redb in a **background task** — block production continues without blocking. See [Storage — Checkpoints](./plans/V1.0.0/Storage.md) for the full protocol, retention policy, size estimates, and implementation details.
 
 ## Dependency Flow
 
@@ -368,4 +368,4 @@ No circular dependencies. The lib has zero knowledge of CLI or GUI — it's pure
 
 ---
 
-**Related:** [Protocol](plans/V0.8.0/Protocol.md), [Storage](plans/V0.8.0/Storage.md), [Validators](plans/V0.8.0/Validators.md), [Roadmap](plans/V0.8.0/Roadmap.md)
+**Related:** [Protocol](plans/V1.0.0/Protocol.md), [Storage](plans/V1.0.0/Storage.md), [Validators](plans/V1.0.0/Validators.md), [Roadmap](plans/V1.0.0/Roadmap.md)
