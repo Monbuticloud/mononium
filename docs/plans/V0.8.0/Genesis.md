@@ -42,11 +42,11 @@ mononium-cli node --genesis configs/genesis.localnet.json
 
 ### Genesis Files
 
-| File                            | Network  | Supply                       | Validators                                            |
-| ------------------------------- | -------- | ---------------------------- | ----------------------------------------------------- |
-| `configs/genesis.localnet.json` | Localnet | 10 MONEX (1 key)             | Bootstrap only (1 block)                              |
-| `configs/genesis.devnet.json`   | Devnet   | 100 MONEX per key (3-5 keys) | Bootstrap (20 blocks) → era 0 Open                    |
-| `configs/genesis.testnet.json`  | Testnet  | 100 MONEX                    | Bootstrap (100 blocks) → era 0 Open                   |
+| File                            | Network  | Supply                       | Validators                                                                                      |
+| ------------------------------- | -------- | ---------------------------- | ----------------------------------------------------------------------------------------------- |
+| `configs/genesis.localnet.json` | Localnet | 10 MONEX (1 key)             | Bootstrap only (1 block)                                                                        |
+| `configs/genesis.devnet.json`   | Devnet   | 100 MONEX per key (3-5 keys) | Bootstrap (20 blocks) → era 0 Open                                                              |
+| `configs/genesis.testnet.json`  | Testnet  | 100 MONEX                    | Bootstrap (100 blocks) → era 0 Open                                                             |
 | `configs/genesis.mainnet.json`  | Mainnet  | 0 MONEX                      | Bootstrap (100 blocks) → era 0 Open + CappedInflation. `max_validators: 101` in genesis config. |
 
 ## Denomination
@@ -74,6 +74,7 @@ Genesis account balances are stored in JSON as **decimal strings** representing 
 ```
 
 Parsing logic:
+
 1. Read the balance field as a string from JSON (deserialize as `String` via serde)
 2. Parse the decimal string into `U256` using `U256::from_dec_str()` (from `primitive-types`)
 3. If parsing fails (invalid digit, overflow), the genesis load **errors** — a malformed genesis is an immediate startup failure

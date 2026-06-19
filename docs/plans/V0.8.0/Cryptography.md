@@ -103,12 +103,12 @@ Key generation is an **offline CLI operation** (`mononium-cli wallet keygen`). T
 
 The primary backup mechanism is a **BIP39 mnemonic phrase**:
 
-| Component       | Specification                                           |
-| --------------- | ------------------------------------------------------- |
-| **Seed phrase** | 24 words (BIP39), generated during `wallet keygen`      |
-| **Entropy**     | 48 bytes (256-bit security) mapped to BIP39 wordlist    |
-| **Key file**    | The **operational secret** — used by the node at startup|
-| **Mnemonic**    | The **primary backup** — users write it down on paper   |
+| Component       | Specification                                            |
+| --------------- | -------------------------------------------------------- |
+| **Seed phrase** | 24 words (BIP39), generated during `wallet keygen`       |
+| **Entropy**     | 48 bytes (256-bit security) mapped to BIP39 wordlist     |
+| **Key file**    | The **operational secret** — used by the node at startup |
+| **Mnemonic**    | The **primary backup** — users write it down on paper    |
 
 ### Recovery Flow
 

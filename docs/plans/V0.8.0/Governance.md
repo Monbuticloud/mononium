@@ -253,17 +253,17 @@ Governance in V2 could be extended with:
 
 To prevent governance from shooting the chain in the foot, each mutable parameter has safe min/max bounds:
 
-| Parameter              | Min     | Max         | Rationale                              |
-| ---------------------- | ------- | ----------- | -------------------------------------- |
-| `max_validators`       | 1       | 1000        | Must be at least 1                     |
-| `era_length`           | 100     | 10000       | Too short = frequent elections         |
-| `block_size_cap_bytes` | 1024    | 2097152     | Must fit within gossip limit (2 MB)    |
-| `block_tx_cap`         | 1       | 10000       | Must be at least 1                     |
-| `flat_fee`             | 0       | 100 MONEX   | Can't be negative or absurd            |
-| `per_byte_rate`        | 0       | 1 MONEX     | Can't be negative                      |
-| `anti_spam_deposit`    | 0       | 100 MONEX   | Can't be negative                      |
-| `supply_ceiling_rate`  | 0%      | 20%         | Max annual inflation ceiling           |
-| `supply_headroom_rate` | 0%      | 20%         | Same as above                          |
+| Parameter              | Min  | Max       | Rationale                           |
+| ---------------------- | ---- | --------- | ----------------------------------- |
+| `max_validators`       | 1    | 1000      | Must be at least 1                  |
+| `era_length`           | 100  | 10000     | Too short = frequent elections      |
+| `block_size_cap_bytes` | 1024 | 2097152   | Must fit within gossip limit (2 MB) |
+| `block_tx_cap`         | 1    | 10000     | Must be at least 1                  |
+| `flat_fee`             | 0    | 100 MONEX | Can't be negative or absurd         |
+| `per_byte_rate`        | 0    | 1 MONEX   | Can't be negative                   |
+| `anti_spam_deposit`    | 0    | 100 MONEX | Can't be negative                   |
+| `supply_ceiling_rate`  | 0%   | 20%       | Max annual inflation ceiling        |
+| `supply_headroom_rate` | 0%   | 20%       | Same as above                       |
 
 A governance proposal that sets a parameter outside its bounds is **rejected at validation time** (before the voting window opens).
 

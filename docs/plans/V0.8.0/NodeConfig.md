@@ -140,10 +140,10 @@ Also available as `--unlock-timeout` CLI flag.
 
 ### `crypto.*`
 
-| Field                  | Default | Description                               |
-| ---------------------- | ------- | ----------------------------------------- |
-| `argon2_memory_mib`    | `256`   | Argon2id memory cost in MiB               |
-| `argon2_iterations`    | `16`    | Argon2id time cost (iterations)           |
+| Field               | Default | Description                     |
+| ------------------- | ------- | ------------------------------- |
+| `argon2_memory_mib` | `256`   | Argon2id memory cost in MiB     |
+| `argon2_iterations` | `16`    | Argon2id time cost (iterations) |
 
 Config-file only — no CLI flag overrides. Adjust these if the default parameters are too slow for the node's hardware (lower memory/iterations) or if higher security is desired (higher values). The node logs a warning if estimated derivation time exceeds `node.unlock_timeout`.
 

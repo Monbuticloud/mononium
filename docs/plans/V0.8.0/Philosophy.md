@@ -40,14 +40,14 @@ This is a systems-level project spanning distributed systems, cryptography, data
 
 ## Trade-Offs Made
 
-| Decision             | Chose                | Over                     |
-| -------------------- | -------------------- | ------------------------ |
-| Account model        | Simplicity, UX       | UTXO's parallelizability |
-| Falcon-512           | Post-quantum ready   | Ed25519 speed            |
-| redb                 | Determinism, low RAM | General-purpose DBs      |
+| Decision             | Chose                | Over                         |
+| -------------------- | -------------------- | ---------------------------- |
+| Account model        | Simplicity, UX       | UTXO's parallelizability     |
+| Falcon-512           | Post-quantum ready   | Ed25519 speed                |
+| redb                 | Determinism, low RAM | General-purpose DBs          |
 | No sharding V1       | Complexity avoidance | Sharding planned for late V1 |
-| CLI first, GUI later | Focus                | Parallel delivery        |
-| Fixed 5s block       | Predictability       | Variable timing          |
+| CLI first, GUI later | Focus                | Parallel delivery            |
+| Fixed 5s block       | Predictability       | Variable timing              |
 
 ## Non-Goals for V1
 

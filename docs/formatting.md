@@ -4,13 +4,13 @@ Formatting conventions for all Mononium project documentation.
 
 ## File Naming
 
-| Doc type              | Pattern                        | Example                      |
-| --------------------- | ------------------------------ | ---------------------------- |
-| ADRs                  | `ADR-NNN-kebab-title.md`       | `ADR-007-database.md`        |
-| Plan docs             | `PascalCase.md`                | `Consensus.md`, `Storage.md` |
-| Reference / guides    | `kebab-case.md`                | `formatting.md`              |
-| Version folders       | `V{semver}/`                   | `V0.1.0/`                    |
-| DOX / AGENTS.md       | `AGENTS.md` (exact, no prefix) | `docs/plans/AGENTS.md`       |
+| Doc type           | Pattern                        | Example                      |
+| ------------------ | ------------------------------ | ---------------------------- |
+| ADRs               | `ADR-NNN-kebab-title.md`       | `ADR-007-database.md`        |
+| Plan docs          | `PascalCase.md`                | `Consensus.md`, `Storage.md` |
+| Reference / guides | `kebab-case.md`                | `formatting.md`              |
+| Version folders    | `V{semver}/`                   | `V0.1.0/`                    |
+| DOX / AGENTS.md    | `AGENTS.md` (exact, no prefix) | `docs/plans/AGENTS.md`       |
 
 ADR files are zero-padded to 3 digits (`ADR-001`, `ADR-015`).
 
@@ -79,7 +79,7 @@ sequenceDiagram
 ```
 
 ```json
-{"key": "value"}
+{ "key": "value" }
 ```
 
 ```text
@@ -87,23 +87,23 @@ File tree or plain output
 ```
 ````
 
-| Content               | Language tag      |
-| --------------------- | ----------------- |
-| Rust code             | `rust`            |
-| Mermaid diagrams      | `mermaid`         |
-| JSON                  | `json`            |
-| File trees / sketches | (none / `text`)   |
-| Config / pseudo-code  | (none)            |
+| Content               | Language tag    |
+| --------------------- | --------------- |
+| Rust code             | `rust`          |
+| Mermaid diagrams      | `mermaid`       |
+| JSON                  | `json`          |
+| File trees / sketches | (none / `text`) |
+| Config / pseudo-code  | (none)          |
 
 ## Tables
 
 Use aligned dashes and pipe delimiters. Short dashes row, pipes at both ends:
 
 ```markdown
-| Parameter   | Value | Notes            |
-| ----------- | ----- | ---------------- |
-| Block time  | 5s    | Fixed            |
-| Block size  | 500 KB| Hard cap         |
+| Parameter  | Value  | Notes    |
+| ---------- | ------ | -------- |
+| Block time | 5s     | Fixed    |
+| Block size | 500 KB | Hard cap |
 ```
 
 Tables with 3+ columns should wrap headers to keep scanability. Right-align numeric columns when useful (rare — plain left is the default).
@@ -130,11 +130,11 @@ sequenceDiagram
 
 ## Emphasis
 
-| Style       | Usage                       |
-| ----------- | --------------------------- |
-| `**bold**`  | Key terms, important values |
+| Style        | Usage                                         |
+| ------------ | --------------------------------------------- |
+| `**bold**`   | Key terms, important values                   |
 | `` `code` `` | Types, variables, file paths, inline commands |
-| `_italic_`  | Rare — emphasis only        |
+| `_italic_`   | Rare — emphasis only                          |
 
 Do not use `__underscore__` for bold or `*asterisk*` for italic.
 

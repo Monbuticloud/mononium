@@ -16,7 +16,7 @@ Proof of Stake consensus with a fixed 5-second block time and 20-second finality
 | Block time         | 5s         | Fixed, not variable                   |
 | Finality           | ~20s       | 4 blocks (BFT commit)                 |
 | Block size         | 500 KB     | Hard cap                              |
-| Finality mechanism | BFT commit | Per-block, > 2/3 validator sigs        |
+| Finality mechanism | BFT commit | Per-block, > 2/3 validator sigs       |
 | Era length         | 720 blocks | ~1 hour — validator set recalculation |
 
 ## Eras

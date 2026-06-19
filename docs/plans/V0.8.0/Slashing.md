@@ -23,7 +23,7 @@ If a proposer equivocates (proposes two blocks at the same slot), validators:
 | **Burn effect**        | Coins at Burn address are permanently destroyed. No effect on inflation cap. |
 | **Liveness**           | Not slashed in V1 (replaced at era boundary if inactive)                     |
 | **Evidence topic**     | Gossiped on `mononium/evidence/{chain_id}`                                   |
-| **Unstaking cooldown** | 168 eras (~7 days at 5s blocks), constant, prevents gaming after violations   |
+| **Unstaking cooldown** | 168 eras (~7 days at 5s blocks), constant, prevents gaming after violations  |
 | **Freeze duration**    | 72 eras (~3 days) — excluded from proposer schedule, voting, and rewards     |
 
 Example: validator with 1000 MONEX staked equivocates:
@@ -42,10 +42,10 @@ Example: validator with 1000 MONEX staked equivocates:
 
 **Any account can submit evidence**, not just validators. The bounty is credited to the reporter's account as a locked balance:
 
-| Reporter type | Bounty mechanics |
-|---|---|
-| Active validator | Bounty added to existing validator stake (same as before) |
-| Inactive staker | Bounty added to their existing stake |
+| Reporter type            | Bounty mechanics                                                                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Active validator         | Bounty added to existing validator stake (same as before)                                                                          |
+| Inactive staker          | Bounty added to their existing stake                                                                                               |
 | Non-validator (no stake) | Bounty credited as a locked MONEX balance — must register as validator to unlock, or unstake (168-era cooldown after registration) |
 
 The lock ensures the reporter cannot immediately liquidate the reward, regardless of their account type. For non-validators, the locked balance sits on the account until they choose to register (locking it as validator stake) or unstake (168-era cooldown to transferable).

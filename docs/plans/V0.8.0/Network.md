@@ -451,27 +451,27 @@ A lightweight peer scoring system deters misbehavior and guides peer selection. 
 
 #### Score Tiers
 
-| Score range | Status  | Behavior                                                                   |
-| ----------- | ------- | -------------------------------------------------------------------------- |
-| `> 0`       | Good    | Normal operation, preferred for sync requests                              |
-| `-20 to 0`  | Neutral | Deprioritized for sync requests, still connected                           |
+| Score range | Status  | Behavior                                                      |
+| ----------- | ------- | ------------------------------------------------------------- |
+| `> 0`       | Good    | Normal operation, preferred for sync requests                 |
+| `-20 to 0`  | Neutral | Deprioritized for sync requests, still connected              |
 | `< -20`     | Banned  | Disconnected and banned for 720 blocks from infraction height |
 
 #### Score Adjustments
 
-| Event                                                 | Score change | Rationale                                      |
-| ----------------------------------------------------- | ------------ | ---------------------------------------------- |
-| Valid block propagated                                | +1           | Good citizen                                   |
-| Valid vote propagated                                 | +1           | Good citizen                                   |
-| Successful sync batch served                          | +2           | Useful peer                                    |
-| Sync batch hash mismatch (ADR-018)                    | -10          | Fork disagreement or corrupted data            |
+| Event                                                      | Score change | Rationale                                      |
+| ---------------------------------------------------------- | ------------ | ---------------------------------------------- |
+| Valid block propagated                                     | +1           | Good citizen                                   |
+| Valid vote propagated                                      | +1           | Good citizen                                   |
+| Successful sync batch served                               | +2           | Useful peer                                    |
+| Sync batch hash mismatch (ADR-018)                         | -10          | Fork disagreement or corrupted data            |
 | Sync batch fails verification (global_state_root mismatch) | -20          | Served invalid state — unambiguous misbehavior |
-| Empty sync response (peer has blocks but won't serve) | -2           | Wasting request slots                          |
-| Timeout on sync request (2+ consecutive)              | -4           | Unresponsive                                   |
-| Invalid block gossiped                                | -10          | Wasting bandwidth                              |
-| Invalid vote gossiped                                 | -10          | Wasting bandwidth                              |
-| Connect/disconnect loop (>3 disconnects in 5 min)     | -10          | Connection flapping                            |
-| Duplicate block gossip (>3 identical blocks)          | -2           | Bandwidth waste                                |
+| Empty sync response (peer has blocks but won't serve)      | -2           | Wasting request slots                          |
+| Timeout on sync request (2+ consecutive)                   | -4           | Unresponsive                                   |
+| Invalid block gossiped                                     | -10          | Wasting bandwidth                              |
+| Invalid vote gossiped                                      | -10          | Wasting bandwidth                              |
+| Connect/disconnect loop (>3 disconnects in 5 min)          | -10          | Connection flapping                            |
+| Duplicate block gossip (>3 identical blocks)               | -2           | Bandwidth waste                                |
 
 #### Ban Mechanics
 

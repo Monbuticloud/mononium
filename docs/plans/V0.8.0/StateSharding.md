@@ -24,12 +24,12 @@ shard_id = u16::from_le_bytes([hash[0], hash[1]]) % N_SHARDS   // first 2 bytes 
 
 Shard count increases use the **standard governance flow** (see [Governance.md](./Governance.md)), not a custom vote type. `IncreaseShards` is a `GovernanceAction` variant with special validation:
 
-| Parameter    | Value                                                    |
-| ------------ | -------------------------------------------------------- |
-| Proposer     | Any staker (active or inactive)                          |
-| Quorum       | ≥ 2/3 of total active stake (same as Governance.md)      |
-| Threshold    | >50% of participating stake approves                     |
-| Window       | Standard 7-era governance voting window                  |
+| Parameter    | Value                                                                    |
+| ------------ | ------------------------------------------------------------------------ |
+| Proposer     | Any staker (active or inactive)                                          |
+| Quorum       | ≥ 2/3 of total active stake (same as Governance.md)                      |
+| Threshold    | >50% of participating stake approves                                     |
+| Window       | Standard 7-era governance voting window                                  |
 | Grace period | `effective_era` must be ≥ `current_era + 24` (enforced by state machine) |
 
 ### Process
@@ -47,6 +47,7 @@ The shard count is stored in the **genesis consensus config** (not hardcoded in 
 ### Migration Details
 
 **Pre-computation (grace period):** After the governance vote passes (at era boundary), each validator:
+
 1. Computes their new shard assignment based on the new `N_SHARDS` value
 2. For each shard they **already store** that splits (because `N_SHARDS` increased), they partition their local SMT into the new shard boundaries
 3. For shards they are **newly assigned** but do not yet store, they request the SMT snapshot from peers during the grace period — same mechanism as checkpoint sync (authenticated via the global state root at the vote era boundary)
@@ -55,6 +56,7 @@ The shard count is stored in the **genesis consensus config** (not hardcoded in 
 **Shard discovery:** Validators announce which shards they store via the Identify protocol (a `shards: Vec<u16>` field in peer metadata). At migration boundaries, the new shard assignments are deterministic (hash-based partitioning) — any validator can compute which shards any other validator stores based on their peer ID and the current `N_SHARDS`.
 
 **Catch-up (offline validator):** A validator that was offline during the entire grace period (unlikely given 24 hours, but handled):
+
 1. At the migration block, they discover they are assigned to shards they don't have
 2. They request the shard SMT snapshot from any peer storing those shards — same mechanism as [Restart Sync](#restart-sync) (snapshot with SMT proof, verified against the global state root at the migration era boundary)
 3. Once all assigned shards are verified, they resume consensus participation
