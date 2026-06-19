@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
+                "file": "plans/V0.6.0/Fees.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "ADR-016-cryptographic-signature-scheme"
+              "title": "Fees"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
+                "file": "plans/V0.6.0/Fees.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for ADR-016-cryptographic-signature-scheme"
+              "title": "Backlinks for Fees"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
+                "file": "plans/V0.6.0/Fees.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from ADR-016-cryptographic-signature-scheme"
+              "title": "Outgoing links from Fees"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "architecture/ADR-016-cryptographic-signature-scheme.md",
+                "file": "plans/V0.6.0/Fees.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of ADR-016-cryptographic-signature-scheme"
+              "title": "Outline of Fees"
             }
           }
         ]
@@ -185,13 +185,22 @@
   },
   "active": "da452a15a9f51dda",
   "lastOpenFiles": [
+    "plans/V0.6.0/Protocol.md",
+    "plans/V0.4.0/Protocol.md",
+    "plans/V0.4.0/Storage.md",
+    "plans/V0.4.0/Consensus.md",
+    "plans/GRILL.md",
+    "architecture/ADR-019-crate-selection-crypto.md",
+    "architecture/ADR-018-sync-batch-hash.md",
+    "plans/V0.6.0/Governance.md",
+    "architecture/ADR-016-cryptographic-signature-scheme.md",
+    "architecture/ADR-017-slashing-freeze.md",
     "plans/V0.6.0/Validators.md",
     "plans/V0.6.0/Testing.md",
     "plans/V0.6.0/Storage.md",
     "plans/V0.6.0/StateSharding.md",
     "plans/V0.6.0/Slashing.md",
     "plans/V0.6.0/Roadmap.md",
-    "plans/V0.6.0/Protocol.md",
     "plans/V0.6.0/Philosophy.md",
     "plans/V0.6.0/NodeConfig.md",
     "plans/V0.6.0/Network.md",
@@ -203,15 +212,6 @@
     "plans/V0.6.0/Consensus.md",
     "plans/V0.6.0/Architecture.md",
     "plans/V0.6.0",
-    "plans/V0.5.0/Genesis.md",
-    "plans/V0.5.0/Fees.md",
-    "plans/V0.5.0/Slashing.md",
-    "plans/V0.5.0/Mempool.md",
-    "plans/V0.5.0/Validators.md",
-    "plans/V0.5.0/Testing.md",
-    "plans/V0.5.0/Storage.md",
-    "plans/V0.5.0/StateSharding.md",
-    "plans/V0.5.0/Roadmap.md",
     "plans/V0.5.0",
     "plans/V0.4.0",
     "plans/V0.3.0",

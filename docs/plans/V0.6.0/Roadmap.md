@@ -48,6 +48,7 @@ Ship `mononium-rust-lib` + `mononium-cli` first. GUI starts later.
 - [ ] `mononium-rust-lib`: P2P networking + peer discovery
 - [ ] `mononium-rust-lib`: PoS consensus engine
 - [ ] `mononium-rust-lib`: staking transaction types
+- [ ] `mononium-rust-lib`: governance module (propose, vote, tally, execute)
 - [ ] `mononium-cli`: multi-validator node mode
 - [ ] `mononium-cli`: stake/unstake commands
 - [ ] Block propagation and consensus votes
@@ -76,7 +77,6 @@ Ship `mononium-rust-lib` + `mononium-cli` first. GUI starts later.
 - [ ] Performance optimization
 - [ ] Security review
 - [ ] Bug bounty or focused testing
-- [ ] Governance / upgrade mechanism (basic)
 - [ ] `mononium-gui`: block explorer view
 - [ ] `mononium-gui`: validator monitoring
 
@@ -99,7 +99,6 @@ Ship `mononium-rust-lib` + `mononium-cli` first. GUI starts later.
 - [ ] Bridge to external chains (wrapped MONEX on Solana/Ethereum, or cross-chain messaging)
 - [ ] VRF leader election (replaces round-robin)
 - [ ] GRANDPA finality gadget (optional — only if BFT per block proves insufficient)
-- [ ] Governance / upgrade mechanism
 - [ ] Phragmén NPoS (replaces Top-N)
 - [ ] Treasury / dev fund from inflation
 - [ ] Smart contracts (WASM or EVM)

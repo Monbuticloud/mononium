@@ -59,6 +59,10 @@ mononium-rust-lib/src/
     │   ├── falcon.rs              # sign/verify round-trip
     │   ├── trie.rs                # SMT insert/get/proof determinism
     │   └── address.rs             # address format, checksum validation
+    ├── governance/
+    │   ├── mod.rs                 # proposal lifecycle, submission validation
+    │   ├── voting.rs              # stake-weighted tally, quorum, execution
+    │   └── integration.rs         # full governance flow: propose → vote → execute
     ├── consensus/
     │   ├── mod.rs
     │   ├── election.rs            # Top-N election, tie-breaking
@@ -80,7 +84,8 @@ mononium-rust-lib/src/
         ├── basic_transfer.rs      # full flow: keygen → tx → block → state
         ├── multi_validator.rs     # 3 validators, consensus finality
         ├── era_transition.rs      # validator set change at era boundary
-        └── slashing_scenarios.rs  # equivocation, evidence, penalty
+        ├── slashing_scenarios.rs  # equivocation, evidence, penalty
+        └── governance_flow.rs     # propose → vote → tally → execute at era boundary
 ```
 
 All test files use `#[cfg(test)]` and are compiled only during testing — zero bloat in release builds.
@@ -110,6 +115,11 @@ All test files use `#[cfg(test)]` and are compiled only during testing — zero 
 | Mempool TTL eviction removes stale txs                  | `tests/mempool/mod.rs`        |
 | Top-N election sorts by stake desc, tie by registration | `tests/consensus/election.rs` |
 | Equivocation detection catches duplicate blocks         | `tests/consensus/slashing.rs` |
+| Proposal deposit deducted on submit, returned on resolve | `tests/governance/mod.rs`  |
+| Stake-weighted tally matches participating weight        | `tests/governance/voting.rs` |
+| Quorum below 2/3 → proposal fails, deposit forfeited     | `tests/governance/voting.rs` |
+| Approved proposal executes param change at era boundary  | `tests/governance/integration.rs` |
+| Governance cannot modify compile-time constants          | `tests/governance/mod.rs`  |
 
 ### Tier 2: State Machine Integration
 

@@ -11,6 +11,7 @@ Open questions and decisions deferred for upcoming grilling sessions.
 - [x] **Failed tx handling** — skip-and-continue, fee still paid to proposer. Settled in V0.4.0 session.
 - [x] **Fee burning on mainnet** — deferred. Fees go to validators pro-rata by stake; no burning in V1.
 - [x] **Validator rewards distribution** — pro-rata by stake, per-block, all active validators. Settled V0.4.0.
+- [x] **Denomination** — 32 decimal places (10^32 MOXX per MONEX). Architecture.md updated. Settled V0.6.0.
 
 ## Validators & Consensus
 
@@ -18,12 +19,18 @@ Open questions and decisions deferred for upcoming grilling sessions.
 - [x] **Clock drift tolerance** — ±2s. Unix timestamp seconds, validated locally, rejected blocks treated as missed slots. Settled V0.4.0.
 - [x] **Fork handling** — no explicit fork-choice rule in V1. Follow proposer schedule + heaviest-by-stake-weight for ambiguous chains. Equivocators lose 90% → honest chain becomes heavier. Settled.
 - [x] **CommitVote timing** — validators vote immediately after verification. Next proposer collects via gossip. Settled V0.4.0.
+- [x] **Missed slot penalty destination** — 0.08 MONEX per missed slot sent to 0x00..01 (Cap-Refill), not burned. Applied at era boundary. Settled V0.6.0.
+- [x] **Bootstrap key** — switched from single key to multi-key genesis config. Genesis `bootstrap` field accepts multiple public keys; any key in the list can propose during bootstrap phase. Settled V0.6.0.
 
 ## Networking & Sync
 
-- [ ] **Sync edge cases** — what happens when peers disagree on the canonical chain? Peer disconnection/reconnection during sync?
-- [ ] **Gossip message limits** — max message size per topic? Rate limiting per peer?
-- [ ] **Peer scoring** — punish bad peers (invalid blocks, spam, no-show)?
+- [x] **Batch hash (rolling chain continuity)** — rolling BLAKE3 over batch blocks in `BlockSyncResponse` for fast fork detection before full verification. Per-batch, resets on each request. Doc'd in ADR-018. Settled V0.6.0.
+- [x] **Mid-sync peer disconnection** — no sessions needed. Chain's parent_hash is the continuity mechanism. Sync cursor persisted locally (last_verified_height, last_verified_hash). On disconnect, discard incomplete batch, re-request with known_block_hash as fork anchor. Documented in Network.md. Settled V0.6.0.
+- [x] **Checkpoint-era validator set delivery** — `CheckpointResponse` includes full `validator_set: Vec<ValidatorEntry>` so the syncing node can verify BFT commits without replay. Authenticated via `validator_set_hash`. Documented in Network.md. Settled V0.6.0.
+- [x] **Sync stall / no available peers** — permanent retry: 5s → 10s → 30s → 30s (repeat). Node never gives up. Critical error logged after 5 min of zero connections but retry continues. Documented in Network.md. Settled V0.6.0.
+- [ ] **Long-range checkpoint corruption** — checkpoint download succeeds, SMT rebuild fails. Node falls back to full replay from genesis? How far back does this go for an archive node?
+- [x] **Gossip message limits** — per-topic size caps (txs: 1MB, blocks: 500KB, votes: 1KB, evidence: 5KB) + per-peer rate limits (txs: 20/s, blocks: 1/s, votes: 100/s, evidence: 5/s). Score penalties for violations. Documented in Network.md. Settled V0.6.0.
+- [x] **Peer scoring** — 3-tier: Good (>0), Neutral (-20 to 0), Banned (< -20). Negatives doubled from original proposal. Ban = disconnect + 1-era banlist wipe. Era-based expiry (fallback: 1hr wall clock for fresh genesis). Documented in Network.md. Settled V0.6.0.
 
 ## Storage
 
@@ -45,24 +52,25 @@ Open questions and decisions deferred for upcoming grilling sessions.
 ## Workspace & Build
 
 - [ ] **Cargo workspace conversion** — root Cargo.toml → virtual workspace with shared `[workspace.dependencies]`. Version table for shared deps (libp2p, tokio, serde, etc.)
-- [ ] **mononium-rust-lib Cargo.toml** — full dependency list with features
+- [x] **Crypto crate selection** — Zcash `falcon` (pure Rust), `primitive-types` for U256, `argon2` for KDF, `chacha20poly1305` for key encryption. Doc'd in ADR-019. Settled V0.6.0.
+- [ ] **mononium-rust-lib Cargo.toml** — full dependency list with features (non-crypto deps still open: libp2p, tokio, serde versions)
 - [ ] **mononium-cli Cargo.toml** — CLI-only deps (clap, anyhow, tracing-subscriber)
+
+## Economics
+
+- [x] **Anti-spam deposit** — 0.33 MONEX per tx (reduced from 1 MONEX), held from sender's balance until era boundary. Auto-returned (no reclaim tx). Scales with volume. Settled V0.6.0.
+- [x] **Fee burning mechanics** — burn tx to 0x00..00 or 0x00..01 at 10 MOXX flat fee. Normal fees unchanged (pro-rata by stake distribution).
+- [x] **Validator rewards distribution** — pro-rata by stake per block. Settled V0.4.0.
+- [x] **Burn tx fee discount** — 10 MOXX flat for Burn and WithdrawTxDeposit types (bypasses standard fee calculation).
+- [x] **Per-account rate limit** — 50 txs/account/block, local mempool policy.
+- [x] **Block hard cap** — 500 txs OR 1 MB.
+- [x] **Inflation curve** — `min(5% × headroom, 3.5% × effective_max)` per era. Flat (~55.5/block) until 30% minted, then decays smoothly. No supply cliff. Settled V0.6.0.
 
 ## Light Client & RPC
 
 - [ ] **Light client** — deferred to V2 but architecture might affect V1 RPC. What data must be kept available for light client SMT proofs?
-- [ ] **RPC method inventory** — complete list of jsonrpsee methods + REST endpoints. Error types and codes.
-- [ ] **WebSocket subscriptions** — which events are subscribable? New blocks, new txs, finality events?
-
-## Economics
-
-- [x] **Fee burning mechanics** — burn tx to 0x00..00 or 0x00..01 at 10 MOXX flat fee. Normal fees unchanged (pro-rata by stake distribution).
-- [x] **Validator rewards distribution** — pro-rata by stake per block. Settled V0.4.0.
-- [ ] **Inflation curve later** — does 3.5% stay constant until the cap or decay over time?
-- [x] **Burn tx fee discount** — 10 MOXX flat for Burn and WithdrawTxDeposit types (bypasses standard fee calculation).
-- [x] **Anti-spam deposit** — 1 MONEX per tx, held from sender's balance until era boundary. Auto-returned (no reclaim tx). Scales with volume.
-- [x] **Per-account rate limit** — 50 txs/account/block, local mempool policy.
-- [x] **Block hard cap** — 500 txs OR 1 MB.
+- [x] **RPC method inventory** — 11 REST endpoints (Phase 1), 15 jsonrpsee methods + 3 subscriptions (Phase 2). Error codes: 0 to -7. Documented in Architecture.md. Settled V0.6.0.
+- [x] **WebSocket subscriptions** — `subscribe_blocks`, `subscribe_finality`, `subscribe_votes`. Added Phase 2 alongside jsonrpsee. Settled V0.6.0.
 
 ## V2 (DeFi, developed late V1)
 
@@ -75,6 +83,4 @@ Open questions and decisions deferred for upcoming grilling sessions.
 - [ ] Smart contracts
 - [x] **State sharding** — hash prefix partitioning (`blake3(address)[0..2] % N` as u16), 2 shards genesis, gov-voted increase (2/3 quorum, 24-era grace, stake-weighted), full SMT per shard, snapshot sync on restart, cross-shard proofs pulled on demand from peers. Doc'd in StateSharding.md.
 
-## V2 Governance
-
-- [ ] Governance / upgrade mechanism
+Governance moved to Phase 2 — [Governance.md](V0.6.0/Governance.md) covers the full design.

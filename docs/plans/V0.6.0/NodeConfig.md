@@ -10,13 +10,13 @@ Both YAML and TOML are supported. The loader detects format by file extension (`
 
 ### Search Order
 
-| Priority | Source                                     |
-| -------- | ------------------------------------------ |
-| 1        | `--config /path/to/file.{yaml,toml}`       |
+| Priority | Source                                      |
+| -------- | ------------------------------------------- |
+| 1        | `--config /path/to/file.{yaml,toml}`        |
 | 2        | `$MONONIUM_CONFIG` env var pointing to file |
-| 3        | `~/.mononium/config.yaml`                  |
-| 4        | `~/.mononium/config.toml`                  |
-| 5        | No config → all defaults + required CLI    |
+| 3        | `~/.mononium/config.yaml`                   |
+| 4        | `~/.mononium/config.toml`                   |
+| 5        | No config → all defaults + required CLI     |
 
 **YAML vs TOML tiebreak:** If both `config.yaml` and `config.toml` exist in the same directory (both at step 3 or both at step 4), **YAML wins**. The loader checks `.yaml` before `.toml`.
 
@@ -33,12 +33,13 @@ No per-field env var overrides.
 ## Schema
 
 ### YAML
-```yaml
-key: my-validator                     # XOR with key_file
-key_file: /path/to/unencrypted-key    # XOR with key
-observer: false                       # true = no signing, sync-only
 
-genesis: configs/genesis.devnet.json  # required, no default
+```yaml
+key: my-validator # XOR with key_file
+key_file: /path/to/unencrypted-key # XOR with key
+observer: false # true = no signing, sync-only
+
+genesis: configs/genesis.devnet.json # required, no default
 
 node:
   data_dir: ~/.mononium/data
@@ -47,25 +48,26 @@ network:
   p2p_port: 30333
   rpc_port: 9944
   rest_port: 9933
-  bootnodes: []                       # empty = mDNS only (localnet)
+  bootnodes: [] # empty = mDNS only (localnet)
 
 storage:
-  mode: full                          # full (default) | compact
-  compact_eras: 2                     # eras to keep fully before compacting (compact only)
-  full_node_rpc:                      # proxy for historical queries (compact only)
+  mode: full # full (default) | compact
+  compact_eras: 2 # eras to keep fully before compacting (compact only)
+  full_node_rpc: # proxy for historical queries (compact only)
     - https://rpc.mononium.io
 
 mempool:
-  min_fee: 0.0667                     # MONEX, local mempool filter only
-  max_tx_per_account: 50              # per-block rate limit per account
+  min_fee: 0.0667 # MONEX, local mempool filter only
+  max_tx_per_account: 50 # per-block rate limit per account
 
 log:
-  level: info                         # trace | debug | info | warn | error
-  json: true                          # JSON or human-readable
-  file: ~/.mononium/node.log          # optional, stdout if absent
+  level: info # trace | debug | info | warn | error
+  json: true # JSON or human-readable
+  file: ~/.mononium/node.log # optional, stdout if absent
 ```
 
 ### TOML
+
 ```toml
 key = "my-validator"
 key_file = "/path/to/unencrypted-key"
@@ -103,6 +105,7 @@ file = "~/.mononium/node.log"
 ### `key` / `key_file` / `observer`
 
 Exactly one of:
+
 - `key: "name"` → validator mode, loads `~/.mononium/keys/{name}.json`
 - `key_file: "/path/k.json"` → validator mode, absolute path to key file
 - `observer: true` → observer mode, no key, no signing, sync + RPC only
@@ -122,22 +125,22 @@ Database and state files are stored under `{data_dir}/{chain_id}/`. The network 
 
 ### `network.*`
 
-| Field       | Default | Description                            |
-| ----------- | ------- | -------------------------------------- |
-| `p2p_port`  | 30333   | libp2p listener                        |
-| `rpc_port`  | 9944    | jsonrpsee WebSocket                    |
-| `rest_port` | 9933    | axum REST HTTP                         |
-| `bootnodes` | `[]`    | Multiaddr list. Empty = mDNS only      |
+| Field       | Default | Description                       |
+| ----------- | ------- | --------------------------------- |
+| `p2p_port`  | 30333   | libp2p listener                   |
+| `rpc_port`  | 9944    | jsonrpsee WebSocket               |
+| `rest_port` | 9933    | axum REST HTTP                    |
+| `bootnodes` | `[]`    | Multiaddr list. Empty = mDNS only |
 
 Empty `bootnodes` is valid. On localnet, mDNS handles discovery. On multi-node networks, the operator must supply bootnodes or use RPC `add_peer`.
 
 ### `storage.*`
 
-| Field             | Default      | Description                                                    |
-| ----------------- | ------------ | -------------------------------------------------------------- |
-| `mode`            | `full`       | `full` = everything forever. `compact` = headers only after N eras |
-| `compact_eras`    | `2`          | Eras to keep in full before compressing (compact mode only)     |
-| `full_node_rpc`   | `[]`         | Upstream RPC endpoints for historical tx lookups (compact only) |
+| Field           | Default | Description                                                        |
+| --------------- | ------- | ------------------------------------------------------------------ |
+| `mode`          | `full`  | `full` = everything forever. `compact` = headers only after N eras |
+| `compact_eras`  | `2`     | Eras to keep in full before compressing (compact mode only)        |
+| `full_node_rpc` | `[]`    | Upstream RPC endpoints for historical tx lookups (compact only)    |
 
 **Full mode:** All blocks, transactions, votes, and state retained since genesis. Default for all operators. Requires ~17 GB/day raw storage — plan disk accordingly.
 
@@ -157,11 +160,11 @@ Per-account rate limit per block at the mempool level. Local node policy. Combin
 
 ### `log.*`
 
-| Field   | Default  | Description                                             |
-| ------- | -------- | ------------------------------------------------------- |
-| `level` | `info`   | trace / debug / info / warn / error                     |
-| `json`  | `true`   | JSON output (machine-parseable). `false` = human text   |
-| `file`  | none     | Optional file path. Omit = stdout only                  |
+| Field   | Default | Description                                           |
+| ------- | ------- | ----------------------------------------------------- |
+| `level` | `info`  | trace / debug / info / warn / error                   |
+| `json`  | `true`  | JSON output (machine-parseable). `false` = human text |
+| `file`  | none    | Optional file path. Omit = stdout only                |
 
 JSON log output can be converted to human-readable text via `mononium-cli logfmt < node.log`. Until the `logfmt` tool is built, pipe through `jq -r '.level + " " + .msg'` for quick inspection.
 

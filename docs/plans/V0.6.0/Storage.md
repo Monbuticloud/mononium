@@ -25,11 +25,11 @@ redb's table abstraction maps cleanly to our data model:
 
 ### Mutable (Live State)
 
-| Table        | Key                      | Value                     | Notes                                      |
-| ------------ | ------------------------ | ------------------------- | ------------------------------------------ |
-| `accounts`   | `[u8; 32]` (address)     | `Account`                 | balance, nonce, code_hash                  |
-| `validators` | `[u8; 32]` (pubkey)      | `Validator`               | stake, status                              |
-| `meta`       | string key               | `Vec<u8>`                 | Chain metadata, current height, state root |
+| Table        | Key                  | Value       | Notes                                      |
+| ------------ | -------------------- | ----------- | ------------------------------------------ |
+| `accounts`   | `[u8; 32]` (address) | `Account`   | balance, nonce, code_hash                  |
+| `validators` | `[u8; 32]` (pubkey)  | `Validator` | stake, status                              |
+| `meta`       | string key           | `Vec<u8>`   | Chain metadata, current height, state root |
 
 ```rust
 struct Account {
@@ -53,12 +53,12 @@ enum ValidatorStatus {
 
 ### Append-Only (History/Ledger)
 
-| Table        | Key                       | Value                | Notes                                   |
-| ------------ | ------------------------- | -------------------- | --------------------------------------- |
-| `blocks`     | `u64` (height)            | `BlockEntry`         | Header only, canonical chain            |
-| `tx_lookup`  | `[u8; 32]` (tx hash)      | `TxLocation`         | Maps tx hash → position in chain        |
-| `tx_body`    | `(u64, u32)` (height, idx)| `Transaction`        | Full SCALE-encoded tx, indexed in-block |
-| `block_votes`| `u64` (height)            | `Vec<CommitVote>`    | All commit votes for a block            |
+| Table         | Key                        | Value             | Notes                                   |
+| ------------- | -------------------------- | ----------------- | --------------------------------------- |
+| `blocks`      | `u64` (height)             | `BlockEntry`      | Header only, canonical chain            |
+| `tx_lookup`   | `[u8; 32]` (tx hash)       | `TxLocation`      | Maps tx hash → position in chain        |
+| `tx_body`     | `(u64, u32)` (height, idx) | `Transaction`     | Full SCALE-encoded tx, indexed in-block |
+| `block_votes` | `u64` (height)             | `Vec<CommitVote>` | All commit votes for a block            |
 
 `BlockHeader` structure is defined in [Protocol](plans/V0.6.0/Protocol.md#Block-Structure).
 
@@ -137,10 +137,10 @@ Full state snapshots taken at every **era boundary** (block height % 720 == 0). 
 
 ### Tables
 
-| Table              | Key                         | Value              | Notes                                          |
-| ------------------ | --------------------------- | ------------------ | ---------------------------------------------- |
-| `checkpoint_meta`  | `u64` (era)                 | `CheckpointMeta`   | Era metadata, state root, timestamp            |
-| `checkpoint_data`  | `&[u8]` (SCALE(era, shard)) | `&[u8]` (SCALE)    | Full per-shard state dump at era boundary      |
+| Table             | Key                         | Value            | Notes                                     |
+| ----------------- | --------------------------- | ---------------- | ----------------------------------------- |
+| `checkpoint_meta` | `u64` (era)                 | `CheckpointMeta` | Era metadata, state root, timestamp       |
+| `checkpoint_data` | `&[u8]` (SCALE(era, shard)) | `&[u8]` (SCALE)  | Full per-shard state dump at era boundary |
 
 ```rust
 struct CheckpointMeta {
@@ -166,11 +166,11 @@ The `checkpoint_data` key is SCALE-encoded `(era, shard_id)`. Since shard count 
 
 ### Retention Policy
 
-| Mode     | Checkpoints Retained | `checkpoint_server` default |
-| -------- | -------------------- | --------------------------- |
-| **Full** | Latest 2             | `true` (serves last 2)      |
-| **Compact** | None              | `false`                     |
-| **Archive** | All                | `true` (serves all)         |
+| Mode        | Checkpoints Retained | `checkpoint_server` default |
+| ----------- | -------------------- | --------------------------- |
+| **Full**    | Latest 2             | `true` (serves last 2)      |
+| **Compact** | None                 | `false`                     |
+| **Archive** | All                  | `true` (serves all)         |
 
 - New checkpoints written at each era boundary. Full mode: `checkpoint_era_N` overwrites `checkpoint_era_N-2` (oldest dropped). Archive mode: no overwrite.
 - Compact mode skips checkpoint production entirely — saves write IO and disk.
@@ -217,13 +217,13 @@ If SMT rebuild fails or state_roots mismatch, discard checkpoint and retry from 
 
 ### Size Estimate
 
-| Component               | Size (10M accounts) |
-| ----------------------- | ------------------- |
-| Accounts (10M × ~40 B)  | ~400 MB             |
-| Validators (~1000 × ~80 B) | ~80 KB           |
-| Meta                     | ~100 B              |
-| **Total per checkpoint** | **~400 MB**        |
-| Peak (full mode, latest 2) | **~800 MB**      |
+| Component                  | Size (10M accounts) |
+| -------------------------- | ------------------- |
+| Accounts (10M × ~40 B)     | ~400 MB             |
+| Validators (~1000 × ~80 B) | ~80 KB              |
+| Meta                       | ~100 B              |
+| **Total per checkpoint**   | **~400 MB**         |
+| Peak (full mode, latest 2) | **~800 MB**         |
 
 Written at every era boundary (720 blocks @ 5s = 1 per hour). Archive nodes retain all:
 

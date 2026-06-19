@@ -129,13 +129,24 @@ The state root is computed via a **256-depth Sparse Merkle Tree** using **BLAKE3
 
 The SMT uses a single tree with 3 namespaces:
 
-| Prefix | Namespace  | Contents                                                                 |
-| ------ | ---------- | ------------------------------------------------------------------------ |
-| `0x00` | Accounts   | `Address → (balance: U256, nonce: u64, code_hash: Option<[u8;32]>)`      |
-| `0x01` | Validators | `PublicKey → (stake: U256, status: u8)`                                  |
-| `0x02` | Meta       | Chain-global state: height, era, active set hash, chain_id, total supply |
+| Prefix | Namespace  | Contents                                                                                                                      |
+| ------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `0x00` | Accounts   | `Address → (balance: U256, nonce: u64, code_hash: Option<[u8;32]>)`                                                           |
+| `0x01` | Validators | `PublicKey → (stake: U256, status: u8, frozen_until: u64)` — `status`: `0` = Staked, `1` = Active, `2` = Frozen, `3` = Thawed |
+| `0x02` | Meta       | Chain-global state: height, era, active set hash, chain_id, total supply                                                      |
 
 Namespacing is implemented via key prefixing: account keys are stored as `0x00 ++ address`, validator keys as `0x01 ++ pubkey`, meta keys as `0x02 ++ key_id`.
+
+Validator status values:
+
+| Value | Status | Meaning                                                                                                 |
+| ----- | ------ | ------------------------------------------------------------------------------------------------------- |
+| `0`   | Staked | Candidate in pool, not currently in active set                                                          |
+| `1`   | Active | In the active validator set, proposing and voting                                                       |
+| `2`   | Frozen | Slashed — excluded from active set for 72 eras (see [Slashing](plans/V0.6.0/Slashing.md#freeze-period)) |
+| `3`   | Thawed | Freeze expired, re-entered candidate pool with remaining stake                                          |
+
+`frozen_until` is the era number at which the validator thaws. Set at slashing time to `current_era + 72` and checked at era boundaries. Non-frozen validators (status ≠ 2) have `frozen_until = 0`.
 
 ### Implementation
 

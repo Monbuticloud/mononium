@@ -78,7 +78,7 @@ mononium-rust-lib/src/
 │   ├── proposer.rs           # ProposerSelection trait, RoundRobin
 │   ├── era.rs                # Era calculation, ElectionMode
 │   ├── finality.rs           # BFT commit tracking
-│   ├── slashing.rs           # Evidence types, slash logic (90% + bounty)
+│   ├── slashing.rs           # Evidence types, slash logic (90% + bounty + 72-era freeze)
 │   └── supply.rs             # SupplyPolicy trait, FixedSupply
 ├── config/
 │   ├── mod.rs                # Config struct, load (YAML + TOML), merge with CLI
@@ -99,6 +99,10 @@ mononium-rust-lib/src/
 │   ├── topics.rs             # Topic constants, message types per topic
 │   ├── discovery.rs          # Bootstrap + kademlia peer discovery
 │   └── messages.rs           # Wire message types (SCALE encode/decode)
+├── governance/
+│   ├── mod.rs                # GovernanceEngine, proposal/vote processing
+│   ├── constants.rs          # Governance constants (window, deposit, rate limits)
+│   └── types.rs              # Proposal, Vote, GovernanceAction, GovernanceParam types
 └── rpc/
     ├── mod.rs                # Combined RPC service
     ├── constants.rs          # RPC constants (port numbers, route paths)
@@ -107,16 +111,17 @@ mononium-rust-lib/src/
     └── types.rs              # RPC response types (JSON serde)
 ```
 
-| Module       | Responsibility                                                      |
-| ------------ | ------------------------------------------------------------------- |
-| `core/`      | Account types, U256, state machine, tx processing                   |
-| `consensus/` | PoS consensus engine                                                |
-| `mempool/`   | Transaction pool (tip → time → nonce ordering)                      |
-| `config/`    | Node config load/merge (YAML + TOML), CLI flag binding              |
-| `crypto/`    | Falcon-512 signing/verification, BLAKE3 hashing, Sparse Merkle Trie |
-| `storage/`   | redb database (mutable + append-only tables, StorageEngine trait)   |
-| `network/`   | P2P networking, peer discovery, message gossip                      |
-| `rpc/`       | RPC server (jsonrpsee + REST) and client types                      |
+| Module         | Responsibility                                                      |
+| -------------- | ------------------------------------------------------------------- |
+| `core/`        | Account types, U256, state machine, tx processing                   |
+| `consensus/`   | PoS consensus engine                                                |
+| `governance/`  | On-chain voting, proposal lifecycle, parameter mutation             |
+| `mempool/`     | Transaction pool (tip → time → nonce ordering)                      |
+| `config/`      | Node config load/merge (YAML + TOML), CLI flag binding              |
+| `crypto/`      | Falcon-512 signing/verification, BLAKE3 hashing, Sparse Merkle Trie |
+| `storage/`     | redb database (mutable + append-only tables, StorageEngine trait)   |
+| `network/`     | P2P networking, peer discovery, message gossip                      |
+| `rpc/`         | RPC server (jsonrpsee + REST) and client types                      |
 
 ## mononium-cli
 
@@ -142,48 +147,87 @@ Desktop GUI application for wallets, block exploration, and network monitoring. 
 
 ## RPC Interface
 
-Hybrid: **jsonrpsee** for mutations + subscriptions, **REST** for simple reads.
+Hybrid: **REST (axum) for reads + mutations**, **jsonrpsee (WebSocket) for subscriptions**.
+REST is the primary transport in Phase 1 (simpler, curl-friendly); jsonrpsee is added alongside in Phase 2.
+
+### REST (axum — HTTP)
+
+| Method | Path                    | Returns                             | Phase |
+| ------ | ----------------------- | ----------------------------------- | ----- |
+| POST   | `/tx`                   | `TxHash`                            | 1     |
+| GET    | `/tx/{hash}`            | `TxStatus`                          | 1     |
+| GET    | `/block/{height}`       | `Block`                             | 1     |
+| GET    | `/block/{hash}`         | `Block`                             | 1     |
+| GET    | `/block/latest`         | `BlockHeader`                       | 1     |
+| GET    | `/balance/{address}`    | `U256` (MOXX)                       | 1     |
+| GET    | `/nonce/{address}`      | `u64`                               | 1     |
+| GET    | `/validators`           | `Vec<ValidatorInfo>`                | 1     |
+| GET    | `/validator/{address}`  | `ValidatorInfo`                     | 1     |
+| GET    | `/era`                  | `u64`                               | 1     |
+| GET    | `/height`               | `u64`                               | 1     |
+| GET    | `/genesis`              | `Hash`                              | 1     |
+| GET    | `/health`               | `{ status, height, peers }`         | 1     |
+
+- Phase 1: single-node prototype with REST only
+- Phase 2: jsonrpsee added for subscriptions (see below)
+- Request/response bodies are JSON (serde)
+- Error responses: `{ "error": { "code": int, "message": string } }` with HTTP status codes (400, 404, 500)
 
 ### JSON-RPC (jsonrpsee — WebSocket)
 
-```rust
-#[rpc(server)]
-pub trait MononiumRpc {
-    #[method(name = "send_tx")]
-    async fn send_transaction(&self, tx: Transaction) -> RpcResult<Hash>;
+Available from Phase 2 onward. Complements REST with subscriptions and batched requests.
 
-    #[subscription(name = "subscribe_blocks", item = Block)]
-    async fn subscribe_blocks(&self) -> SubscriptionResult;
-}
-```
+| Method                       | Params                                   | Returns                        | Notes                              |
+| ---------------------------- | ---------------------------------------- | ------------------------------ | ---------------------------------- |
+| `tx_submit`                  | `Transaction` (SCALE-hex encoded)        | `TxHash`                       | Submit signed transaction          |
+| `tx_status`                  | `TxHash`                                 | `{ status, height?, index? }`  | Pending / finalized / failed       |
+| `block_get`                  | `BlockId` (height or hash)               | `Block`                        | Full block with body               |
+| `block_header`               | `BlockId`                                | `BlockHeader`                  | Header only (lighter than block)   |
+| `block_latest`               | —                                        | `BlockHeader`                  | Latest header                      |
+| `state_get_balance`          | `Address`                                | `U256`                         | Balance in MOXX                    |
+| `state_get_nonce`            | `Address`                                | `u64`                          | Next valid nonce                   |
+| `validator_set`              | —                                        | `Vec<ValidatorInfo>`           | Active + candidate set             |
+| `validator_stake`            | `Address`                                | `U256`                         | Stake of specific validator        |
+| `era_current`                | —                                        | `u64`                          | Current era index                  |
+| `chain_get_height`           | —                                        | `u64`                          | Current block height               |
+| `chain_get_genesis`          | —                                        | `Hash`                         | Genesis block hash                 |
+| `subscribe_blocks`           | —                                        | `Event<BlockHeader>`           | New block notifications            |
+| `subscribe_finality`         | —                                        | `Event<FinalityEvent>`         | Finality notifications             |
+| `subscribe_votes`            | —                                        | `Event<CommitVote>`            | Vote notifications                 |
 
-### REST (axum — HTTP GET)
+**Error codes:**
 
-| Method | Path                 | Returns              |
-| ------ | -------------------- | -------------------- |
-| GET    | `/balance/{address}` | Account balance      |
-| GET    | `/block/{height}`    | Block by height      |
-| GET    | `/block/latest`      | Latest block         |
-| GET    | `/tx/{hash}`         | Transaction by hash  |
-| GET    | `/validators`        | Active validator set |
+| Code | Meaning                |
+| ---- | ---------------------- |
+| 0    | Success                |
+| -1   | Internal error         |
+| -2   | Invalid params         |
+| -3   | Tx validation failed   |
+| -4   | Block not found        |
+| -5   | Tx not found           |
+| -6   | Address not found      |
+| -7   | Rate limited           |
 
 ### CLI Usage
 
 ```bash
-# REST reads
-mononium-cli wallet balance 0x...          # GET /balance/0x...
+# REST
+mononium-cli wallet balance 0x...          # POST /tx then GET /balance/0x...
 mononium-cli query block 42               # GET /block/42
+mononium-cli query tx <hash>              # GET /tx/{hash}
+mononium-cli query validators             # GET /validators
+mononium-cli query health                 # GET /health
 
-# JSON-RPC writes + subscriptions
-mononium-cli wallet transfer 0x... 100    # jsonrpsee send_tx
-mononium-cli node                          # starts RPC server
+# JSON-RPC (Phase 2+)
+mononium-cli wallet transfer 0x... 100    # tx_submit via jsonrpsee
+mononium-cli node                          # starts both REST + WebSocket servers
 ```
 
 ## State Model
 
 - **Account-based** (not UTXO)
 - Balances stored as `U256`
-- 18 decimal places
+- 32 decimal places (10^32 MOXX per MONEX)
 - Deterministic state transitions — same input → same output
 - State committed via **256-depth Sparse Merkle Tree** (BLAKE3)
 

@@ -57,6 +57,9 @@ mononium/
 | Eras               | 720 blocks, era 0 open              | ADR-014                       |
 | Genesis            | 10/10/100/0 distribution            | ADR-015                       |
 | Cryptography       | Falcon-512, constant-time           | ADR-016                       |
+| Slashing           | 90% slash + 72-era freeze           | ADR-017                       |
+| Sync verification  | Rolling BLAKE3 batch hash           | ADR-018                       |
+| Crate selection    | Falcon (zcash), primitive-types     | ADR-019                       |
 
 ### Tech stack (standard Rust ecosystem)
 

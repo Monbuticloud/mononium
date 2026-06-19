@@ -26,15 +26,16 @@ An era is the period between **validator set recalculations**. Every N blocks, t
 ```
 Era boundary (block % 720 == 0):
   1. The proposer for block 720 snapshots the candidate pool
-  2. Runs ValidatorElection::elect()
-  3. Commits the new active set to state as part of block 720
-  4. Resets proposer schedule — validators update their local schedule after verifying block 720
-  5. Block 721 is the first block produced under the new set
+  2. Decrement `remaining_eras` for all frozen validators; thaw those reaching 0
+  3. Runs ValidatorElection::elect() — frozen validators are excluded from the candidate pool
+  4. Commits the new active set + updated freeze records to state as part of block 720
+  5. Resets proposer schedule — validators update their local schedule after verifying block 720
+  6. Block 721 is the first block produced under the new set
 ```
 
 ### Era 0 (Bootstrap)
 
-The genesis state has **no validators** — the active set starts empty. A **bootstrap key** designated in the genesis config is the sole proposer for the first N blocks.
+The genesis state has **no validators** — the active set starts empty. A set of **bootstrap keys** designated in the genesis config are the only proposers for the first N blocks. Multiple keys eliminate the single point of failure — if one bootstrap node goes offline, another can continue producing blocks.
 
 #### Bootstrap Phase
 
@@ -43,15 +44,17 @@ The genesis JSON defines a `bootstrap` field:
 ```json
 {
   "bootstrap": {
-    "public_key": "0x...",
+    "public_keys": ["0x...", "0x..."],
     "blocks": 20
   }
 }
 ```
 
-- Block 1 launches the bootstrap phase. Only the bootstrap key's blocks are accepted.
-- The bootstrap proposer includes txs from other validators (RegisterValidator, Stake) as they arrive.
-- On mainnet, the bootstrap proposer earns block rewards (CappedInflation) which fund their own registration fees.
+- Block 1 launches the bootstrap phase. Only blocks from keys in `public_keys` are accepted.
+- On each slot, any bootstrap key can propose; the scheduled proposer for that slot is determined by round-robin over the bootstrap key list (same algorithm as normal round-robin, just a smaller set).
+- If a bootstrap key misses its slot, the slot goes empty (standard missed slot handling) — no pause or stall.
+- Bootstrap proposers include txs from other validators (RegisterValidator, Stake) as they arrive.
+- On mainnet, bootstrap proposers earn block rewards (CappedInflation) which fund their own registration fees.
 - On dev tiers, genesis `accounts` supply the MONEX for registration fees.
 
 #### Bootstrap Duration per Tier
@@ -200,6 +203,7 @@ slot 4: validator_1  (cycles)
 
 - Order is determined at era boundaries (when active set is elected)
 - All validators can compute the proposer for any slot independently
+- **Frozen validators** (see [Slashing](plans/V0.6.0/Slashing.md#freeze-period)) are excluded from the schedule — the active set passed to `RoundRobin` filters out frozen entries
 - Simple, predictable, easy to debug with Docker
 
 ### Future: VRF Leader Election (V2.0+)
@@ -239,7 +243,7 @@ If the proposer for a slot is offline, the **slot goes empty**:
 - The next proposer in the round-robin schedule builds on the last canonical block
 - Height increments only when a block is actually proposed
 
-**0.08 MONEX flat penalty** per missed slot. Applied at era boundary during validator set reconciliation (not per-slot slashing — avoids mid-era consensus disputes).
+**0.08 MONEX flat penalty** per missed slot. Applied at era boundary during validator set reconciliation (not per-slot slashing — avoids mid-era consensus disputes). Penalty amount is sent to `0x00..01` (Cap-Refill address) — it expands the effective max supply rather than burning.
 
 An inactive validator who accumulates penalties will naturally fall out of the Top-N by stake at the next era boundary.
 
@@ -252,16 +256,19 @@ if abs(block.timestamp - local_wall_clock) > 2s → REJECT block
 ```
 
 **Why ±2s:**
+
 - Target hardware is cheap VPS with standard NTP — typical drift between syncs is <50ms
 - ±2s provides generous slack for warm CPUs, Docker containers without `chronyd`, and VM scheduler jitter
 - A drifted node's blocks will be rejected by the honest majority regardless; this is a polite rejection window, not a security boundary
 
 **Effects of a drifted timestamp:**
+
 - Rejected block → slot goes empty (same as offline proposer)
 - Proposer pays the 0.08 MONEX missed slot penalty at era boundary
 - If a node's clock consistently drifts beyond ±2s, all its proposals fail and its penalty accumulates. The node should log a warning: `Clock drift exceeds ±2s — verify NTP configuration`
 
 **Implementation:**
+
 - `block.timestamp` is a `u64` Unix timestamp (seconds since epoch, not milliseconds — second granularity is sufficient for 5s slots)
 - Validation is purely local: each validator compares against their own clock
 - Timestamps must be monotonic within the chain: `block.timestamp >= parent_block.timestamp` (enforced by parent_hash ordering — can't build on a future block)
@@ -350,4 +357,4 @@ If VRF leader election or GRANDPA finality is added, explicit fork-choice rules 
 
 ---
 
-**Related:** [Validators](plans/V0.6.0/Validators.md), [Protocol](plans/V0.6.0/Protocol.md), [Slashing](plans/V0.6.0/Slashing.md), [Mempool](plans/V0.6.0/Mempool.md)
+**Related:** [Validators](plans/V0.6.0/Validators.md), [Protocol](plans/V0.6.0/Protocol.md), [Slashing](plans/V0.6.0/Slashing.md), [Mempool](plans/V0.6.0/Mempool.md), [ADR-017](../../architecture/ADR-017-slashing-freeze.md)

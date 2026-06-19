@@ -71,7 +71,8 @@ Initial key unlock on node startup requires ~2.5-5s due to Argon2id memory cost.
 
 ## Resource Profile
 
-- **Idle validator:** ~100 MB RAM target
+- **Idle validator (full mode):** ~100 MB RAM target
+- **Idle validator (compact mode):** ~60 MB RAM target
 - **Startup/unlock:** up to ~512 MB RAM (Argon2 key derivation)
 - **Runtime:** optimized for low-memory VPS environments
 

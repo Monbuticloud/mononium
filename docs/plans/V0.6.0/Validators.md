@@ -15,7 +15,7 @@ The network explicitly targets **cheap VPS** hardware:
 | Resource  | Target                                                                                                                                 |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | CPU       | Low — 1-2 vCPU                                                                                                                         |
-| RAM       | **~70-120 MB** (Devnet, 21 validators, minimal state) — application footprint is fixed; redb mmap grows with state size but OS-managed |
+| RAM       | **~70-120 MB** (full mode, Devnet, 21 validators, minimal state) — application footprint is fixed; redb mmap grows with state size but OS-managed. **~55-80 MB** in compact mode (storage.mode: compact) — saves ~15-40 MB by dropping historical block bodies and checkpoints |
 | Bandwidth | Low — 500 KB blocks imply modest traffic                                                                                               |
 | Disk      | Minimal write amplification via redb                                                                                                   |
 
@@ -69,7 +69,10 @@ Full Nominated Proof of Stake with optimal proportional representation:
 
 ```
 Era 0:   Inactive → Registered → Active (no stake needed)
-Era 1+:  Inactive → Registered → Staked → Active → Unstaking → Inactive
+Era 1+:  Inactive → Registered → Staked → Active ──→ Unstaking → Inactive
+                                            │
+                                            └──→ Frozen ──→ Thawed ──→ Active (back in pool)
+                                               (slashing)   (72 eras)
 ```
 
 - **RegisterValidator** — one-time tx declaring intent with public key.
@@ -78,12 +81,13 @@ Era 1+:  Inactive → Registered → Staked → Active → Unstaking → Inactiv
 - **RegisterAndStake** — convenience tx that registers + stakes atomically for era 1+ onboarding.
 - Staked validators are sorted by stake; Top N become active at each era boundary.
 - Active validators produce blocks and vote on consensus.
+- **Slashing** triggers a **Frozen** state — 72 eras of exclusion from proposing, voting, and rewards (see [Slashing](#slashing)).
 - Unstaking has a **7-day cooldown** — prevents gaming after violations.
 - Incentives: transaction fees (no block rewards in V1).
 
 ### Slashing
 
-Slashing mechanics are documented in [Slashing](plans/V0.6.0/Slashing.md).
+Slashing mechanics are documented in [Slashing](plans/V0.6.0/Slashing.md). In summary: equivocation causes 90% stake loss plus a **72-era freeze** during which the validator cannot propose, vote, or earn rewards. See [ADR-017](../../architecture/ADR-017-slashing-freeze.md) for the freeze design rationale.
 
 ## Staking
 
