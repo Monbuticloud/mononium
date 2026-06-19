@@ -47,7 +47,7 @@ mononium-cli node --genesis configs/genesis.localnet.json
 | `configs/genesis.localnet.json` | Localnet | 10 MONEX (1 key)             | Bootstrap only (1 block)                              |
 | `configs/genesis.devnet.json`   | Devnet   | 100 MONEX per key (3-5 keys) | Bootstrap (20 blocks) → era 0 Open                    |
 | `configs/genesis.testnet.json`  | Testnet  | 100 MONEX                    | Bootstrap (100 blocks) → era 0 Open                   |
-| `configs/genesis.mainnet.json`  | Mainnet  | 0 MONEX                      | Bootstrap (100 blocks) → era 0 Open + CappedInflation |
+| `configs/genesis.mainnet.json`  | Mainnet  | 0 MONEX                      | Bootstrap (100 blocks) → era 0 Open + CappedInflation. `max_validators: 101` in genesis config. |
 
 ## Denomination
 
@@ -64,6 +64,21 @@ Constants for code:
 const ONE_MONEX: U256 = U256::from_str("100000000000000000000000000000000"); // 10^32
 const ONE_MOXX: U256 = U256::one();
 ```
+
+### Balance Parsing
+
+Genesis account balances are stored in JSON as **decimal strings** representing MOXX (the smallest unit, 10^−32 MONEX):
+
+```json
+{ "address": "0x...", "balance": "100000000000000000000000000000000000" }
+```
+
+Parsing logic:
+1. Read the balance field as a string from JSON (deserialize as `String` via serde)
+2. Parse the decimal string into `U256` using `U256::from_dec_str()` (from `primitive-types`)
+3. If parsing fails (invalid digit, overflow), the genesis load **errors** — a malformed genesis is an immediate startup failure
+
+`primitive-types`'s `U256` supports `from_dec_str()` natively — no external decimal crate needed. The display side converts back via `U256::to_string()` and applies the 32-decimal-place divider for MONEX display.
 
 ## Token Supply
 

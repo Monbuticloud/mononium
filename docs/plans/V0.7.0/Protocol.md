@@ -22,6 +22,16 @@ pub struct Transaction {
 }
 ```
 
+### SCALE Enum Encoding
+
+All protocol enums (`TxBody`, `BurnTarget`, `TransactionType`, etc.) use standard SCALE enum encoding:
+
+- **SCALE:** The variant is encoded as a `u8` tag (0-indexed, in declaration order) followed by the variant's fields concatenated. Unit variants (no fields) encode as just the tag byte.
+  - Example: `TxBody::Burn { target: Permanent, amount: 100 }` → `0x05` (tag 5) ++ `0x00` (BurnTarget::Permanent tag) ++ SCALE(U256(100))
+- **JSON:** Standard serde adjacently-tagged enum representation: `{ "variant_name": { ...fields } }`
+
+All protocol types derive both `Encode`/`Decode` (from `parity-scale-codec`) and `Serialize`/`Deserialize` (from `serde`).
+
 ## State Model
 
 Account-based (not UTXO). Addresses map directly to account objects. State is committed via a Sparse Merkle Tree (see [State Root](#state-root)).
@@ -41,7 +51,7 @@ Account {
 2. **RegisterValidator** — Declare intent to validate (one-time, prerequisite for staking)
 3. **Stake** — Lock MONEX to become/activate a validator (requires prior registration)
 4. **RegisterAndStake** — Convenience: registers + stakes atomically for new validators
-5. **Unstake** — Begin withdrawal from validator set (7-day cooldown)
+5. **Unstake** — Begin withdrawal from validator set (168-era cooldown)
 6. **Burn** — Send MONEX to `0x00..00` (permanent destruction) or `0x00..01` (Cap-Refill sink). Flat fee 10 MOXX regardless of amount — incentivizes voluntary supply reduction.
 
 ## Transaction Format
@@ -90,7 +100,7 @@ struct Block {
 struct BlockHeader {
     height: u64,
     parent_hash: [u8; 32],
-    state_root: [u8; 32],        // SMT root (single commitment over all namespaces → per-shard roots)
+    global_state_root: [u8; 32], // Merkle root of per-shard SMT roots (see StateSharding.md)
     tx_root: [u8; 32],           // BLAKE3 Merkle root of all transaction hashes
     timestamp: u64,
     proposer: [u8; 32],          // validator address — self-describing, no era context needed
@@ -179,8 +189,58 @@ graph LR
     S1 --> H[SMT Root Hash]
 ```
 
+### Block Application Order (Exact)
+
+When a node applies a block, these steps execute in strict sequence:
+
+```
+1. VALIDATE HEADER
+   a. Verify parent_hash exists in canonical chain
+   b. Verify timestamp ±2s of local clock
+   c. Verify proposer is scheduled proposer for this slot
+   d. Verify block size ≤ 500 KB (SCALE bytes)
+
+2. INITIALIZE BLOCK STATE
+   a. Set block_fees = 0
+   b. Copy pre-state SMT root from parent block
+
+3. APPLY TRANSACTIONS (in order)
+   For each tx in block.body.transactions:
+   a. Verify Falcon-512 signature over (chain_id || nonce || sender || fee || body)
+   b. Verify nonce matches sender's current nonce
+   c. Verify sender has sufficient balance for fee + deposit
+   d. If any check fails → skip tx (do not execute), but still:
+      - Deduct fee from sender's balance (failed txs still pay)
+      - Add fee to block_fees pool
+      - Continue to next tx
+   e. If all checks pass:
+      - Deduct fee from sender's balance
+      - Deduct 0.33 MONEX anti-spam deposit (held until era N+2)
+      - Execute tx body (transfer, stake, burn, etc.)
+      - Increment sender's nonce
+      - Add fee to block_fees pool
+
+4. DISTRIBUTE FEES (end of block, after all txs)
+   a. Compute total_active_stake = sum of all active validators' stake
+   b. For each active validator V with stake S_V:
+      V.balance += block_fees * S_V / total_active_stake
+   c. Distribute remainder (integer truncation) to validator with:
+      lowest address among highest-stake validators
+
+5. COMMIT STATE
+   a. Compute new per-shard SMT roots from updated state
+   b. Compute global_state_root = root_of([shard_0_root, shard_1_root, ...])
+   c. Assert computed_global_state_root == block.header.global_state_root
+      (execution node — proposer already committed this root; verify it matches)
+
+6. STORE BLOCK
+   a. Write block to blocks table (header + metadata)
+   b. Write each tx to tx_body table (height, index)
+   c. Write tx hash → location to tx_lookup table
+   d. Emit new-block event (tracing, RPC broadcast)
+```
+
 - Transactions are applied **in order** within a block
-- Each tx is validated (signature, nonce, balance) before execution
 - **Failed transactions:** skip-and-continue — the tx is skipped, but the **fee is still paid** (added to the block fee pool for pro-rata distribution). This prevents spam (failed txs still cost MONEX) while keeping block production resilient to individual tx failures.
 - State root after block = SMT root committing to full state
 - Re-execute any block → deterministic state
@@ -201,5 +261,45 @@ Each network gets a unique chain ID to prevent replay attacks across networks:
 | Mainnet  | 3        |
 
 ---
+
+## Internal Error Types
+
+The library uses a unified `LibError` enum (with `thiserror`) for all internal error paths:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum LibError {
+    #[error("invalid signature")]
+    InvalidSignature,
+    #[error("insufficient balance: have {0}, need {1}")]
+    InsufficientBalance(U256, U256),
+    #[error("invalid nonce: expected {0}, got {1}")]
+    InvalidNonce(u64, u64),
+    #[error("account not found: {0}")]
+    AccountNotFound([u8; 32]),
+    #[error("validator not found: {0}")]
+    ValidatorNotFound([u8; 32]),
+    #[error("block not found: {0}")]
+    BlockNotFound(u64),
+    #[error("tx not found")]
+    TxNotFound,
+    #[error("proposal not found")]
+    ProposalNotFound,
+    #[error("governance action rejected: {0}")]
+    GovernanceRejected(&'static str),
+    #[error("storage error: {0}")]
+    Storage(#[from] redb::Error),
+    #[error("serialization error: {0}")]
+    Codec(#[from] parity_scale_codec::Error),
+    #[error("consensus error: {0}")]
+    Consensus(&'static str),
+    #[error("network error: {0}")]
+    Network(String),
+}
+
+// CLI uses anyhow for top-level error handling, wrapping LibError
+```
+
+The CLI binary wraps `LibError` into `anyhow::Error` for user-facing messages. The GUI uses `LibError` directly since it handles errors in its own UI layer.
 
 **Related:** [Architecture](plans/V0.7.0/Architecture.md), [Consensus](plans/V0.7.0/Consensus.md), [Network](plans/V0.7.0/Network.md), [Fees](plans/V0.7.0/Fees.md), [Genesis](plans/V0.7.0/Genesis.md)

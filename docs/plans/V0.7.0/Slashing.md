@@ -18,12 +18,12 @@ If a proposer equivocates (proposes two blocks at the same slot), validators:
 | ---------------------- | ---------------------------------------------------------------------------- |
 | **Equivocation**       | 90% of stake is slashed; 10% remains staked with the validator               |
 | **Burn**               | 90% of slashed amount → Burn address (`0x00..00`)                            |
-| **Reporter bounty**    | 10% of slashed amount → added to reporter's **validator stake**              |
+| **Reporter bounty**    | 10% of slashed amount → reporter's **locked balance** (see below)            |
 | **Validator retains**  | 10% of original stake **stays staked** — not ejected from candidate pool     |
 | **Burn effect**        | Coins at Burn address are permanently destroyed. No effect on inflation cap. |
 | **Liveness**           | Not slashed in V1 (replaced at era boundary if inactive)                     |
 | **Evidence topic**     | Gossiped on `mononium/evidence/{chain_id}`                                   |
-| **Unstaking cooldown** | 7 days (constant, prevents gaming after violations)                          |
+| **Unstaking cooldown** | 168 eras (~7 days at 5s blocks), constant, prevents gaming after violations   |
 | **Freeze duration**    | 72 eras (~3 days) — excluded from proposer schedule, voting, and rewards     |
 
 Example: validator with 1000 MONEX staked equivocates:
@@ -35,10 +35,20 @@ Example: validator with 1000 MONEX staked equivocates:
   100 remains          → still staked, validator frozen for 72 eras
 ```
 
-**Bounty is staked, not liquid:** The 10% reporter bounty is added to the reporter's validator stake, not their transferable balance. This prevents two attack vectors:
+**Bounty is locked, not liquid:** The 10% reporter bounty is credited as a **locked balance** on the reporter's account, not their transferable balance. This prevents two attack vectors:
 
-1. **Slash-and-dump** — a validator who spots equivocation cannot immediately withdraw and cash out the reward
-2. **Collusion exit** — the attacker and reporter cannot collude to bypass the unstaking cooldown (attacker intentionally equivocates, reporter gets liquid bounty, they split it out-of-band). With the bounty staked, both sides are bound by the 7-day unstaking lock.
+1. **Slash-and-dump** — a reporter who spots equivocation cannot immediately withdraw and cash out the reward
+2. **Collusion exit** — the attacker and reporter cannot collude to bypass the unstaking cooldown (attacker intentionally equivocates, reporter gets liquid bounty, they split it out-of-band). With the bounty locked, both sides are bound by a withdrawal lock.
+
+**Any account can submit evidence**, not just validators. The bounty is credited to the reporter's account as a locked balance:
+
+| Reporter type | Bounty mechanics |
+|---|---|
+| Active validator | Bounty added to existing validator stake (same as before) |
+| Inactive staker | Bounty added to their existing stake |
+| Non-validator (no stake) | Bounty credited as a locked MONEX balance — must register as validator to unlock, or unstake (168-era cooldown after registration) |
+
+The lock ensures the reporter cannot immediately liquidate the reward, regardless of their account type. For non-validators, the locked balance sits on the account until they choose to register (locking it as validator stake) or unstake (168-era cooldown to transferable).
 
 **Validator's remaining 10% stays staked, validator frozen** — the validator is ejected from the active set and enters the **Frozen** state for 72 eras (~3 days). During this period, the validator cannot propose blocks, vote on consensus, or earn rewards. The remaining 10% stake stays locked but inaccessible for participation. See [Freeze Period](#freeze-period) for full mechanics.
 
@@ -58,7 +68,7 @@ Getting slashed also **freezes** the validator for **72 eras** (~3 days at 720 b
 1. **Cannot be assigned proposer slots** — excluded from proposer schedule generation at era boundaries
 2. **Cannot vote** — BFT commit participation blocked
 3. **Cannot earn rewards** — excluded from fee distribution
-4. **Remaining 10% stake stays staked** — locked for the freeze duration (the existing 7-day unstaking cooldown already prevents immediate withdrawal)
+4. **Remaining 10% stake stays staked** — locked for the freeze duration (the existing 168-era unstaking cooldown already prevents immediate withdrawal)
 
 ### State Machine
 
@@ -68,7 +78,7 @@ Active (normal operation)
   ├─ Equivocation evidence included on-chain ──→ Frozen (72 eras)
   │                                                  │
   │                                                  ├─ Can unstake remaining 10%
-  │                                                  │  (7-day cooldown runs concurrently)
+  │                                                  │  (168-era cooldown runs concurrently)
   │                                                  │
   │                                                  └─ After 72 eras ──→ Thawed
   │                                                                        │
@@ -92,6 +102,15 @@ struct FreezeRecord {
 - At each era boundary, the consensus engine decrements `remaining_eras` for all frozen validators
 - When `remaining_eras == 0`, the validator is automatically thawed
 
+### Mid-Era Freeze
+
+If a validator is slashed mid-era (evidence included in a block, not at an era boundary), the freeze takes effect **immediately** for the current era:
+
+- The validator is excluded from fee/reward distribution for subsequent blocks in this era
+- Already-computed proposer slots for the frozen validator are **not** reassigned — the slot goes empty when their turn comes up (same as a missed slot). No mid-era schedule recomputation
+- No additional missed-slot penalty applies (they are already frozen)
+- At the next era boundary, the frozen validator is excluded from the new proposer schedule
+
 ### Era Boundary Processing
 
 At every era boundary, the following happens in order:
@@ -109,7 +128,7 @@ At every era boundary, the following happens in order:
 | Propose blocks    | ❌       | Excluded from proposer schedule                      |
 | Vote on consensus | ❌       | Blocked during freeze                                |
 | Earn rewards      | ❌       | Excluded from fee distribution                       |
-| Submit Unstake tx | ✅       | 7-day cooldown runs concurrent with freeze           |
+| Submit Unstake tx | ✅       | 168-era cooldown runs concurrent with freeze         |
 | Re-stake more     | ❌       | Cannot increase stake while frozen (must thaw first) |
 | Thaw naturally    | ✅       | Automatic after 72 eras                              |
 
@@ -123,15 +142,15 @@ When a validator thaws:
 
 ### Freeze vs. Unstaking
 
-| Aspect                | Freeze (72 eras)      | Unstaking (7 days)               |
+| Aspect                | Freeze (72 eras)      | Unstaking (168 eras)             |
 | --------------------- | --------------------- | -------------------------------- |
 | Trigger               | Equivocation evidence | Voluntary Unstake tx             |
 | Participation allowed | None                  | None (already ejected)           |
-| Stake locked          | ✅                    | ✅ (7-day cooldown)              |
-| Automatic end         | After 72 eras         | After 7 days                     |
+| Stake locked          | ✅                    | ✅ (168-era cooldown)            |
+| Automatic end         | After 72 eras         | After 168 eras                   |
 | Re-entry              | Automatic (if staked) | Re-register + stake from scratch |
 
-The freeze period (72 eras ≈ 51840 blocks = 72h) is significantly longer than the unstaking cooldown (7 days ≈ 120960 blocks). Even if the validator unstakes immediately when frozen, the freeze outlasts the cooldown in some cases — preventing a validator from avoiding the freeze by unstaking first.
+The freeze period (72 eras) is shorter than the unstaking cooldown (168 eras). A validator who unstakes immediately when frozen will still be in the unstaking window when the freeze expires — the 168-era unstaking cooldown ensures the validator's stake is locked long after the freeze lifts, preventing immediate re-entry after a slash.
 
 ### Double-Slashing
 
@@ -164,10 +183,10 @@ struct EquivocationEvidence {
 
 If all checks pass, the proposer is slashed 90% and the reporter receives a 10% bounty.
 
-- Slashing is **equivocation only** in V1 (no liveness slashing)
+- Slashing is **equivocation only** in V1 (no liveness slashing). Late V1 adds false archive-declaration slashing (see [GRILL.md](../GRILL.md#archive-node-incentives-late-v1))
 - Inactive validators are simply replaced at the next era boundary
 - Evidence is gossiped on the `mononium/evidence/{chain_id}` topic
-- Any validator can submit evidence as a transaction
+- Any account can submit evidence as a transaction
 - Coins sent to Burn are permanently destroyed — no effect on supply cap
 - The Cap-Refill address (`0x00..01`) is unrelated to slashing; see [Supply](./Genesis.md#Token-Supply)
 

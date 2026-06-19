@@ -19,6 +19,12 @@ Mononium uses **redb** as its embedded database engine. redb is a pure-Rust, mem
 | **Rust ergonomics**  | ✅ Native Rust API, serde integration, zero unsafe code          |
 | **License**          | ✅ MIT — fully open source                                       |
 
+### Known Redb Considerations
+
+- **Write amplification:** redb is not append-only (unlike LSM trees). Internal page management can cause write amplification. This is acceptable for V1 with modest throughput (100-200 TPS) but should be monitored on cheap VPS with limited disk IOPS.
+- **mmap + process crash:** redb uses mmap for reads. If the process crashes during a write transaction, the WAL ensures consistency on next open. However, OS-level mmap changes may not be fully synced in an uncontrolled shutdown. The ACID write transactions mitigate this, but operators should use a `--storage-sync-interval` option if they want to tune the durability-performance tradeoff.
+- **mmap + memory pressure:** On a 2 GB VPS, the OS may page out parts of the memory-mapped database during high memory usage. This causes page faults on access — performance degrades but the node continues operating. Testing under memory pressure is recommended before production deployment.
+
 ## Column Families / Tables
 
 redb's table abstraction maps cleanly to our data model:
@@ -145,10 +151,10 @@ Full state snapshots taken at every **era boundary** (block height % 720 == 0). 
 ```rust
 struct CheckpointMeta {
     era: u64,
-    height: u64,                // era * 720
-    state_root: [u8; 32],       // SMT root — trust anchor for verification
+    height: u64,                    // era * 720
+    global_state_root: [u8; 32],    // Merkle of per-shard SMT roots — trust anchor for verification
     timestamp: u64,
-    num_shards: u16,            // shard count at this era
+    num_shards: u16,                // shard count at this era
 }
 
 struct ShardSnapshot {
@@ -196,7 +202,7 @@ gap = network_tip_height - local_tip_height
 
 if gap > (2 * ERA_LENGTH) blocks:     # >2 eras behind
     request latest checkpoint
-    verify state_root
+    verify global_state_root
     replay blocks from checkpoint height + 1
 else:
     replay blocks from local tip + 1   # ≤2 eras, just catch up
@@ -206,14 +212,14 @@ Threshold: **2 eras** (1440 blocks, ~2 hours). Under that, block replay is faste
 
 ### Verification Chain
 
-1. **Download checkpoint** for era N (height H, state_root R, accounts list A)
-2. **Rebuild SMT** from account list A across all shards → `computed_state_root`
-3. **Assert** `computed_state_root == R`
+1. **Download checkpoint** for era N (height H, `global_state_root` R, accounts list A)
+2. **Rebuild SMT** from account list A across all shards → `computed_global_root`
+3. **Assert** `computed_global_root == R`
 4. **Fetch block header** at height H from trusted peers
-5. **Assert** `block_header.state_root == R`
+5. **Assert** `block_header.global_state_root == R`
 6. **Checkpoint is valid** — start replaying from H+1
 
-If SMT rebuild fails or state_roots mismatch, discard checkpoint and retry from a different peer.
+If SMT rebuild fails or global state roots mismatch, discard checkpoint and retry from a different peer. If all peers fail, fall back to progressively older checkpoints (era N-1, N-2…). If none verify, use `--trusted-checkpoint <hash>` CLI override. Last resort: full replay from genesis.
 
 ### Size Estimate
 
@@ -234,7 +240,9 @@ Written at every era boundary (720 blocks @ 5s = 1 per hour). Archive nodes reta
 
 ### Implementation Notes
 
-- Checkpoint production: after applying block at era boundary, atomic write-transaction to checkpoint_meta + checkpoint_data for each shard
+- Checkpoint production: after applying the block at the era boundary, the node **spawns a background task** to write checkpoint_meta + checkpoint_data for each shard. Block production continues immediately — the checkpoint write does not block the next block. The background task uses its own redb write transaction
+- If a checkpoint write is still in progress when the next era boundary arrives, the previous background task is cancelled and a new one starts (the new checkpoint subsumes the old)
+- Checkpoint reads: serve from the **last completed** checkpoint. If a background write is still in progress, the sync server returns the previous completed checkpoint. Once the new one finishes, data is atomically visible — use a **generation counter** in checkpoint_meta to distinguish, or allow readers to observe the new data naturally via redb's MVCC
 - Checkpoint reading: separate redb read transaction, open checkpoint_meta + checkpoint_data tables
 - SMT rebuild is CPU-intensive (10M accounts). Show progress via tracing. Estimate: 5-15 seconds on modern hardware.
 - No compression on the SCALE bytes within redb — redb uses its own page-level management

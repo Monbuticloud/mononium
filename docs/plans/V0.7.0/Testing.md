@@ -150,7 +150,7 @@ cluster.stop();
 
 // Verify
 assert_eq!(cluster.state("alice").height(), 10);
-assert_eq!(cluster.state("alice").state_root(), cluster.state("bob").state_root());
+assert_eq!(cluster.state("alice").global_state_root(), cluster.state("bob").global_state_root());
 ```
 
 Uses in-memory redb (no disk I/O), loopback networking (no real TCP). Fast enough to run in CI.
@@ -187,7 +187,7 @@ Example:
 ```rust
 // src/core/state.rs
 //
-// INVARIANT: A block's state_root must match the SMT root after applying all
+// INVARIANT: A block's global_state_root must match the SMT root after applying all
 // transactions in order, before commit votes are processed. Commit votes do
 // NOT affect the state root.
 // Tested in: tests/core/state.rs::state_root_excludes_votes

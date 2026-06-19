@@ -86,6 +86,10 @@ enum GovernanceParam {
 - Max 5 active proposals per proposer at any time
 - Max 50 proposals per era globally (prevents proposal spam even with deposits)
 - Parameters are locked during an active proposal targeting them — a second proposal for the same param cannot be submitted until the first resolves
+  - Lock is **per-parameter** — two proposals targeting different params can coexist
+  - Lock releases **on any resolution** (pass, fail, or expire) at the tally era boundary
+  - Lock releases **on cancellation** (before any votes) immediately
+  - Execution failure does not occur in V1 — param updates are infallible state writes
 
 ### 2. Voting Window
 
@@ -127,7 +131,7 @@ At the era boundary following the close of the voting window:
            → Deposit returned to proposer
 ```
 
-**Quorum:** 2/3 of **total active stake** (not participating stake). Same bar as shard-count votes in StateSharding.md.
+**Quorum:** At least 2/3 (≥ 2/3) of **total active stake** (not participating stake). Same bar as shard-count votes in StateSharding.md.
 
 **Threshold:** Simple majority (>50%) of participating stake.
 
@@ -141,14 +145,15 @@ Execution flow at era boundary:
 
 ```
 1. Collect all approved proposals from the previous era's tally
-2. For each proposal, apply its actions in order:
+2. Sort proposals by proposal_id hash (lexicographic, ascending) for deterministic ordering
+3. For each proposal (in sorted order), apply its actions in order:
    a. UpdateParam → write new value to governance parameter state
    b. IncreaseShards → trigger shard migration (see StateSharding.md)
-3. Emit governance execution events (stored in meta table)
-4. Proceed with normal era boundary processing
+4. Emit governance execution events (stored in meta table)
+5. Proceed with normal era boundary processing
 ```
 
-If multiple approved proposals modify the same parameter, the **last one by era boundary order** wins (proposals are processed in proposal_id hash order for determinism).
+**Deterministic ordering:** Proposals are sorted by `proposal_id` hash (lexicographic ascending) before execution. This ensures all validators apply the same sequence. If multiple approved proposals modify the same parameter, the **last one in sorted order** wins (last write wins). Proposal creators should be aware of this when submitting conflicting proposals.
 
 ### 5. Cancellation
 
@@ -204,7 +209,7 @@ The state machine validates governance txs before execution:
 - Proposal ID must not collide with an existing active proposal (checked against meta table)
 - Title ≤ 256 bytes, description ≤ 4096 bytes
 - Actions must reference valid governance parameters
-- `IncreaseShards` must satisfy constraints from StateSharding.md (new_count > current, not already pending)
+- `IncreaseShards` must satisfy: `new_count > current` (increase only), `new_count` not already pending, `effective_era >= current_era + 24` (24-era grace period enforced by state machine)
 - Proposer must not already have 5+ active proposals
 - Global proposal rate limit (50/era) not exceeded
 - Deposit 100 MONEX deducted from proposer's balance
@@ -243,6 +248,24 @@ Governance in V2 could be extended with:
 - **Treasury** — inflation-diverted funds managed by governance
 - **Runtime upgrades** — WASM blob replacement via governance vote
 - **Parameter bounds** — governance cannot set parameters outside safe ranges (e.g., block_time can't go below 2s)
+
+### V1 Parameter Bounds
+
+To prevent governance from shooting the chain in the foot, each mutable parameter has safe min/max bounds:
+
+| Parameter              | Min     | Max         | Rationale                              |
+| ---------------------- | ------- | ----------- | -------------------------------------- |
+| `max_validators`       | 1       | 1000        | Must be at least 1                     |
+| `era_length`           | 100     | 10000       | Too short = frequent elections         |
+| `block_size_cap_bytes` | 1024    | 2097152     | Must fit within gossip limit (2 MB)    |
+| `block_tx_cap`         | 1       | 10000       | Must be at least 1                     |
+| `flat_fee`             | 0       | 100 MONEX   | Can't be negative or absurd            |
+| `per_byte_rate`        | 0       | 1 MONEX     | Can't be negative                      |
+| `anti_spam_deposit`    | 0       | 100 MONEX   | Can't be negative                      |
+| `supply_ceiling_rate`  | 0%      | 20%         | Max annual inflation ceiling           |
+| `supply_headroom_rate` | 0%      | 20%         | Same as above                          |
+
+A governance proposal that sets a parameter outside its bounds is **rejected at validation time** (before the voting window opens).
 
 None of these are committed for any V2 timeline.
 

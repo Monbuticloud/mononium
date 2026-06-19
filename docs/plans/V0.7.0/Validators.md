@@ -76,14 +76,15 @@ Era 1+:  Inactive → Registered → Staked → Active ──→ Unstaking → I
 ```
 
 - **RegisterValidator** — one-time tx declaring intent with public key.
-- **Era 0 (Open):** Registered validators are automatically active (up to `max_validators`). No stake required. They earn fees to accumulate starting stake for era 1+.
+- **Era 0 (Open):** Registered validators are automatically active (up to `max_validators`). No stake required. They earn fees (and block rewards on mainnet) to accumulate starting stake for era 1+. This is the **free onboarding window** — anyone who registers during era 0 gets distribution without needing MONEX upfront. The bootstrap proposers' block rewards (~5,550 MONEX across 100 blocks) are negligible (~0.0000555% of the 10B cap) and era 0's open registration neutralizes any first-mover advantage.
 - **Era 1+ (Top-N):** Staking is required. Minimum **1 MONEX** to enter the candidate pool — prevents dust entries.
-- **RegisterAndStake** — convenience tx that registers + stakes atomically for era 1+ onboarding.
+- **RegisterAndStake** — convenience tx that registers + stakes atomically for era 1+ onboarding (for validators who already hold MONEX, e.g., from era 0 earnings or external acquisition).
+- For validators joining **after era 0** (era 1+): they must acquire MONEX externally (from an existing holder, exchange, or OTC) to meet the minimum stake. This is the same model as any fair-launch PoS chain — initial distribution happens during the free window, and latecomers buy from early participants.
 - Staked validators are sorted by stake; Top N become active at each era boundary.
 - Active validators produce blocks and vote on consensus.
 - **Slashing** triggers a **Frozen** state — 72 eras of exclusion from proposing, voting, and rewards (see [Slashing](#slashing)).
-- Unstaking has a **7-day cooldown** — prevents gaming after violations.
-- Incentives: transaction fees (no block rewards in V1).
+- Unstaking has a **168-era cooldown** — prevents gaming after violations.
+- Incentives: transaction fees (all tiers) + block rewards (mainnet only, see [Genesis](./Genesis.md#Token-Supply)).
 
 ### Slashing
 
@@ -94,7 +95,7 @@ Slashing mechanics are documented in [Slashing](plans/V0.7.0/Slashing.md). In su
 - Staking is a native protocol feature — not a smart contract
 - Transfers and staking are the first transaction types
 - Delegation: not needed for V1 (handled by Phragmén in V2+)
-- Unstaked funds become available after the 7-day cooldown
+- Unstaked funds become available after the 168-era cooldown
 
 ## Key Management
 

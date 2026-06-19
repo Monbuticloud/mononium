@@ -22,27 +22,43 @@ shard_id = u16::from_le_bytes([hash[0], hash[1]]) % N_SHARDS   // first 2 bytes 
 
 ### Governance Voted Increase
 
-### Voting Mechanics
+Shard count increases use the **standard governance flow** (see [Governance.md](./Governance.md)), not a custom vote type. `IncreaseShards` is a `GovernanceAction` variant with special validation:
 
 | Parameter    | Value                                                    |
 | ------------ | -------------------------------------------------------- |
 | Proposer     | Any staker (active or inactive)                          |
-| Quorum       | 2/3 of total active stake must vote                      |
+| Quorum       | ≥ 2/3 of total active stake (same as Governance.md)      |
 | Threshold    | >50% of participating stake approves                     |
-| Window       | Voting closes at era boundary. Expires if quorum not met |
-| Grace period | `effective_era` = current_era + 24 (24 hours minimum)    |
+| Window       | Standard 7-era governance voting window                  |
+| Grace period | `effective_era` must be ≥ `current_era + 24` (enforced by state machine) |
 
 ### Process
 
-1. Any staker submits `IncreaseShards { new_count, effective_era }` governance transaction
-2. Stakers vote by submitting `ShardVote { proposal_hash, voter, approve: bool }` during the proposal era
-3. Votes are tallied at the era boundary: weighted by each voter's stake
-4. If quorum (2/3 of active stake) is met AND >50% of participating stake approves → the increase passes
-5. Validators pre-compute the new shard layout during the 24-era grace period
+1. Any staker submits a standard governance proposal with `IncreaseShards { new_count, effective_era }` action
+2. Stakers vote using the standard `Vote` transaction (see Governance.md)
+3. Tally and execution follow standard governance flow (at era boundary after voting window closes)
+4. Additional constraint: `effective_era >= current_era + 24` enforced at proposal validation time
+5. Validators pre-compute the new shard layout during the 24-era grace period (see [Migration Details](#migration-details) below)
 6. At `effective_era` boundary, migration triggers automatically
-7. If a validator fails to complete migration, they are out of consensus until they peer-sync
+7. Any validator that did not complete migration (e.g., was offline during the grace period) enters migration sync at the effective era boundary — they request their newly assigned shard snapshots from peers, verify against the global state root, and resume participation once verified
 
 The shard count is stored in the **genesis consensus config** (not hardcoded in the binary), allowing future governance votes to modify it.
+
+### Migration Details
+
+**Pre-computation (grace period):** After the governance vote passes (at era boundary), each validator:
+1. Computes their new shard assignment based on the new `N_SHARDS` value
+2. For each shard they **already store** that splits (because `N_SHARDS` increased), they partition their local SMT into the new shard boundaries
+3. For shards they are **newly assigned** but do not yet store, they request the SMT snapshot from peers during the grace period — same mechanism as checkpoint sync (authenticated via the global state root at the vote era boundary)
+4. Stores the pre-computed shard SMTs locally, ready for the migration
+
+**Shard discovery:** Validators announce which shards they store via the Identify protocol (a `shards: Vec<u16>` field in peer metadata). At migration boundaries, the new shard assignments are deterministic (hash-based partitioning) — any validator can compute which shards any other validator stores based on their peer ID and the current `N_SHARDS`.
+
+**Catch-up (offline validator):** A validator that was offline during the entire grace period (unlikely given 24 hours, but handled):
+1. At the migration block, they discover they are assigned to shards they don't have
+2. They request the shard SMT snapshot from any peer storing those shards — same mechanism as [Restart Sync](#restart-sync) (snapshot with SMT proof, verified against the global state root at the migration era boundary)
+3. Once all assigned shards are verified, they resume consensus participation
+4. If no peer can serve the snapshot, fall back to full replay from the last checkpoint before migration
 
 ## State Layout
 

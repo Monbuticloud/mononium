@@ -138,7 +138,8 @@ mononium-cli
 │   ├── balance   # query balance
 │   ├── transfer  # send MONEX
 │   └── stake     # stake/unstake
-└── query         # chain queries (block, tx, validator set)
+├── query         # chain queries (block, tx, validator set)
+└── logfmt        # convert JSON logs to human-readable text (pipe from stdin)
 ```
 
 ## mononium-gui
@@ -304,7 +305,7 @@ When `mononium-cli node` is invoked, the initialization follows this ordered seq
  3. Merge settings — CLI flags override config file override defaults
  4. Load key metadata — read ~/.mononium/keys/{name}.json, identify validator address
  5. Prompt for passphrase — enter to unlock the encrypted seed
- 6. Derive key — Argon2id (512 MiB, ~2.5-5s) → NaCl secretbox decrypt → re-derive Falcon-512 private key
+ 6. Derive key — Argon2id (256 MiB, 16 iterations, configurable via `crypto.*` settings) → NaCl secretbox decrypt → re-derive Falcon-512 private key
  7. **[y/N] confirmation prompt** — show startup preview, ask user to confirm before proceeding
  8. Open/init redb database — at {data_dir}/{chain_id}/
  9. If no DB exists → load genesis JSON → build initial SMT → write genesis block (height 0)
@@ -313,7 +314,7 @@ When `mononium-cli node` is invoked, the initialization follows this ordered seq
 12. Connect to bootstrap peers — kademlia discovers additional peers on same chain_id
 13. Initialize consensus engine — compute proposer schedule for current era
 14. Start slot timer — begin listening for block production / voting slots
-15. Start RPC servers — jsonrpsee (WebSocket) on rpc_port, axum (REST) on rest_port
+15. Start RPC servers — axum (REST) on rest_port (Phase 1). jsonrpsee (WebSocket) on rpc_port added in Phase 2 via config flag.
 16. Register signal handlers — SIGINT/SIGTERM → graceful shutdown
 ```
 
@@ -353,14 +354,7 @@ On restart:
 
 ### State Checkpoints
 
-Every **120,960 blocks (~7 days)** the node writes a state checkpoint:
-
-- A snapshot of the full SMT at that height
-- Stored as a special checkpoint record in redb
-- Allows fresh nodes to sync from a checkpoint instead of replaying from genesis
-- Checkpoint format: `(height, smt_root, serialized_smt_nodes, validator_set_hash)`
-
-Mainnet nodes would publish checkpoint hashes out-of-band (repo, social) for bootstrapping trust. Devnet nodes always replay from genesis (small state, fast).
+Full state snapshots are taken at every **era boundary** (720 blocks, ~1 hour). The snapshot is written to redb in a **background task** — block production continues without blocking. See [Storage — Checkpoints](./plans/V0.7.0/Storage.md) for the full protocol, retention policy, size estimates, and implementation details.
 
 ## Dependency Flow
 

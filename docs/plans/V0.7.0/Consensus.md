@@ -16,7 +16,7 @@ Proof of Stake consensus with a fixed 5-second block time and 20-second finality
 | Block time         | 5s         | Fixed, not variable                   |
 | Finality           | ~20s       | 4 blocks (BFT commit)                 |
 | Block size         | 500 KB     | Hard cap                              |
-| Finality mechanism | BFT commit | Per-block, 2/3+ validator sigs        |
+| Finality mechanism | BFT commit | Per-block, > 2/3 validator sigs        |
 | Era length         | 720 blocks | ~1 hour — validator set recalculation |
 
 ## Eras
@@ -54,7 +54,7 @@ The genesis JSON defines a `bootstrap` field:
 - On each slot, any bootstrap key can propose; the scheduled proposer for that slot is determined by round-robin over the bootstrap key list (same algorithm as normal round-robin, just a smaller set).
 - If a bootstrap key misses its slot, the slot goes empty (standard missed slot handling) — no pause or stall.
 - Bootstrap proposers include txs from other validators (RegisterValidator, Stake) as they arrive.
-- On mainnet, bootstrap proposers earn block rewards (CappedInflation) which fund their own registration fees.
+- On mainnet, bootstrap proposers earn block rewards (CappedInflation) which fund their own registration fees. At ~55.5 MONEX/block × 100 blocks, this mints ~5,550 MONEX total (~0.0000555% of the 10B cap). This is insignificant to the supply curve and era 0 open registration ensures any validator can join regardless of bootstrap key status.
 - On dev tiers, genesis `accounts` supply the MONEX for registration fees.
 
 #### Bootstrap Duration per Tier
@@ -105,7 +105,7 @@ pub enum ElectionMode {
 
 ## Finality: BFT Commit Per Block
 
-After a block is proposed, validators verify and submit a signed commit vote. Once 2/3+ of the active set commits, the block is final.
+After a block is proposed, validators verify and submit a signed commit vote. Once > 2/3 of the active set (by stake weight) commits, the block is final. The threshold is strict — exactly 2/3 is not sufficient to finalize.
 
 ```
 slot 0: V1 proposes Block A → validators verify + vote immediately
@@ -115,10 +115,10 @@ slot 4: V2 proposes Block B (includes any CommitVotes for Block A received via g
 
 - Validators **vote immediately** after they finish verifying — no waiting for slot boundaries or explicit requests
 - The next proposer includes whatever CommitVotes they've collected via gossipsub during the verification window
-- The proposer does **not** need to collect 2/3+ before proposing — they publish what they have; subsequent blocks accumulate additional votes
+- The proposer does **not** need to collect > 2/3 before proposing — they publish what they have; subsequent blocks accumulate additional votes
 - **Verification window:** ~20s (4 blocks) — enough time for Falcon-512 verification (~10x slower than Ed25519) on cheap VPS hardware
 - Commits are included in the _next_ block header as proof
-- A block is final as soon as 2/3+ commits for it appear on-chain (via any later block's header)
+- A block is final as soon as > 2/3 commits for it appear on-chain (via any later block's header)
 
 ## Flow
 
@@ -140,7 +140,7 @@ sequenceDiagram
     Note over Validators: Next proposer collects CommitVotes via gossip
     Note over Proposer,Validators: Slot N+4 (next proposer)
     Validators->>Validators: Include collected commits in next block header
-    Note over Proposer,State: Block N is final (2/3+ commits appear on-chain)
+    Note over Proposer,State: Block N is final (> 2/3 commits appear on-chain)
 ```
 
 ## Commit Format (Sketch)
@@ -245,6 +245,8 @@ If the proposer for a slot is offline, the **slot goes empty**:
 
 **0.08 MONEX flat penalty** per missed slot. Applied at era boundary during validator set reconciliation (not per-slot slashing — avoids mid-era consensus disputes). Penalty amount is sent to `0x00..01` (Cap-Refill address) — it expands the effective max supply rather than burning.
 
+**Penalty source:** Deducted from the validator's **stake** directly (not transferable balance). If total penalty exceeds the validator's stake, the validator is fully de-staked and ejected from the active set — the excess is not tracked as debt. The validator's historical performance is averaged across the era; a validator who missed all 720 slots loses their entire stake and must re-stake to re-enter the candidate pool.
+
 An inactive validator who accumulates penalties will naturally fall out of the Top-N by stake at the next era boundary.
 
 ### Clock Drift Tolerance
@@ -309,9 +311,25 @@ ConsensusConfig {
 
 ## Fork Handling
 
+### Fork-Choice Rule
+
+The canonical chain is determined by **heaviest chain by total stake backing**. This rule is always active alongside the proposer schedule:
+
+```
+function select_canonical(chain_a, chain_b):
+    if chain_a.total_stake_weight > chain_b.total_stake_weight:
+        return chain_a
+    else:
+        return chain_b
+```
+
+Each validator computes total stake backing by summing the stake weight of all validators who committed to each chain. Since equivocators lose 90% stake on slashing, the honest chain quickly becomes heavier. In practice, non-equivocating validators converge on the same chain within 1-2 blocks because fork choice is deterministic given the same view of votes.
+
+This is **not** a separate finality gadget — it's a fallback that's always available. If no fork exists, validators simply follow the scheduled proposer per slot.
+
 ### Design Principle
 
-V1 has no explicit fork-choice rule beyond **following the proposer schedule**. Fork resolution emerges naturally from slot timing and slashing economics.
+V1's fork resolution emerges naturally from slashing economics and the heaviest-chain rule.
 
 ### Temporary Partition (no BFT commit on either side)
 
@@ -322,7 +340,7 @@ The partition heals and validators see two chains of equal length from the same 
 3. One side will eventually have more scheduled proposers than the other and naturally become the heavier chain
 4. Validators on the shorter chain sync to the longer one at the next opportunity
 
-### BFT Equivocation Fork (2/3+ commits on both sides)
+### BFT Equivocation Fork (> 2/3 commits on both sides)
 
 Validators who signed both competing blocks are **equivocating** and get slashed 90% of their stake. Resolution:
 
@@ -333,17 +351,7 @@ Validators who signed both competing blocks are **equivocating** and get slashed
 
 ### Implementation
 
-```rust
-// No special ForkChoice trait in V1.
-// Validators use the heaviest-by-stake rule:
-fn select_canonical(chain_a: &ChainState, chain_b: &ChainState) -> ChainId {
-    if chain_a.total_stake_weight > chain_b.total_stake_weight {
-        chain_a
-    } else {
-        chain_b
-    }
-}
-```
+See the Fork-Choice Rule section above (moved from inline code to explicit design).
 
 ### Future (V2+)
 

@@ -45,18 +45,23 @@ This is a systems-level project spanning distributed systems, cryptography, data
 | Account model        | Simplicity, UX       | UTXO's parallelizability |
 | Falcon-512           | Post-quantum ready   | Ed25519 speed            |
 | redb                 | Determinism, low RAM | General-purpose DBs      |
-| No sharding V1       | Complexity avoidance | Scale                    |
+| No sharding V1       | Complexity avoidance | Sharding planned for late V1 |
 | CLI first, GUI later | Focus                | Parallel delivery        |
 | Fixed 5s block       | Predictability       | Variable timing          |
 
 ## Non-Goals for V1
 
-- Smart contracts
-- Sharding
-- Cross-chain interoperability
-- Governance
-- Wallet UI / block explorer
-- Mobile support
+- Smart contracts (V2+)
+- Cross-chain interoperability (V2+)
+- Wallet UI / block explorer (V2+)
+- Mobile support (V2+)
+
+### Late V1 (Phase 2+)
+
+- **Governance** — on-chain stake-weighted voting, parameter mutation (spec in Governance.md)
+- **Sharding** — state sharding with SMT per shard (spec in StateSharding.md)
+
+Both are designed and spec'd during planning but implemented during late V1 development.
 
 ---
 

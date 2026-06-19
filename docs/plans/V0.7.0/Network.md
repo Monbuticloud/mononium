@@ -215,23 +215,25 @@ struct CheckpointRequest {
 
 struct CheckpointResponse {
     pub height: u64,
-    pub smt_nodes: Vec<(Vec<u8>, Vec<u8>)>,   // serialized SMT key-value pairs
+    pub smt_nodes: Vec<(Vec<u8>, Vec<u8>)>,   // SMT key-value pairs, SCALE-encoded (see below)
     pub validator_set: Vec<ValidatorEntry>,    // full validator set at checkpoint era
     pub validator_set_hash: [u8; 32],
     pub checkpoint_block_header: BlockHeader,
     pub checkpoint_hash: [u8; 32],            // BLAKE3 of the entire checkpoint
 }
+
+**Wire format:** All fields in `CheckpointResponse` are SCALE-encoded (parity-scale-codec). `smt_nodes` is a SCALE vector of `(Vec<u8>, Vec<u8>)` tuples — the syncing node deserializes each tuple as a key-value pair and rebuilds the per-shard SMT by inserting them in order. `checkpoint_block_header` is SCALE-encoded as `BlockHeader` (same format as on-chain). `validator_set` is a SCALE vector of `ValidatorEntry` structs.
 ```
 
 **Checkpoint trust model:**
 
-A checkpoint is trusted because the block at that height was committed via BFT (2/3+ validator signatures). The syncing node:
+A checkpoint is trusted because the block at that height was committed via BFT (> 2/3 validator signatures). The syncing node:
 
 1. Uses the included `validator_set` (full validator entries with public keys) to know who signed
-2. Verifies the BFT commit votes in `checkpoint_block_header` — 2/3+ signatures must match the validator set's public keys
+2. Verifies the BFT commit votes (included alongside the checkpoint response) — > 2/3 signatures must match the validator set's public keys. The votes are **not** stored in the block header; they are delivered as part of the checkpoint response alongside the header.
 3. Verifies the commit votes reference the checkpoint height
-4. Rebuilds the SMT from `smt_nodes` → computes `computed_state_root`
-5. Asserts `computed_state_root == checkpoint_block_header.state_root`
+4. Rebuilds the SMT from `smt_nodes` → computes `computed_global_root`
+5. Asserts `computed_global_root == checkpoint_block_header.global_state_root`
 6. If any check fails → discard checkpoint, try a different peer
 
 **Why `validator_set` is included in the response:**
@@ -291,7 +293,9 @@ The sync flow is divided into three phases: **discovery**, **checkpoint fast-for
         → Go to BLOCK CATCH-UP phase
     → If invalid or timeout:
         → Disconnect peer, try next peer
-        → If all peers exhausted → fall back to full genesis replay
+        → If all peers exhausted → try progressively older checkpoints (era N-1, N-2…) — smaller state delta to catch up on
+        → If no checkpoint verifies → fall back to `--trusted-checkpoint <hash>` CLI override for operator recovery
+        → Last resort: full replay from genesis (logs estimated time warning)
 
 ╔══════════════════════════════════════════════════════════╗
 ║                  BLOCK CATCH-UP PHASE                    ║
@@ -329,8 +333,8 @@ The sync flow is divided into three phases: **discovery**, **checkpoint fast-for
                → Verify and apply each block sequentially:
                    verify signature(block.proposer, block.header)
                    verify block.timestamp ± 2s
-                   apply block transactions → compute state_root
-                   assert computed_state_root == block.header.state_root
+                    apply block transactions → compute global_state_root
+                    assert computed_global_root == block.header.global_state_root
                → If any block fails verification:
                    → Entire batch rejected — disconnect peer, try next peer
                → If all blocks pass:
@@ -380,11 +384,11 @@ No session state, no partial batch recovery. The `known_block_hash` anchor ensur
 
 ```
 Scenario: Node receives blocks from peer A at height 50-149. Batch hash
-         matches. Parent_hash chain matches. But one block's state_root
+         matches. Parent_hash chain matches. But one block's global_state_root
          doesn't match after re-execution.
 
-1. Verify each block in order, checking state_root after each
-2. Block 78's state_root doesn't match → block 78 is invalid
+1. Verify each block in order, checking global_state_root after each
+2. Block 78's global_state_root doesn't match → block 78 is invalid
 3. Disconnect peer A (served invalid state transition)
 4. Mark peer A's score -= 10 (significant penalty — served invalid data)
 5. Request blocks 50-149 from peer B (same range, known_block_hash = block 49)
@@ -451,7 +455,7 @@ A lightweight peer scoring system deters misbehavior and guides peer selection. 
 | ----------- | ------- | -------------------------------------------------------------------------- |
 | `> 0`       | Good    | Normal operation, preferred for sync requests                              |
 | `-20 to 0`  | Neutral | Deprioritized for sync requests, still connected                           |
-| `< -20`     | Banned  | Disconnected and banned for 1 era (banned list wiped at each era boundary) |
+| `< -20`     | Banned  | Disconnected and banned for 720 blocks from infraction height |
 
 #### Score Adjustments
 
@@ -461,7 +465,7 @@ A lightweight peer scoring system deters misbehavior and guides peer selection. 
 | Valid vote propagated                                 | +1           | Good citizen                                   |
 | Successful sync batch served                          | +2           | Useful peer                                    |
 | Sync batch hash mismatch (ADR-018)                    | -10          | Fork disagreement or corrupted data            |
-| Sync batch fails verification (state_root mismatch)   | -20          | Served invalid state — unambiguous misbehavior |
+| Sync batch fails verification (global_state_root mismatch) | -20          | Served invalid state — unambiguous misbehavior |
 | Empty sync response (peer has blocks but won't serve) | -2           | Wasting request slots                          |
 | Timeout on sync request (2+ consecutive)              | -4           | Unresponsive                                   |
 | Invalid block gossiped                                | -10          | Wasting bandwidth                              |
@@ -473,20 +477,20 @@ A lightweight peer scoring system deters misbehavior and guides peer selection. 
 
 - When a peer's score drops below -20, the node:
   1. Disconnects the peer immediately
-  2. Adds their `PeerId` to the in-memory ban list
+  2. Records the ban with the peer's `PeerId` and the current block height (`banned_at_height`)
   3. Ignores all future connection attempts from that peer until the ban expires
-- Ban expiry: at the **next era boundary** (height % ERA_LENGTH == 0), the entire ban list is cleared and all scores reset to 0
-- The era used for ban expiry is the node's **latest known era** (`last_verified_height / ERA_LENGTH`)
-- For a node with zero blocks (fresh genesis), there is no era yet — fall back to a 1-hour wall-clock ban as a temporary measure
-- Banning is local-only. If the majority of the network considers a peer honest, that peer will still be connected by other nodes
+- **Ban duration:** 720 blocks from `banned_at_height`. The ban expires when `current_height >= banned_at_height + BAN_DURATION` (where `BAN_DURATION = 720`, same as era length but not aligned to era boundaries). Each ban is tracked independently and expires based on chain progress, not era boundaries.
+- **Score persistence:** Scores are not reset on ban expiry — a peer that recidivates quickly will hit the ban threshold sooner on re-entry. Scores do decay gradually via positive behavior (+1 per valid block/vote propagated).
+- **Fresh genesis edge case:** A node with zero blocks (no chain height yet) that needs to ban a peer uses a wall-clock fallback: 1 hour from ban time. Once the node advances past block 720, all bans are converted to block-height-based.
+- **Banning is local-only.** If the majority of the network considers a peer honest, that peer will still be connected by other nodes
 
 #### Rationale for Values
 
-- A single `state_root` mismatch (-20) immediately bans a peer — serving invalid state is never ambiguous
+- A single `global_state_root` mismatch (-20) immediately bans a peer — serving invalid state is never ambiguous
 - Two batch hash mismatches (-10 each) or invalid blocks (-10 each) also trigger a ban
 - Positive scores (+1/+2 for good behavior) are small relative to negatives — building trust is slow, losing it is fast
-- The 1-era ban (~1 hour) is proportional: long enough to be meaningful, short enough that a misconfigured node can recover quickly
-- Era-based expiry is deterministic across all nodes (unlike wall-clock timers) and aligns with the chain's natural reset cadence
+- The 720-block ban (~1 hour at 5s blocks) is proportional: long enough to be meaningful, short enough that a misconfigured node can recover quickly
+- Block-count-based expiry is deterministic across all nodes (all nodes agree on chain height) and proportional — a ban at block 1 and a ban at block 719 both last the same duration, expiring at different heights (721 and 1439 respectively)
 
 #### Deprioritization (Neutral Peers)
 

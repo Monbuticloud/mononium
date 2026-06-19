@@ -42,12 +42,12 @@ These values are the same across all network tiers (Localnet, Devnet, Testnet, M
 
 ## Anti-Spam Deposit
 
-Every transaction requires a **0.33 MONEX deposit** per tx, deducted from the sender's balance and held until the era boundary. This is the primary anti-spam mechanism — the capital cost scales proportionally with volume (100 txs = 33 MONEX temporarily locked).
+Every transaction requires a **0.33 MONEX deposit** per tx, deducted from the sender's balance and held for **2 eras**. This is the primary anti-spam mechanism — the capital cost scales proportionally with volume (100 txs = 33 MONEX temporarily locked).
 
-- **Per transaction:** Each tx locks 0.33 MONEX from the sender's balance for the remainder of the current era
-- **Auto-return:** All deposits are returned to the sender's balance at the **era boundary** (block % 720 == 0). No explicit reclaim tx needed
+- **Per transaction:** Each tx locks 0.33 MONEX from the sender's balance. The deposit is held for **2 eras** from the era of inclusion
+- **Auto-return:** Deposits are returned to the sender's balance at the **era N+2 boundary** (2 eras after the era of inclusion). If a tx is included in block 719 (last block of era N), the deposit returns at block 1440 (era N+2 boundary). If included in block 720 (first block of era N+1), the deposit returns at block 2160 (era N+3 boundary). No explicit reclaim tx needed
 - **No exemption:** Burn txs also lock 0.33 MONEX — the 10 MOXX fee covers processing, but the deposit still applies
-- **Capital cost example:** An account submitting 50 txs in one era has 16.5 MONEX temporarily locked. At the era boundary, all return to the sender's available balance
+- **Capital cost example:** An account submitting 50 txs in one era has 16.5 MONEX temporarily locked. All return at the **era boundary after next** (2 eras from submission)
 - **Observer nodes:** No deposit needed (no tx submission)
 - **Dev networks:** 0.33 MONEX per tx on Devnet (100 MONEX/key) — 3 txs consume 1% of balance. Enforced for consistency
 - **Rate limit:** Pair with the per-account rate limit (50 txs/block) — the deposit is economic anti-spam, the rate limit prevents block congestion
@@ -98,7 +98,7 @@ The state machine maintains a **fee accumulator** per block:
 
 ```
 
-**Precision:** All division uses integer arithmetic with U256. To handle rounding, the fee distribution must distribute the full `block_fees` across validators without losing wei to truncation. Implementation strategy: distribute using `block_fees * stake / total_stake` for each validator, then allocate the remainder (due to integer truncation) to the validator with the highest stake. This guarantees the full fee pool is distributed each block.
+**Precision:** All division uses integer arithmetic with U256. To handle rounding, the fee distribution must distribute the full `block_fees` across validators without losing wei to truncation. Implementation strategy: distribute using `block_fees * stake / total_stake` for each validator, then allocate the remainder (due to integer truncation) to the validator with the lowest address among those with the highest stake. This guarantees the full fee pool is distributed each block with a deterministic tie-breaker.
 
 ### Comparison to Options Considered
 
@@ -107,6 +107,21 @@ The state machine maintains a **fee accumulator** per block:
 | A | Proposer keeps 100% of fees | ❌ | Creates feast-or-famine reward pattern; non-proposing validators earn nothing for 105s on a 21-set |
 | B | Split equally among active set | ❌ | Ignores stake weight; a 1 MONEX validator earns the same as a 1,000 MONEX validator |
 | **C** | **Split pro-rata by stake** | **✅** | Rewards commitment proportionally; all validators earn every block; no special proposer bonus needed |
+
+---
+
+## Economic Security
+
+The fee and staking model is designed to resist economic attacks. The table below summarizes each vector and the defenses in place:
+
+| Attack Vector | Defense | Sufficient? |
+|---------------|---------|-------------|
+| **Sybil attack** (create many validators to dominate) | 1 MONEX minimum stake + Top-N election by stake weight | ✅ Yes — cost to reach Top-N scales linearly with network value |
+| **Low-cost censorship** (spam many txs to fill blocks) | 0.33 MONEX anti-spam deposit per tx + 50 tx/block rate limit per account | ✅ Probably — attacker needs significant locked capital |
+| **Fee market manipulation** (submit many low-fee txs to raise the floor) | Tip-based ordering + local `min_fee` filter per operator | ✅ Yes — `min_fee` is a local policy, each operator controls their own threshold |
+| **Validator cartel** (collude to censor or reorg) | Slashing (90% equivocation penalty) + Top-N stake-weighted election makes collusion expensive | ⚠️ Possible but expensive — controlling > 2/3 of stake is the bar for meaningful attacks |
+| **Long-range attack** (create alternative history from far back) | Checkpoints at era boundaries + genesis hash committed at peer connection | ⚠️ Requires out-of-band checkpoint verification (publish genesis hash + recent checkpoint hashes on a known website/social) |
+| **Nothing at stake** (vote on both forks risk-free) | 90% equivocation slashing + 72-era freeze | ✅ Yes — cost of equivocation far exceeds any benefit |
 
 ---
 

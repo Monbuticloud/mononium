@@ -18,7 +18,7 @@ Both YAML and TOML are supported. The loader detects format by file extension (`
 | 4        | `~/.mononium/config.toml`                   |
 | 5        | No config → all defaults + required CLI     |
 
-**YAML vs TOML tiebreak:** If both `config.yaml` and `config.toml` exist in the same directory (both at step 3 or both at step 4), **YAML wins**. The loader checks `.yaml` before `.toml`.
+**YAML vs TOML conflict:** If both `config.yaml` and `config.toml` exist in the same directory (both at step 3 or both at step 4), the loader **errors** with a message listing both paths. The operator must remove one to proceed. This prevents silent surprises from file-format precedence.
 
 ### Override Precedence
 
@@ -43,6 +43,7 @@ genesis: configs/genesis.devnet.json # required, no default
 
 node:
   data_dir: ~/.mononium/data
+  unlock_timeout: 20 # seconds, key derivation timeout — abort if exceeded
 
 network:
   p2p_port: 30333
@@ -76,6 +77,12 @@ genesis = "configs/genesis.devnet.json"
 
 [node]
 data_dir = "~/.mononium/data"
+unlock_timeout = 20 # seconds
+
+# Crypto settings (config file only — no CLI flags)
+[crypto]
+argon2_memory_mib = 256
+argon2_iterations = 16
 
 [network]
 p2p_port = 30333
@@ -123,6 +130,23 @@ Default: `~/.mononium/data/`
 
 Database and state files are stored under `{data_dir}/{chain_id}/`. The network subdirectory is derived from the genesis `chain_id`.
 
+### `node.unlock_timeout`
+
+Default: `20` (seconds)
+
+Maximum time the node waits for key derivation (Argon2id) before aborting with a clear error. If the node's hardware cannot complete key derivation within this window, the operator should adjust `crypto.argon2_memory_mib` / `crypto.argon2_iterations` to reduce the computational cost.
+
+Also available as `--unlock-timeout` CLI flag.
+
+### `crypto.*`
+
+| Field                  | Default | Description                               |
+| ---------------------- | ------- | ----------------------------------------- |
+| `argon2_memory_mib`    | `256`   | Argon2id memory cost in MiB               |
+| `argon2_iterations`    | `16`    | Argon2id time cost (iterations)           |
+
+Config-file only — no CLI flag overrides. Adjust these if the default parameters are too slow for the node's hardware (lower memory/iterations) or if higher security is desired (higher values). The node logs a warning if estimated derivation time exceeds `node.unlock_timeout`.
+
 ### `network.*`
 
 | Field       | Default | Description                       |
@@ -142,9 +166,9 @@ Empty `bootnodes` is valid. On localnet, mDNS handles discovery. On multi-node n
 | `compact_eras`  | `2`     | Eras to keep in full before compressing (compact mode only)        |
 | `full_node_rpc` | `[]`    | Upstream RPC endpoints for historical tx lookups (compact only)    |
 
-**Full mode:** All blocks, transactions, votes, and state retained since genesis. Default for all operators. Requires ~17 GB/day raw storage — plan disk accordingly.
+**Full mode:** All blocks, transactions, votes, and state retained since genesis. **Default for all operators.** There is no special incentive for running full nodes — they are the norm. ~17 GB/day raw storage — plan disk accordingly.
 
-**Compact mode:** Keeps the last `compact_eras` eras in full. Older blocks are compressed to headers only (height, state_root, parent_hash, timestamp — ~100 bytes/block). Historical transaction and state queries are proxied to the configured `full_node_rpc` endpoints. Intended for resource-constrained VPS operators who accept the trade-off of external dependency for historical data.
+**Compact mode:** Keeps the last `compact_eras` eras in full. Older blocks are compressed to headers only. Historical transaction and state queries are proxied to configured `full_node_rpc` endpoints. Intended for resource-constrained VPS operators who accept the trade-off of external dependency for historical data. If all `full_node_rpc` endpoints are unreachable, the node returns an explicit RPC error (`-6`, data unavailable) rather than panicking.
 
 ### `mempool.min_fee`
 
@@ -189,6 +213,7 @@ mononium-cli node \
   --full-node-rpc <url>          # upstream RPC for historical queries (repeatable)
   --log-level <level>            # log level override
   --log-format <text|json>       # log format override (interim: pipe through `jq`)
+  --unlock-timeout <secs>        # key derivation timeout (default 20s)
 
 mononium-cli logfmt < node.log          # convert JSON logs to human-readable text
 tail -f node.log | jq -r '.level + " " + .msg'   # quick live inspection

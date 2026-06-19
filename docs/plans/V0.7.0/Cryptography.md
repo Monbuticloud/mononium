@@ -90,12 +90,35 @@ Validator keys are stored encrypted at rest:
 | Component       | Mechanism                                                                              |
 | --------------- | -------------------------------------------------------------------------------------- |
 | **Encryption**  | NaCl secretbox (XSalsa20-Poly1305)                                                     |
-| **KDF**         | Argon2id (512 MiB memory, 4 iterations, 4 parallel)                                    |
+| **KDF**         | Argon2id (256 MiB memory, 16 iterations, 4 parallel)                                   |
 | **File format** | JSON: `{ "public_key": "0x...", "encrypted_seed": "base64...", "nonce": "base64..." }` |
 | **Location**    | `~/.mononium/keys/{name}.json`                                                         |
 | **Crate**       | `argon2` (pure Rust, RustCrypto)                                                       |
 
-Key generation is an **offline CLI operation** (`mononium-cli wallet keygen`). The 48-byte seed is encrypted to disk; the private key is re-derived at node startup. The Argon2id memory cost (512 MiB) means ~2.5-5s unlock time — acceptable for a one-time startup operation.
+Key generation is an **offline CLI operation** (`mononium-cli wallet keygen`). The 48-byte seed is encrypted to disk; the private key is re-derived at node startup. The Argon2id parameters (256 MiB memory, 16 iterations) balance security with startup time on cheap VPS — target ~3-6s unlock on 1-2 vCPU hardware.
+
+**Argon2id settings are configurable** in the node config file (see `NodeConfig.md` `crypto.*` fields). Operators on high-security hardware can increase memory/iterations; operators with constrained VPS can reduce them. These are config-file-only settings — no CLI flag override.
+
+## Wallet Backup / Recovery
+
+The primary backup mechanism is a **BIP39 mnemonic phrase**:
+
+| Component       | Specification                                           |
+| --------------- | ------------------------------------------------------- |
+| **Seed phrase** | 24 words (BIP39), generated during `wallet keygen`      |
+| **Entropy**     | 48 bytes (256-bit security) mapped to BIP39 wordlist    |
+| **Key file**    | The **operational secret** — used by the node at startup|
+| **Mnemonic**    | The **primary backup** — users write it down on paper   |
+
+### Recovery Flow
+
+1. User has their 24-word mnemonic phrase
+2. `mononium-cli wallet recover` — prompts for the phrase
+3. Re-derives the 48-byte Falcon-512 seed from the mnemonic (BIP39)
+4. Generates a new key file from the recovered seed
+5. The recovered key file is identical to the original (same public key)
+
+The key file (`~/.mononium/keys/{name}.json`) is the **operational secret** for day-to-day node operation. The mnemonic phrase is the **ultimate backup** — without it, the key file cannot be recovered if lost.
 
 ---
 
