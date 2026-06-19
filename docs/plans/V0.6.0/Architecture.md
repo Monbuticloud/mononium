@@ -111,17 +111,17 @@ mononium-rust-lib/src/
     └── types.rs              # RPC response types (JSON serde)
 ```
 
-| Module         | Responsibility                                                      |
-| -------------- | ------------------------------------------------------------------- |
-| `core/`        | Account types, U256, state machine, tx processing                   |
-| `consensus/`   | PoS consensus engine                                                |
-| `governance/`  | On-chain voting, proposal lifecycle, parameter mutation             |
-| `mempool/`     | Transaction pool (tip → time → nonce ordering)                      |
-| `config/`      | Node config load/merge (YAML + TOML), CLI flag binding              |
-| `crypto/`      | Falcon-512 signing/verification, BLAKE3 hashing, Sparse Merkle Trie |
-| `storage/`     | redb database (mutable + append-only tables, StorageEngine trait)   |
-| `network/`     | P2P networking, peer discovery, message gossip                      |
-| `rpc/`         | RPC server (jsonrpsee + REST) and client types                      |
+| Module        | Responsibility                                                      |
+| ------------- | ------------------------------------------------------------------- |
+| `core/`       | Account types, U256, state machine, tx processing                   |
+| `consensus/`  | PoS consensus engine                                                |
+| `governance/` | On-chain voting, proposal lifecycle, parameter mutation             |
+| `mempool/`    | Transaction pool (tip → time → nonce ordering)                      |
+| `config/`     | Node config load/merge (YAML + TOML), CLI flag binding              |
+| `crypto/`     | Falcon-512 signing/verification, BLAKE3 hashing, Sparse Merkle Trie |
+| `storage/`    | redb database (mutable + append-only tables, StorageEngine trait)   |
+| `network/`    | P2P networking, peer discovery, message gossip                      |
+| `rpc/`        | RPC server (jsonrpsee + REST) and client types                      |
 
 ## mononium-cli
 
@@ -152,21 +152,21 @@ REST is the primary transport in Phase 1 (simpler, curl-friendly); jsonrpsee is 
 
 ### REST (axum — HTTP)
 
-| Method | Path                    | Returns                             | Phase |
-| ------ | ----------------------- | ----------------------------------- | ----- |
-| POST   | `/tx`                   | `TxHash`                            | 1     |
-| GET    | `/tx/{hash}`            | `TxStatus`                          | 1     |
-| GET    | `/block/{height}`       | `Block`                             | 1     |
-| GET    | `/block/{hash}`         | `Block`                             | 1     |
-| GET    | `/block/latest`         | `BlockHeader`                       | 1     |
-| GET    | `/balance/{address}`    | `U256` (MOXX)                       | 1     |
-| GET    | `/nonce/{address}`      | `u64`                               | 1     |
-| GET    | `/validators`           | `Vec<ValidatorInfo>`                | 1     |
-| GET    | `/validator/{address}`  | `ValidatorInfo`                     | 1     |
-| GET    | `/era`                  | `u64`                               | 1     |
-| GET    | `/height`               | `u64`                               | 1     |
-| GET    | `/genesis`              | `Hash`                              | 1     |
-| GET    | `/health`               | `{ status, height, peers }`         | 1     |
+| Method | Path                   | Returns                     | Phase |
+| ------ | ---------------------- | --------------------------- | ----- |
+| POST   | `/tx`                  | `TxHash`                    | 1     |
+| GET    | `/tx/{hash}`           | `TxStatus`                  | 1     |
+| GET    | `/block/{height}`      | `Block`                     | 1     |
+| GET    | `/block/{hash}`        | `Block`                     | 1     |
+| GET    | `/block/latest`        | `BlockHeader`               | 1     |
+| GET    | `/balance/{address}`   | `U256` (MOXX)               | 1     |
+| GET    | `/nonce/{address}`     | `u64`                       | 1     |
+| GET    | `/validators`          | `Vec<ValidatorInfo>`        | 1     |
+| GET    | `/validator/{address}` | `ValidatorInfo`             | 1     |
+| GET    | `/era`                 | `u64`                       | 1     |
+| GET    | `/height`              | `u64`                       | 1     |
+| GET    | `/genesis`             | `Hash`                      | 1     |
+| GET    | `/health`              | `{ status, height, peers }` | 1     |
 
 - Phase 1: single-node prototype with REST only
 - Phase 2: jsonrpsee added for subscriptions (see below)
@@ -177,36 +177,36 @@ REST is the primary transport in Phase 1 (simpler, curl-friendly); jsonrpsee is 
 
 Available from Phase 2 onward. Complements REST with subscriptions and batched requests.
 
-| Method                       | Params                                   | Returns                        | Notes                              |
-| ---------------------------- | ---------------------------------------- | ------------------------------ | ---------------------------------- |
-| `tx_submit`                  | `Transaction` (SCALE-hex encoded)        | `TxHash`                       | Submit signed transaction          |
-| `tx_status`                  | `TxHash`                                 | `{ status, height?, index? }`  | Pending / finalized / failed       |
-| `block_get`                  | `BlockId` (height or hash)               | `Block`                        | Full block with body               |
-| `block_header`               | `BlockId`                                | `BlockHeader`                  | Header only (lighter than block)   |
-| `block_latest`               | —                                        | `BlockHeader`                  | Latest header                      |
-| `state_get_balance`          | `Address`                                | `U256`                         | Balance in MOXX                    |
-| `state_get_nonce`            | `Address`                                | `u64`                          | Next valid nonce                   |
-| `validator_set`              | —                                        | `Vec<ValidatorInfo>`           | Active + candidate set             |
-| `validator_stake`            | `Address`                                | `U256`                         | Stake of specific validator        |
-| `era_current`                | —                                        | `u64`                          | Current era index                  |
-| `chain_get_height`           | —                                        | `u64`                          | Current block height               |
-| `chain_get_genesis`          | —                                        | `Hash`                         | Genesis block hash                 |
-| `subscribe_blocks`           | —                                        | `Event<BlockHeader>`           | New block notifications            |
-| `subscribe_finality`         | —                                        | `Event<FinalityEvent>`         | Finality notifications             |
-| `subscribe_votes`            | —                                        | `Event<CommitVote>`            | Vote notifications                 |
+| Method               | Params                            | Returns                       | Notes                            |
+| -------------------- | --------------------------------- | ----------------------------- | -------------------------------- |
+| `tx_submit`          | `Transaction` (SCALE-hex encoded) | `TxHash`                      | Submit signed transaction        |
+| `tx_status`          | `TxHash`                          | `{ status, height?, index? }` | Pending / finalized / failed     |
+| `block_get`          | `BlockId` (height or hash)        | `Block`                       | Full block with body             |
+| `block_header`       | `BlockId`                         | `BlockHeader`                 | Header only (lighter than block) |
+| `block_latest`       | —                                 | `BlockHeader`                 | Latest header                    |
+| `state_get_balance`  | `Address`                         | `U256`                        | Balance in MOXX                  |
+| `state_get_nonce`    | `Address`                         | `u64`                         | Next valid nonce                 |
+| `validator_set`      | —                                 | `Vec<ValidatorInfo>`          | Active + candidate set           |
+| `validator_stake`    | `Address`                         | `U256`                        | Stake of specific validator      |
+| `era_current`        | —                                 | `u64`                         | Current era index                |
+| `chain_get_height`   | —                                 | `u64`                         | Current block height             |
+| `chain_get_genesis`  | —                                 | `Hash`                        | Genesis block hash               |
+| `subscribe_blocks`   | —                                 | `Event<BlockHeader>`          | New block notifications          |
+| `subscribe_finality` | —                                 | `Event<FinalityEvent>`        | Finality notifications           |
+| `subscribe_votes`    | —                                 | `Event<CommitVote>`           | Vote notifications               |
 
 **Error codes:**
 
-| Code | Meaning                |
-| ---- | ---------------------- |
-| 0    | Success                |
-| -1   | Internal error         |
-| -2   | Invalid params         |
-| -3   | Tx validation failed   |
-| -4   | Block not found        |
-| -5   | Tx not found           |
-| -6   | Address not found      |
-| -7   | Rate limited           |
+| Code | Meaning              |
+| ---- | -------------------- |
+| 0    | Success              |
+| -1   | Internal error       |
+| -2   | Invalid params       |
+| -3   | Tx validation failed |
+| -4   | Block not found      |
+| -5   | Tx not found         |
+| -6   | Address not found    |
+| -7   | Rate limited         |
 
 ### CLI Usage
 

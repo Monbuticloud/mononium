@@ -12,12 +12,12 @@ Mononium uses **Proof of Stake (PoS)**. The chain starts with a **bootstrap key*
 
 The network explicitly targets **cheap VPS** hardware:
 
-| Resource  | Target                                                                                                                                 |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| CPU       | Low — 1-2 vCPU                                                                                                                         |
+| Resource  | Target                                                                                                                                                                                                                                                                         |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CPU       | Low — 1-2 vCPU                                                                                                                                                                                                                                                                 |
 | RAM       | **~70-120 MB** (full mode, Devnet, 21 validators, minimal state) — application footprint is fixed; redb mmap grows with state size but OS-managed. **~55-80 MB** in compact mode (storage.mode: compact) — saves ~15-40 MB by dropping historical block bodies and checkpoints |
-| Bandwidth | Low — 500 KB blocks imply modest traffic                                                                                               |
-| Disk      | Minimal write amplification via redb                                                                                                   |
+| Bandwidth | Low — 500 KB blocks imply modest traffic                                                                                                                                                                                                                                       |
+| Disk      | Minimal write amplification via redb                                                                                                                                                                                                                                           |
 
 The goal is accessibility — running a validator should not require data center infrastructure.
 

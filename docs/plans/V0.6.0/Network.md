@@ -55,12 +55,12 @@ Four gossipsub topics, each scoped by chain_id:
 
 Each topic has per-peer size and rate limits to prevent bandwidth exhaustion and spam. Validation happens **before** gossip propagation — oversized or over-rate messages are dropped at the topic level without reaching higher-level handlers.
 
-| Topic                          | Max message size | Rate limit (per peer) | Rationale                               |
-| ------------------------------ | ---------------- | --------------------- | --------------------------------------- |
-| `mononium/txs/{chain_id}`      | 1 MB             | 20 msg/s              | Txs are user-generated, unbounded       |
-| `mononium/blocks/{chain_id}`   | 500 KB           | 1 msg/s               | 1 proposer per 5s slot — no burst needed|
-| `mononium/votes/{chain_id}`    | 1 KB             | 100 msg/s             | 21 validators max, ~22 B per vote       |
-| `mononium/evidence/{chain_id}` | 5 KB             | 5 msg/s               | Rare event — no throughput required     |
+| Topic                          | Max message size | Rate limit (per peer) | Rationale                                |
+| ------------------------------ | ---------------- | --------------------- | ---------------------------------------- |
+| `mononium/txs/{chain_id}`      | 1 MB             | 20 msg/s              | Txs are user-generated, unbounded        |
+| `mononium/blocks/{chain_id}`   | 500 KB           | 1 msg/s               | 1 proposer per 5s slot — no burst needed |
+| `mononium/votes/{chain_id}`    | 1 KB             | 100 msg/s             | 21 validators max, ~22 B per vote        |
+| `mononium/evidence/{chain_id}` | 5 KB             | 5 msg/s               | Rare event — no throughput required      |
 
 **Size validation:** Applied to the raw SCALE bytes before deserialization. A block payload > 500 KB is dropped immediately and the sending peer's score is decremented by -5 (see [Peer Scoring](#peer-scoring)).
 
@@ -135,6 +135,7 @@ struct HeightRange {
 ```
 
 The cursor is:
+
 - **Created** when sync begins (set to genesis height 0, hash = genesis block hash)
 - **Updated** each time a block batch is fully verified (`last_verified_height` and `last_verified_hash` advance)
 - **Reset** on checkpoint load (set to checkpoint height and its verified state root hash)
@@ -169,6 +170,7 @@ struct BlockSyncResponse {
 **`known_block_hash` behavior:**
 
 The `known_block_hash` field serves as a **fork anchor**. The responding peer MUST:
+
 1. Verify that `known_block_hash` exists in their canonical chain
 2. Verify that `known_block_hash` is at height `start_height - 1`
 3. If both pass → serve blocks `[start_height..]` building on `known_block_hash`
@@ -400,12 +402,12 @@ The tiebreaker (step 7) is rare — it requires two peers on different forks AND
 
 ### Retry Logic
 
-| Attempt | Per-peer timeout              | Action on failure                        |
-| ------- | ----------------------------- | ---------------------------------------- |
-| 1st     | 5s                            | Try next peer, same height               |
-| 2nd     | 10s                           | Try next peer, same height               |
-| 3rd     | 15s                           | Try next peer, same height               |
-| 4th     | —                             | Log warning, wait 10s, retry from step 1 |
+| Attempt | Per-peer timeout | Action on failure                        |
+| ------- | ---------------- | ---------------------------------------- |
+| 1st     | 5s               | Try next peer, same height               |
+| 2nd     | 10s              | Try next peer, same height               |
+| 3rd     | 15s              | Try next peer, same height               |
+| 4th     | —                | Log warning, wait 10s, retry from step 1 |
 
 After 3 failures on different peers for the same height range, the node pauses 10 seconds before retrying the entire range from the last verified height. This prevents busy-looping on a fork or unavailable network.
 
@@ -445,27 +447,27 @@ A lightweight peer scoring system deters misbehavior and guides peer selection. 
 
 #### Score Tiers
 
-| Score range  | Status   | Behavior                                                   |
-| ------------ | -------- | ---------------------------------------------------------- |
-| `> 0`        | Good     | Normal operation, preferred for sync requests              |
-| `-20 to 0`   | Neutral  | Deprioritized for sync requests, still connected           |
-| `< -20`      | Banned   | Disconnected and banned for 1 era (banned list wiped at each era boundary) |
+| Score range | Status  | Behavior                                                                   |
+| ----------- | ------- | -------------------------------------------------------------------------- |
+| `> 0`       | Good    | Normal operation, preferred for sync requests                              |
+| `-20 to 0`  | Neutral | Deprioritized for sync requests, still connected                           |
+| `< -20`     | Banned  | Disconnected and banned for 1 era (banned list wiped at each era boundary) |
 
 #### Score Adjustments
 
-| Event                                                   | Score change | Rationale                                                     |
-| ------------------------------------------------------- | ------------ | ------------------------------------------------------------- |
-| Valid block propagated                                  | +1           | Good citizen                                                  |
-| Valid vote propagated                                   | +1           | Good citizen                                                  |
-| Successful sync batch served                            | +2           | Useful peer                                                   |
-| Sync batch hash mismatch (ADR-018)                      | -10          | Fork disagreement or corrupted data                           |
-| Sync batch fails verification (state_root mismatch)     | -20          | Served invalid state — unambiguous misbehavior                |
-| Empty sync response (peer has blocks but won't serve)   | -2           | Wasting request slots                                         |
-| Timeout on sync request (2+ consecutive)                | -4           | Unresponsive                                                  |
-| Invalid block gossiped                                  | -10          | Wasting bandwidth                                              |
-| Invalid vote gossiped                                   | -10          | Wasting bandwidth                                              |
-| Connect/disconnect loop (>3 disconnects in 5 min)       | -10          | Connection flapping                                           |
-| Duplicate block gossip (>3 identical blocks)            | -2           | Bandwidth waste                                                |
+| Event                                                 | Score change | Rationale                                      |
+| ----------------------------------------------------- | ------------ | ---------------------------------------------- |
+| Valid block propagated                                | +1           | Good citizen                                   |
+| Valid vote propagated                                 | +1           | Good citizen                                   |
+| Successful sync batch served                          | +2           | Useful peer                                    |
+| Sync batch hash mismatch (ADR-018)                    | -10          | Fork disagreement or corrupted data            |
+| Sync batch fails verification (state_root mismatch)   | -20          | Served invalid state — unambiguous misbehavior |
+| Empty sync response (peer has blocks but won't serve) | -2           | Wasting request slots                          |
+| Timeout on sync request (2+ consecutive)              | -4           | Unresponsive                                   |
+| Invalid block gossiped                                | -10          | Wasting bandwidth                              |
+| Invalid vote gossiped                                 | -10          | Wasting bandwidth                              |
+| Connect/disconnect loop (>3 disconnects in 5 min)     | -10          | Connection flapping                            |
+| Duplicate block gossip (>3 identical blocks)          | -2           | Bandwidth waste                                |
 
 #### Ban Mechanics
 
@@ -489,6 +491,7 @@ A lightweight peer scoring system deters misbehavior and guides peer selection. 
 #### Deprioritization (Neutral Peers)
 
 Peers in the `-20 to 0` range remain connected but are:
+
 - Skipped when selecting peers for sync batch requests (prefer Good peers)
 - Still allowed to gossip blocks, votes, and transactions (they may still have valid data)
 - Allowed to receive our gossip (we don't want to fork away from them if they're on a minority chain)
@@ -503,6 +506,7 @@ A node exits sync mode and begins consensus participation when ALL of the follow
 4. No pending block verification in progress
 
 If any condition becomes false after exiting sync mode (e.g., a reorg causes the node to fall >2 eras behind), the node re-enters sync mode automatically. This is detected via:
+
 - Gossiped blocks that reference a `parent_hash` the node doesn't have
 - Peer announcements with `highest_height >> local_height`
 - Gossiped `Status` messages (if implemented) showing a chain split

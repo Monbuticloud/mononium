@@ -18,19 +18,19 @@ Full on-chain governance. Any staker can submit a proposal; all stakers vote wit
 
 ## Governance-Mutable Parameters
 
-| Parameter              | Current value    | Governance scope    |
-| ---------------------- | ---------------- | ------------------- |
-| `max_validators`       | 21 (dev) / 101   | Adjust up or down   |
-| `era_length`           | 720 blocks       | Adjust up or down   |
-| `block_size_cap_bytes` | 500 KB           | Adjust up           |
-| `block_tx_cap`         | 500 txs          | Adjust up or down   |
-| `flat_fee`             | 0.00667 MONEX    | Adjust up or down   |
-| `per_byte_rate`        | 0.000467 MONEX   | Adjust up or down   |
-| `anti_spam_deposit`    | 0.33 MONEX       | Adjust up or down   |
-| `missed_slot_penalty`  | 0.08 MONEX       | Adjust up or down   |
-| `n_shards`             | 2                | Increase only       |
-| `supply_ceiling_rate`  | 3.5%             | Adjust up or down   |
-| `supply_headroom_rate` | 5.0%             | Adjust up or down   |
+| Parameter              | Current value  | Governance scope  |
+| ---------------------- | -------------- | ----------------- |
+| `max_validators`       | 21 (dev) / 101 | Adjust up or down |
+| `era_length`           | 720 blocks     | Adjust up or down |
+| `block_size_cap_bytes` | 500 KB         | Adjust up         |
+| `block_tx_cap`         | 500 txs        | Adjust up or down |
+| `flat_fee`             | 0.00667 MONEX  | Adjust up or down |
+| `per_byte_rate`        | 0.000467 MONEX | Adjust up or down |
+| `anti_spam_deposit`    | 0.33 MONEX     | Adjust up or down |
+| `missed_slot_penalty`  | 0.08 MONEX     | Adjust up or down |
+| `n_shards`             | 2              | Increase only     |
+| `supply_ceiling_rate`  | 3.5%           | Adjust up or down |
+| `supply_headroom_rate` | 5.0%           | Adjust up or down |
 
 Parameters not listed (block time, chain ID, signature scheme, consensus mode) are compile-time constants — not governance-mutable in V1.
 
@@ -82,6 +82,7 @@ enum GovernanceParam {
 **Deposit:** 100 MONEX (held until proposal resolves). Forfeited if the proposal expires without meeting quorum. Returned to proposer if approved or rejected with quorum.
 
 **Rate limits:**
+
 - Max 5 active proposals per proposer at any time
 - Max 50 proposals per era globally (prevents proposal spam even with deposits)
 - Parameters are locked during an active proposal targeting them — a second proposal for the same param cannot be submitted until the first resolves
@@ -172,12 +173,12 @@ After the first vote, cancellation is impossible — the proposal must run its c
 
 Added to `meta` namespace (or a separate governance namespace `0x03` in the SMT):
 
-| Data                     | Key                        | Value               | Notes                          |
-| ------------------------ | -------------------------- | ------------------- | ------------------------------ |
-| Proposal metadata        | `prop_{proposal_id}`       | `Proposal`          | Full proposal record           |
-| Vote records             | `vote_{proposal_id}_{voter}` | `Vote`            | One per voter per proposal     |
-| Governance params        | `gov_param_{param_name}`   | `U256`              | Current value of mutable param |
-| Active proposal counter  | `gov_active_count`         | `u64`               | Rate limit counter             |
+| Data                    | Key                          | Value      | Notes                          |
+| ----------------------- | ---------------------------- | ---------- | ------------------------------ |
+| Proposal metadata       | `prop_{proposal_id}`         | `Proposal` | Full proposal record           |
+| Vote records            | `vote_{proposal_id}_{voter}` | `Vote`     | One per voter per proposal     |
+| Governance params       | `gov_param_{param_name}`     | `U256`     | Current value of mutable param |
+| Active proposal counter | `gov_active_count`           | `u64`      | Rate limit counter             |
 
 ### Era Boundary Hook
 
@@ -198,6 +199,7 @@ At every era boundary, after validator set recalculation but before the proposer
 The state machine validates governance txs before execution:
 
 **Propose validation:**
+
 - Proposer must have ≥ 100 MONEX staked (prevents dust-proposal spam)
 - Proposal ID must not collide with an existing active proposal (checked against meta table)
 - Title ≤ 256 bytes, description ≤ 4096 bytes
@@ -208,26 +210,28 @@ The state machine validates governance txs before execution:
 - Deposit 100 MONEX deducted from proposer's balance
 
 **Vote validation:**
+
 - Proposal must be in voting window (submission_era ≤ current_era < submission_era + 7)
 - Voter must have > 0 staked MONEX
 - Weight snapshotted at current block
 - Overwrites previous vote if one exists
 
 **Cancel validation:**
+
 - Only proposer may cancel
 - Proposal must have zero votes
 - Proposal must be in voting window (not expired)
 
 ## Relationship to Other Docs
 
-| Doc              | Interaction                                                         |
-| ---------------- | ------------------------------------------------------------------- |
-| Consensus.md     | Governance executes at era boundary, after validator set changes    |
-| StateSharding.md | Shard count increases use governance flow instead of custom votes   |
-| Genesis.md       | Supply policy parameters are governance-mutable                     |
-| Fees.md          | Fee parameters (flat, per-byte, deposit) are governance-mutable     |
-| Slashing.md      | Slashing parameters not governance-mutable in V1 (safety constraint)|
-| Protocol.md      | Governance tx types added to TxBody enum                            |
+| Doc              | Interaction                                                          |
+| ---------------- | -------------------------------------------------------------------- |
+| Consensus.md     | Governance executes at era boundary, after validator set changes     |
+| StateSharding.md | Shard count increases use governance flow instead of custom votes    |
+| Genesis.md       | Supply policy parameters are governance-mutable                      |
+| Fees.md          | Fee parameters (flat, per-byte, deposit) are governance-mutable      |
+| Slashing.md      | Slashing parameters not governance-mutable in V1 (safety constraint) |
+| Protocol.md      | Governance tx types added to TxBody enum                             |
 
 ## V2 Future
 

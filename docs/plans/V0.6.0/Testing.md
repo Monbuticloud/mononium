@@ -101,25 +101,25 @@ All test files use `#[cfg(test)]` and are compiled only during testing — zero 
 
 **Invariants that MUST be tested:**
 
-| Invariant                                               | Location                      |
-| ------------------------------------------------------- | ----------------------------- |
-| Tx SCALE encode/decode is symmetric                     | `tests/core/transaction.rs`   |
-| Tx JSON serde matches SCALE round-trip                  | `tests/core/transaction.rs`   |
-| Block header hash depends on all fields                 | `tests/core/block.rs`         |
-| SMT insert → get returns same value                     | `tests/crypto/trie.rs`        |
-| SMT root is deterministc for same inserts               | `tests/crypto/trie.rs`        |
-| SMT proof verify(prove(key)) == true                    | `tests/crypto/trie.rs`        |
-| Falcon-512 sign → verify round-trip                     | `tests/crypto/falcon.rs`      |
-| Fee calculation is deterministic                        | `tests/core/fee.rs`           |
-| Mempool ordering: tip desc, time asc, nonce asc         | `tests/mempool/ordering.rs`   |
-| Mempool TTL eviction removes stale txs                  | `tests/mempool/mod.rs`        |
-| Top-N election sorts by stake desc, tie by registration | `tests/consensus/election.rs` |
-| Equivocation detection catches duplicate blocks         | `tests/consensus/slashing.rs` |
-| Proposal deposit deducted on submit, returned on resolve | `tests/governance/mod.rs`  |
-| Stake-weighted tally matches participating weight        | `tests/governance/voting.rs` |
-| Quorum below 2/3 → proposal fails, deposit forfeited     | `tests/governance/voting.rs` |
+| Invariant                                                | Location                          |
+| -------------------------------------------------------- | --------------------------------- |
+| Tx SCALE encode/decode is symmetric                      | `tests/core/transaction.rs`       |
+| Tx JSON serde matches SCALE round-trip                   | `tests/core/transaction.rs`       |
+| Block header hash depends on all fields                  | `tests/core/block.rs`             |
+| SMT insert → get returns same value                      | `tests/crypto/trie.rs`            |
+| SMT root is deterministc for same inserts                | `tests/crypto/trie.rs`            |
+| SMT proof verify(prove(key)) == true                     | `tests/crypto/trie.rs`            |
+| Falcon-512 sign → verify round-trip                      | `tests/crypto/falcon.rs`          |
+| Fee calculation is deterministic                         | `tests/core/fee.rs`               |
+| Mempool ordering: tip desc, time asc, nonce asc          | `tests/mempool/ordering.rs`       |
+| Mempool TTL eviction removes stale txs                   | `tests/mempool/mod.rs`            |
+| Top-N election sorts by stake desc, tie by registration  | `tests/consensus/election.rs`     |
+| Equivocation detection catches duplicate blocks          | `tests/consensus/slashing.rs`     |
+| Proposal deposit deducted on submit, returned on resolve | `tests/governance/mod.rs`         |
+| Stake-weighted tally matches participating weight        | `tests/governance/voting.rs`      |
+| Quorum below 2/3 → proposal fails, deposit forfeited     | `tests/governance/voting.rs`      |
 | Approved proposal executes param change at era boundary  | `tests/governance/integration.rs` |
-| Governance cannot modify compile-time constants          | `tests/governance/mod.rs`  |
+| Governance cannot modify compile-time constants          | `tests/governance/mod.rs`         |
 
 ### Tier 2: State Machine Integration
 
