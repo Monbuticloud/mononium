@@ -409,4 +409,55 @@ mod tests {
         smt3.insert(&namespace_key(NS_VALIDATORS, &addr), vec![42]);
         assert_ne!(root, smt3.root());
     }
+
+    #[test]
+    fn test_compute_root_with_disjoint_siblings() {
+        // Insert two leaves whose key_hashes are adjacent siblings at depth 0
+        // This exercises the sibling ordering branch in compute_root
+        let mut smt = SparseMerkleTree::new();
+
+        // Insert a normal key
+        smt.insert(b"aaa", vec![1, 2, 3]);
+        let root1 = smt.root();
+        assert_ne!(root1, defaults()[DEPTH]);
+
+        // Insert a second key that creates sibling pairs
+        smt.insert(b"bbb", vec![4, 5, 6]);
+        let root2 = smt.root();
+        assert_ne!(root2, root1);
+
+        // Verify caching works: repeated calls return same root
+        assert_eq!(root2, smt.root());
+    }
+
+    #[test]
+    fn test_root_caching_after_insert() {
+        let mut smt = SparseMerkleTree::new();
+        assert_eq!(smt.root(), defaults()[DEPTH]);
+
+        smt.insert(b"x", vec![1]);
+        let r1 = smt.root();
+
+        // Insert same key+value → cache invalidated, recomputed, but same result
+        smt.insert(b"x", vec![1]);
+        assert_eq!(smt.root(), r1);
+    }
+
+    #[test]
+    fn test_sibling_reordering() {
+        // Insert pairs of keys that force sibling reordering
+        // (pos > sibling_pos and pos < sibling_pos branches)
+        let mut smt = SparseMerkleTree::new();
+        smt.insert(b"a", vec![1]);
+        smt.insert(b"b", vec![2]);
+        smt.insert(b"c", vec![3]);
+        let root = smt.root();
+
+        // Same insertions in different order should produce same root
+        let mut smt2 = SparseMerkleTree::new();
+        smt2.insert(b"c", vec![3]);
+        smt2.insert(b"b", vec![2]);
+        smt2.insert(b"a", vec![1]);
+        assert_eq!(root, smt2.root());
+    }
 }

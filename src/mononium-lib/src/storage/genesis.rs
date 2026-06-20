@@ -268,4 +268,120 @@ mod tests {
         load_genesis(&engine, &path).unwrap();
         assert!(engine.exists(tables::META, tables::GENESIS_LOADED_KEY).unwrap());
     }
+
+    #[test]
+    fn test_parse_hex_addr_with_0x_prefix() {
+        let addr_hex = "0xabababababababababababababababababababababababababababababababab";
+        let result = parse_hex_addr(addr_hex).unwrap();
+        assert_eq!(result[0], 0xab);
+        assert_eq!(result[31], 0xab);
+    }
+
+    #[test]
+    fn test_parse_hex_addr_wrong_length() {
+        let err = parse_hex_addr("ab").unwrap_err();
+        assert!(err.to_string().contains("must be 32 bytes"), "got: {err}");
+    }
+
+    #[test]
+    fn test_parse_hex_addr_invalid_chars() {
+        let err = parse_hex_addr("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz").unwrap_err();
+        assert!(err.to_string().contains("invalid hex"), "got: {err}");
+    }
+
+    #[test]
+    fn test_load_genesis_rejects_invalid_validator_address() {
+        let (dir, engine) = setup_engine();
+        let json = r#"{
+            "chain_id": 0,
+            "genesis_time": "2025-01-01T00:00:00Z",
+            "initial_accounts": {},
+            "initial_validators": [
+                {
+                    "address": "zz",
+                    "stake": "1000"
+                }
+            ]
+        }"#;
+        let path = write_genesis_json(dir.path(), json);
+        let err = load_genesis(&engine, &path).unwrap_err();
+        assert!(err.to_string().contains("invalid hex"), "got: {err}");
+    }
+
+    #[test]
+    fn test_load_genesis_rejects_invalid_validator_stake() {
+        let (dir, engine) = setup_engine();
+        let json = r#"{
+            "chain_id": 0,
+            "genesis_time": "2025-01-01T00:00:00Z",
+            "initial_accounts": {},
+            "initial_validators": [
+                {
+                    "address": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "stake": "not-a-number"
+                }
+            ]
+        }"#;
+        let path = write_genesis_json(dir.path(), json);
+        let err = load_genesis(&engine, &path).unwrap_err();
+        assert!(err.to_string().contains("invalid decimal"), "got: {err}");
+    }
+
+    #[test]
+    fn test_load_genesis_account_with_0x_prefix() {
+        let (dir, engine) = setup_engine();
+        let json = r#"{
+            "chain_id": 0,
+            "genesis_time": "2025-01-01T00:00:00Z",
+            "initial_accounts": {
+                "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc": "5000"
+            },
+            "initial_validators": []
+        }"#;
+        let path = write_genesis_json(dir.path(), json);
+        load_genesis(&engine, &path).unwrap();
+
+        let raw_addr = parse_hex_addr("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc").unwrap();
+        let raw = engine.get(tables::ACCOUNTS, &raw_addr).unwrap().unwrap();
+        let account = Account::decode(&mut &raw[..]).unwrap();
+        assert_eq!(account.balance, U256::from(5000));
+    }
+
+    #[test]
+    fn test_load_genesis_empty_accounts_and_validators() {
+        let (dir, engine) = setup_engine();
+        let json = r#"{
+            "chain_id": 0,
+            "genesis_time": "2025-01-01T00:00:00Z",
+            "initial_accounts": {},
+            "initial_validators": []
+        }"#;
+        let path = write_genesis_json(dir.path(), json);
+        load_genesis(&engine, &path).unwrap();
+        assert!(engine.exists(tables::META, tables::GENESIS_LOADED_KEY).unwrap());
+    }
+
+    #[test]
+    fn test_load_genesis_nonexistent_file() {
+        let (dir, engine) = setup_engine();
+        let err = load_genesis(&engine, &dir.path().join("nonexistent.json")).unwrap_err();
+        assert!(err.to_string().contains("cannot read genesis file"), "got: {err}");
+    }
+
+    #[test]
+    fn test_parse_u256_zero() {
+        assert_eq!(parse_u256("0").unwrap(), U256::zero());
+    }
+
+    #[test]
+    fn test_parse_u256_large() {
+        let val = parse_u256("10000000000000000000000000000000000000").unwrap();
+        assert!(val > U256::zero());
+    }
+
+    #[test]
+    fn test_parse_u256_invalid() {
+        let err = parse_u256("xyz").unwrap_err();
+        assert!(err.to_string().contains("invalid decimal"), "got: {err}");
+    }
 }

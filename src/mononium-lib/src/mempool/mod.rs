@@ -531,4 +531,23 @@ mod tests {
         assert!(selected.is_empty());
         assert_eq!(pool.len(), 1); // tx not removed
     }
+
+    #[test]
+    fn test_select_deducts_from_sender_count() {
+        let mut pool = make_pool();
+        pool.insert(make_tx(1, 0, 100)).unwrap();
+        pool.insert(make_tx(1, 1, 100)).unwrap();
+        assert_eq!(pool.sender_tx_count(&Address::from([1; 32])), 2);
+
+        let selected = pool.select(1);
+        assert_eq!(selected.len(), 1);
+        // After select, only 1 tx left from sender 1
+        assert_eq!(pool.sender_tx_count(&Address::from([1; 32])), 1);
+    }
+
+    #[test]
+    fn test_remove_absent_sender_returns_false() {
+        let mut pool = make_pool();
+        assert!(!pool.remove(&Address::from([99; 32]), 0));
+    }
 }

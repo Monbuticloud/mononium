@@ -44,6 +44,7 @@
 - [x] 105 total tests passing, clippy clean
 
 ## Sub-phase 1.4 ✅ State Machine (commits starting from `7d192d9`)
+
 - [x] `core/state.rs` — StateMachine with SMT-backed accounts
 - [x] Account CRUD (get/insert with namespace prefix `0x00`)
 - [x] `apply_block()` — validates chain_id, executes Transfer/Burn, tracks fees
@@ -136,19 +137,19 @@
 
 **Target:** ≥95% region coverage across all `mononium-lib` modules
 
-| Module | Current | Target | Missed Regions | Strategy |
-|--------|---------|--------|---------------|---------|
-| storage/redb.rs | 63.64% | ≥95% | 80 | Error-path tests for all redb operations |
-| config/mod.rs | 88.26% | ≥95% | 56 | Validation edge cases, CLI override scenarios |
-| consensus/supply.rs | 90.41% | ≥95% | 14 | Edge-case inflation math |
-| core/account.rs | 93.39% | ≥95% | 25 | Address parsing edge cases, SCALE error handling |
-| core/state.rs | 96.03% | ≥95% | 19 | Apply-block tx-type dispatch |
-| core/transaction.rs | 97.46% | ≥95% | 6 | Register/stake/unstake roundtrip |
-| core/fee.rs | 97.44% | ≥95% | 3 | Burn flat fee bypass edge |
-| crypto/falcon.rs | 97.81% | ≥95% | 11 | Error-handling paths |
-| crypto/trie.rs | 98.92% | ≥95% | 5 | Sparse node edge cases |
-| storage/genesis.rs | 96.83% | ≥95% | 11 | Validator genesis, error paths |
-| mempool/mod.rs | 99.13% | ≥95% | 5 | Evict/select edge cases |
+| Module              | Current | Target | Missed Regions | Strategy                                         |
+| ------------------- | ------- | ------ | -------------- | ------------------------------------------------ |
+| storage/redb.rs     | 63.64%  | ≥95%   | 80             | Error-path tests for all redb operations         |
+| config/mod.rs       | 88.26%  | ≥95%   | 56             | Validation edge cases, CLI override scenarios    |
+| consensus/supply.rs | 90.41%  | ≥95%   | 14             | Edge-case inflation math                         |
+| core/account.rs     | 93.39%  | ≥95%   | 25             | Address parsing edge cases, SCALE error handling |
+| core/state.rs       | 96.03%  | ≥95%   | 19             | Apply-block tx-type dispatch                     |
+| core/transaction.rs | 97.46%  | ≥95%   | 6              | Register/stake/unstake roundtrip                 |
+| core/fee.rs         | 97.44%  | ≥95%   | 3              | Burn flat fee bypass edge                        |
+| crypto/falcon.rs    | 97.81%  | ≥95%   | 11             | Error-handling paths                             |
+| crypto/trie.rs      | 98.92%  | ≥95%   | 5              | Sparse node edge cases                           |
+| storage/genesis.rs  | 96.83%  | ≥95%   | 11             | Validator genesis, error paths                   |
+| mempool/mod.rs      | 99.13%  | ≥95%   | 5              | Evict/select edge cases                          |
 
 - [ ] storage/redb.rs: test error paths (DB open failure, put/get/delete/commit failures)
 - [ ] config/mod.rs: test load_nonexistent_path, validate_with_zero_ports, observer config, merge_all_fields
