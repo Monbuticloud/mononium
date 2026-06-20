@@ -122,7 +122,7 @@ impl RateLimiter {
         if allowed {
             self.increment(peer);
         }
-        true
+        allowed
     }
 }
 
@@ -175,7 +175,7 @@ mod tests {
         for _ in 0..3 {
             assert!(rl.allow(peer));
         }
-        // But this is a bug — let me fix `allow()` first
+        assert!(!rl.allow(peer)); // 4th exceeds limit of 3
     }
 
     #[test]
