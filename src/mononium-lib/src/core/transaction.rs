@@ -130,6 +130,85 @@ mod tests {
         let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
         assert_eq!(body, decoded);
     }
+
+    #[test]
+    fn test_tx_body_register_validator_scale_roundtrip() {
+        let body = TxBody::RegisterValidator;
+        let encoded = body.encode();
+        let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_stake_scale_roundtrip() {
+        let body = TxBody::Stake {
+            validator: Address::from([0x22u8; 32]),
+            amount: U256::from(5000),
+        };
+        let encoded = body.encode();
+        let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_register_and_stake_scale_roundtrip() {
+        let body = TxBody::RegisterAndStake {
+            validator: Address::from([0x33u8; 32]),
+            amount: U256::from(10_000),
+        };
+        let encoded = body.encode();
+        let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_unstake_scale_roundtrip() {
+        let body = TxBody::Unstake {
+            validator: Address::from([0x44u8; 32]),
+            amount: U256::from(2000),
+        };
+        let encoded = body.encode();
+        let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_burn_permanent_scale_roundtrip() {
+        let body = TxBody::Burn {
+            target: BurnTarget::Permanent,
+            amount: U256::from(100),
+        };
+        let encoded = body.encode();
+        let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_burn_cap_refill_scale_roundtrip() {
+        let body = TxBody::Burn {
+            target: BurnTarget::CapRefill,
+            amount: U256::from(200),
+        };
+        let encoded = body.encode();
+        let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_burn_target_permanent_scale_roundtrip() {
+        let target = BurnTarget::Permanent;
+        let encoded = target.encode();
+        let decoded = BurnTarget::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(target, decoded);
+    }
+
+    #[test]
+    fn test_burn_target_cap_refill_scale_roundtrip() {
+        let target = BurnTarget::CapRefill;
+        let encoded = target.encode();
+        let decoded = BurnTarget::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(target, decoded);
+    }
 }
 
 
