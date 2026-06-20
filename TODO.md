@@ -52,17 +52,15 @@
 - [x] Multiple txs in a block with sequential nonces
 - [x] 117 total tests passing, clippy clean
 
-## Sub-phase 1.5 🔶 Storage (redb)
+## Sub-phase 1.5 ✅ Storage (redb)
 
-- [ ] Test: StorageEngine trait contract
-- [ ] Test: redb put/get/delete round-trip
-- [ ] Test: Genesis loading from JSON
-- [ ] Test: Duplicate genesis detection
-- [ ] Impl: `storage/redb.rs` — RedbEngine
-- [ ] Impl: `storage/tables.rs` — table definitions
-- [ ] Impl: `storage/genesis.rs` — genesis JSON loading
-- [ ] Impl: `storage/mod.rs` — StorageEngine trait
-- [ ] Tests pass
+- [x] `storage/mod.rs` — StorageEngine trait (open, put, get, delete, exists, list_keys)
+- [x] `storage/tables.rs` — table name constants (ACCOUNTS, BLOCKS, TXS, VOTES, VALIDATORS, META)
+- [x] `storage/redb.rs` — RedbEngine wrapping redb::Database
+- [x] `storage/genesis.rs` — GenesisConfig + load_genesis from JSON
+- [x] Duplicate genesis detection (META table marker)
+- [x] 5 test groups: StorageEngine contract (put/get/delete/list_keys/isolation), genesis chain_id, accounts, validators, duplicate rejection, error handling
+- [x] 134 total tests passing, clippy clean
 
 ## Sub-phase 1.6 🔶 Mempool
 
