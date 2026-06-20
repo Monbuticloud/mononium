@@ -209,6 +209,94 @@ mod tests {
         let decoded = BurnTarget::decode(&mut &encoded[..]).unwrap();
         assert_eq!(target, decoded);
     }
+
+    // -----------------------------------------------------------------------
+    // TxBody JSON serde
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_tx_body_transfer_json_roundtrip() {
+        let body = TxBody::Transfer {
+            recipient: Address::from([0x11u8; 32]),
+            amount: U256::from(1000),
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        let decoded: TxBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_register_validator_json() {
+        let body = TxBody::RegisterValidator;
+        let json = serde_json::to_string(&body).unwrap();
+        let decoded: TxBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    // -----------------------------------------------------------------------
+    // Transaction envelope SCALE
+    // -----------------------------------------------------------------------
+
+    fn dummy_signature() -> Falcon512Signature {
+        Falcon512Signature::from_bytes(&[0xABu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap()
+    }
+
+    #[test]
+    fn test_transaction_scale_roundtrip() {
+        let tx = Transaction {
+            chain_id: 0,
+            nonce: 1,
+            sender: Address::from([0x55u8; 32]),
+            fee: U256::from(100),
+            body: TxBody::Transfer {
+                recipient: Address::from([0x66u8; 32]),
+                amount: U256::from(500),
+            },
+            signature: dummy_signature(),
+        };
+        let encoded = tx.encode();
+        let decoded = Transaction::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(tx, decoded);
+    }
+
+    #[test]
+    fn test_transaction_json_roundtrip() {
+        let tx = Transaction {
+            chain_id: 1,
+            nonce: 42,
+            sender: Address::from([0x77u8; 32]),
+            fee: U256::from(250),
+            body: TxBody::Stake {
+                validator: Address::from([0x88u8; 32]),
+                amount: U256::from(10_000),
+            },
+            signature: dummy_signature(),
+        };
+        let json = serde_json::to_string(&tx).unwrap();
+        let decoded: Transaction = serde_json::from_str(&json).unwrap();
+        assert_eq!(tx, decoded);
+    }
+
+    #[test]
+    fn test_transaction_different_chain_ids() {
+        let tx_a = Transaction {
+            chain_id: 0,
+            nonce: 0,
+            sender: Address::from([0x99u8; 32]),
+            fee: U256::zero(),
+            body: TxBody::RegisterValidator,
+            signature: dummy_signature(),
+        };
+        let tx_b = Transaction {
+            chain_id: 1,
+            nonce: 0,
+            sender: Address::from([0x99u8; 32]),
+            fee: U256::zero(),
+            body: TxBody::RegisterValidator,
+            signature: dummy_signature(),
+        };
+        assert_ne!(tx_a.encode(), tx_b.encode());
+    }
 }
 
 
