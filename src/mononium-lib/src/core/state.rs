@@ -607,6 +607,136 @@ mod tests {
         assert_eq!(alice_post.nonce, 1);
     }
 
+    // -----------------------------------------------------------------------
+    // RegisterValidator error paths
+    // -----------------------------------------------------------------------
+
+    fn setup_alice_with_balance(sm: &mut StateMachine, balance: U256) {
+        let mut acct = sm.get_account(&alice()).unwrap();
+        acct.balance = balance;
+        let key = crate::crypto::trie::namespace_key(
+            crate::crypto::trie::NS_ACCOUNTS,
+            alice().as_bytes(),
+        );
+        let value = crate::core::account::scale_encode_account(&acct);
+        sm.state.insert(&key, value);
+    }
+
+    fn make_register_tx(nonce: u64, fee: u64) -> Transaction {
+        Transaction {
+            chain_id: 0, nonce, sender: alice(),
+            fee: U256::from(fee),
+            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
+            signature: dummy_sig(),
+        }
+    }
+
+    #[test]
+    fn test_register_validator_already_registered() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
+
+        // First registration succeeds (nonce 0)
+        let block1 = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
+        };
+        sm.apply_block(&block1).unwrap();
+
+        // Second registration with correct nonce (1) — fails because already registered
+        let tx2 = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::RegisterValidator { public_key: [0x43u8; 897] },
+            signature: dummy_sig(),
+        };
+        let block2 = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx2] },
+        };
+        let receipt = sm.apply_block(&block2).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // After block1: (2000 + deposit) - 50 - deposit = 1950
+        // After block2: fee-only 50 deducted → 1900
+        assert_eq!(alice_post.balance, U256::from(1900));
+        assert_eq!(alice_post.nonce, 1); // nonce NOT incremented on failure
+    }
+
+    #[test]
+    fn test_register_validator_invalid_nonce() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(1000) + deposit);
+
+        // Nonce 5 but account nonce is 0
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![make_register_tx(5, 50)] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // fee-only: balance >= fee, so (1000 + deposit) - 50 = 950 + deposit
+        assert_eq!(alice_post.balance, U256::from(950) + deposit);
+        assert_eq!(alice_post.nonce, 0);
+    }
+
+    #[test]
+    fn test_register_validator_insufficient_balance() {
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(100));
+
+        // 100 < 50 + deposit → execution fails, but fee-only path deducts 50
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        assert_eq!(alice_post.balance, U256::from(50)); // 100 - 50 (fee-only)
+        assert_eq!(alice_post.nonce, 0);
+    }
+
+    #[test]
+    fn test_register_validator_cannot_cover_fee() {
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        // Only 30 — can't even cover fee of 50
+        setup_alice_with_balance(&mut sm, U256::from(30));
+
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // 30 < 50, so even fee-only deduction fails — balance unchanged
+        assert_eq!(alice_post.balance, U256::from(30));
+        assert_eq!(alice_post.nonce, 0);
+    }
+
     #[test]
     fn test_register_and_stake_deducts_fee_only() {
         let accounts = vec![(alice(), make_account(1000)), (bob(), make_account(500))];
