@@ -4,4 +4,5 @@ pub mod account;
 pub mod block;
 pub mod constants;
 pub mod fee;
+pub mod state;
 pub mod transaction;

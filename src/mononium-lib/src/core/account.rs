@@ -263,6 +263,24 @@ impl parity_scale_codec::Decode for Account {
     }
 }
 
+/// SCALE-encode an Account to a byte vector.
+#[must_use]
+pub fn scale_encode_account(acct: &Account) -> Vec<u8> {
+    use parity_scale_codec::Encode;
+    acct.encode()
+}
+
+/// SCALE-decode an Account from a byte slice.
+///
+/// # Panics
+///
+/// Panics if the bytes are not a valid SCALE-encoded Account.
+#[must_use]
+pub fn scale_decode_account(bytes: &[u8]) -> Account {
+    use parity_scale_codec::Decode;
+    Account::decode(&mut &bytes[..]).expect("valid SCALE-encoded Account")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
