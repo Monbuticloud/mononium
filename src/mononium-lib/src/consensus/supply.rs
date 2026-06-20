@@ -261,4 +261,75 @@ mod tests {
         let fs: Box<dyn SupplyPolicy> = Box::new(FixedSupply::new());
         assert_eq!(fs.block_reward(0, U256::zero(), U256::zero()), U256::zero());
     }
+
+    #[test]
+    fn test_capped_via_trait() {
+        let ci: Box<dyn SupplyPolicy> = Box::new(CappedInflation::new());
+        let reward = ci.block_reward(0, U256::zero(), U256::from(1_000_000_000_000u64));
+        assert!(reward > U256::zero());
+    }
+
+    #[test]
+    fn test_ceiling_exactly_at_headroom() {
+        // Setup where ceiling == headroom term (key equality point)
+        let effective_max = U256::from(10_000_000_000u64);
+        // headroom rate = 500 (5%), ceiling rate = 500 (5%)
+        let reward = CappedInflation::compute_reward(
+            U256::zero(),  // supply=0, headroom = max
+            effective_max,
+            500,  // ceiling = 5%
+            500,  // headroom = 5%
+        );
+        // Both terms = 5% * 10B / 6.3M ≈ 79
+        assert_eq!(reward, U256::from(79));
+    }
+
+    #[test]
+    fn test_ceiling_term_when_tied() {
+        // At supply where headroom term exactly equals ceiling term
+        // ceiling = 3.5% * max, headroom = 5% * (max - supply)
+        // 0.035 * max = 0.05 * (max - supply) → supply = max * (0.05-0.035)/0.05 = 0.3 * max
+        let max = U256::from(1_000_000_000u64);
+        let supply = U256::from(300_000_000u64); // 30%
+        let reward = CappedInflation::compute_reward(supply, max, 350, 500);
+        // Both terms: 3.5% * 1B = 35M, 5% * 700M = 35M, min = 35M/yr
+        // But when both are equal, both are constraints, so same
+        let expected = U256::from(35_000_000u64) / U256::from(BLOCKS_PER_YEAR);
+        assert_eq!(reward, expected);
+    }
+
+    #[test]
+    fn test_with_params_non_default() {
+        let ci = CappedInflation::with_params(
+            U256::from(1_000),
+            100,  // 1%
+            200,  // 2%
+        );
+        assert_eq!(ci.base_max_supply, U256::from(1_000));
+        assert_eq!(ci.ceiling_rate, 100);
+        assert_eq!(ci.headroom_rate, 200);
+    }
+
+    #[test]
+    fn test_supply_just_below_cap() {
+        let max = U256::from(1_000_000_000u64);
+        let supply = U256::from(999_999_999u64); // 1 below cap
+        let reward = CappedInflation::compute_reward(supply, max, 350, 500);
+        // headroom = 1, headroom_term = 5% * 1 = 0, ceiling_term = 3.5% * 1B = 35M
+        // min = 0 → 0
+        assert_eq!(reward, U256::zero());
+    }
+
+    #[test]
+    fn test_supply_mid_range_ceiling_binds() {
+        let max = U256::from(10_000_000_000_000u64); // 10T
+        let supply = U256::from(1_000_000_000_000u64); // 10%
+        let reward = CappedInflation::compute_reward(supply, max, 350, 500);
+        // headroom = 9T, headroom_term = 5% * 9T = 450B
+        // ceiling_term = 3.5% * 10T = 350B
+        // min = 350B = ceiling binds
+        let ceiling_term = U256::from(350_000_000_000u64);
+        let expected = ceiling_term / U256::from(BLOCKS_PER_YEAR);
+        assert_eq!(reward, expected);
+    }
 }

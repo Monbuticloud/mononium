@@ -233,6 +233,50 @@ mod tests {
         assert_eq!(body, decoded);
     }
 
+    #[test]
+    fn test_tx_body_stake_json_roundtrip() {
+        let body = TxBody::Stake {
+            validator: Address::from([0x22u8; 32]),
+            amount: U256::from(50_000),
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        let decoded: TxBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_register_and_stake_json_roundtrip() {
+        let body = TxBody::RegisterAndStake {
+            validator: Address::from([0x33u8; 32]),
+            amount: U256::from(75_000),
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        let decoded: TxBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_unstake_json_roundtrip() {
+        let body = TxBody::Unstake {
+            validator: Address::from([0x44u8; 32]),
+            amount: U256::from(10_000),
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        let decoded: TxBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_tx_body_burn_permanent_json_roundtrip() {
+        let body = TxBody::Burn {
+            target: BurnTarget::Permanent,
+            amount: U256::from(500),
+        };
+        let json = serde_json::to_string(&body).unwrap();
+        let decoded: TxBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(body, decoded);
+    }
+
     // -----------------------------------------------------------------------
     // Transaction envelope SCALE
     // -----------------------------------------------------------------------

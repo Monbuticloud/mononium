@@ -110,6 +110,31 @@ mod tests {
         }
     }
 
+    fn dummy_burn_tx_cap_refill() -> Transaction {
+        Transaction {
+            chain_id: 0,
+            nonce: 0,
+            sender: Address::from([0x04u8; 32]),
+            fee: U256::from(10),
+            body: TxBody::Burn {
+                target: crate::core::transaction::BurnTarget::CapRefill,
+                amount: U256::from(200),
+            },
+            signature: dummy_sig(),
+        }
+    }
+
+    fn dummy_register_validator_tx() -> Transaction {
+        Transaction {
+            chain_id: 0,
+            nonce: 0,
+            sender: Address::from([0x05u8; 32]),
+            fee: U256::from(1000),
+            body: TxBody::RegisterValidator,
+            signature: dummy_sig(),
+        }
+    }
+
     #[test]
     fn test_hybrid_fee_default_rates() {
         let fee = HybridFee::new();
@@ -182,5 +207,28 @@ mod tests {
         let policy: Box<dyn FeePolicy> = Box::new(HybridFee::new());
         let tx = dummy_burn_tx_permanent();
         assert_eq!(policy.calculate_fee(&tx), U256::from(10));
+    }
+
+    #[test]
+    fn test_burn_cap_refill_flat_fee() {
+        let fee = HybridFee::new();
+        let tx = dummy_burn_tx_cap_refill();
+        assert_eq!(fee.calculate_fee(&tx), BURN_FLAT_FEE);
+    }
+
+    #[test]
+    fn test_register_validator_fee_positive() {
+        let fee = HybridFee::new();
+        let tx = dummy_register_validator_tx();
+        let calculated = fee.calculate_fee(&tx);
+        assert!(calculated > U256::zero());
+    }
+
+    #[test]
+    fn test_burn_variants_same_fee() {
+        let fee = HybridFee::new();
+        let perm = dummy_burn_tx_permanent();
+        let cap = dummy_burn_tx_cap_refill();
+        assert_eq!(fee.calculate_fee(&perm), fee.calculate_fee(&cap));
     }
 }

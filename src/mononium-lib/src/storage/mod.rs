@@ -143,4 +143,55 @@ mod tests {
             b"db2"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Error-path tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_unknown_table_errors() {
+        let (_dir, engine) = setup_engine();
+        let err = engine.put("nonexistent_table", b"k", b"v").unwrap_err();
+        assert!(err.to_string().contains("unknown table"), "got: {err}");
+        let err = engine.get("nonexistent_table", b"k").unwrap_err();
+        assert!(err.to_string().contains("unknown table"), "got: {err}");
+        let err = engine.delete("nonexistent_table", b"k").unwrap_err();
+        assert!(err.to_string().contains("unknown table"), "got: {err}");
+        let err = engine.list_keys("nonexistent_table").unwrap_err();
+        assert!(err.to_string().contains("unknown table"), "got: {err}");
+    }
+
+    #[test]
+    fn test_list_keys_empty_table() {
+        let (_dir, engine) = setup_engine();
+        let keys = engine.list_keys(tables::BLOCKS).unwrap();
+        assert!(keys.is_empty(), "expected empty table, got {} keys", keys.len());
+        let keys = engine.list_keys(tables::TXS).unwrap();
+        assert!(keys.is_empty());
+        let keys = engine.list_keys(tables::VOTES).unwrap();
+        assert!(keys.is_empty());
+        let keys = engine.list_keys(tables::VALIDATORS).unwrap();
+        assert!(keys.is_empty());
+        let keys = engine.list_keys(tables::META).unwrap();
+        assert!(keys.is_empty());
+        let keys = engine.list_keys(tables::BLOCK_HASHES).unwrap();
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_key() {
+        let (_dir, engine) = setup_engine();
+        // Deleting a key that doesn't exist should not error
+        engine.delete(tables::ACCOUNTS, b"ghost").unwrap();
+    }
+
+    #[test]
+    fn test_put_get_large_value() {
+        let (_dir, engine) = setup_engine();
+        let large_val = vec![0xABu8; 65536];
+        engine.put(tables::ACCOUNTS, b"big", &large_val).unwrap();
+        let got = engine.get(tables::ACCOUNTS, b"big").unwrap().unwrap();
+        assert_eq!(got.len(), 65536);
+        assert_eq!(got, large_val);
+    }
 }

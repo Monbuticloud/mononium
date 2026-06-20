@@ -434,4 +434,58 @@ mod tests {
         let decoded: Address = serde_json::from_str(&json).unwrap();
         assert_eq!(addr, decoded);
     }
+
+    #[test]
+    fn test_parse_address_extra_chars_ignored_if_valid_prefix() {
+        // Parser checks len < 82 → Err(TooShort), not len > 82
+        // If longer, body extraction slice works fine and checksum passes
+        let addr = Address::from([0x42; 32]);
+        let formatted = format_address(&addr);
+        let long = format!("{formatted}extra");
+        let parsed = parse_address(&long).unwrap();
+        assert_eq!(addr, parsed);
+    }
+
+    #[test]
+    fn test_parse_address_exact_82_valid() {
+        let addr = Address::from([0x42; 32]);
+        let formatted = format_address(&addr);
+        assert_eq!(formatted.len(), 82);
+        let parsed = parse_address(&formatted).unwrap();
+        assert_eq!(addr, parsed);
+    }
+
+    #[test]
+    fn test_scale_encode_decode_account_helpers() {
+        let acc = Account::new(U256::from(42));
+        let encoded = scale_encode_account(&acc);
+        let decoded = scale_decode_account(&encoded);
+        assert_eq!(acc, decoded);
+    }
+
+    #[test]
+    fn test_scale_decode_account_short_input() {
+        let short = vec![0u8; 4];
+        let result = std::panic::catch_unwind(|| scale_decode_account(&short));
+        assert!(result.is_err(), "should panic on short input");
+    }
+
+    #[test]
+    fn test_account_as_ref_impl() {
+        let addr = Address::from([0xaa; 32]);
+        let bytes: &[u8] = addr.as_ref();
+        assert_eq!(bytes, &[0xaa; 32]);
+    }
+
+    #[test]
+    fn test_format_address_known_value() {
+        let addr = Address::from([0u8; 32]);
+        let s = format_address(&addr);
+        assert_eq!(s.len(), 82);
+        assert!(s.starts_with("0x"));
+        // First 64 chars after 0x should be zeros
+        assert_eq!(&s[2..66], "0".repeat(64));
+        // Checksum should be non-zero (BLAKE3 of zeros)
+        assert_ne!(&s[66..82], "0".repeat(16));
+    }
 }

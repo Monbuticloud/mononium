@@ -582,4 +582,161 @@ mode = "compact"
         assert!(err.to_string().contains("unsupported"), "got: {err}");
         std::fs::remove_file(&path).ok();
     }
+
+    #[test]
+    fn test_load_nonexistent_path() {
+        let err = NodeConfig::load(Path::new("/nonexistent/mononium/config.yaml")).unwrap_err();
+        assert!(err.to_string().contains("cannot read config"), "got: {err}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Accessor methods
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_data_dir_default() {
+        assert!(!defaults().data_dir().is_empty());
+    }
+
+    #[test]
+    fn test_data_dir_from_config() {
+        let mut cfg = defaults();
+        cfg.node.data_dir = Some("/custom/path".to_string());
+        assert_eq!(cfg.data_dir(), "/custom/path");
+    }
+
+    #[test]
+    fn test_storage_mode_default() {
+        assert_eq!(defaults().storage_mode(), "full");
+    }
+
+    #[test]
+    fn test_storage_mode_from_config() {
+        let mut cfg = defaults();
+        cfg.storage.mode = Some("archive".to_string());
+        assert_eq!(cfg.storage_mode(), "archive");
+    }
+
+    #[test]
+    fn test_compact_eras_default() {
+        assert_eq!(defaults().compact_eras(), 2);
+    }
+
+    #[test]
+    fn test_compact_eras_from_config() {
+        let mut cfg = defaults();
+        cfg.storage.compact_eras = Some(3);
+        assert_eq!(cfg.compact_eras(), 3);
+    }
+
+    #[test]
+    fn test_full_node_rpc_default() {
+        assert!(defaults().full_node_rpc().is_empty());
+    }
+
+    #[test]
+    fn test_full_node_rpc_from_config() {
+        let mut cfg = defaults();
+        cfg.storage.full_node_rpc = Some(vec!["alice".to_string()]);
+        assert_eq!(cfg.full_node_rpc(), &["alice"]);
+    }
+
+    #[test]
+    fn test_max_tx_per_account_default() {
+        assert_eq!(defaults().max_tx_per_account(), 50);
+    }
+
+    #[test]
+    fn test_max_tx_per_account_from_config() {
+        let mut cfg = defaults();
+        cfg.mempool.max_tx_per_account = Some(500);
+        assert_eq!(cfg.max_tx_per_account(), 500);
+    }
+
+    #[test]
+    fn test_log_file_default() {
+        assert!(defaults().log_file().is_none());
+    }
+
+    #[test]
+    fn test_log_file_from_config() {
+        let mut cfg = defaults();
+        cfg.log.file = Some("/var/log/mononium.log".to_string());
+        assert_eq!(cfg.log_file(), Some("/var/log/mononium.log"));
+    }
+
+    #[test]
+    fn test_bootnodes_default() {
+        assert!(defaults().bootnodes().is_empty());
+    }
+
+    #[test]
+    fn test_genesis_path() {
+        let mut cfg = defaults();
+        assert!(cfg.genesis_path().is_none());
+        cfg.genesis = Some("custom.json".to_string());
+        assert_eq!(cfg.genesis_path(), Some("custom.json"));
+    }
+
+    // -----------------------------------------------------------------------
+    // CLI overrides: all fields
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_merge_cli_all_fields() {
+        let mut cfg = defaults();
+        let cli = CliOverrides {
+            genesis: Some("cli-genesis.json".to_string()),
+            key: Some("cli-key".to_string()),
+            key_file: Some("cli-key-file".to_string()),
+            observer: Some(true),
+            p2p_port: Some(30666),
+            rpc_port: Some(9955),
+            rest_port: Some(9944),
+            bootnodes: Some(vec!["/ip4/1.2.3.4".to_string()]),
+            data_dir: Some("/cli/data".to_string()),
+            storage_mode: Some("archive".to_string()),
+            compact_eras: Some(5),
+            full_node_rpc: Some(vec!["bob".to_string()]),
+            log_level: Some("trace".to_string()),
+            log_json: Some(false),
+            unlock_timeout: Some(120),
+        };
+        cfg.merge_cli(cli);
+        assert_eq!(cfg.genesis, Some("cli-genesis.json".to_string()));
+        assert_eq!(cfg.key, Some("cli-key".to_string()));
+        assert_eq!(cfg.key_file, Some("cli-key-file".to_string()));
+        assert!(cfg.observer);
+        assert_eq!(cfg.p2p_port(), 30666);
+        assert_eq!(cfg.rpc_port(), 9955);
+        assert_eq!(cfg.rest_port(), 9944);
+        assert_eq!(cfg.bootnodes(), &["/ip4/1.2.3.4"]);
+        assert_eq!(cfg.data_dir(), "/cli/data");
+        assert_eq!(cfg.storage_mode(), "archive");
+        assert_eq!(cfg.compact_eras(), 5);
+        assert_eq!(cfg.full_node_rpc(), &["bob"]);
+        assert_eq!(cfg.log_level(), "trace");
+        assert!(!cfg.log_json());
+        assert_eq!(cfg.unlock_timeout(), 120);
+    }
+
+    #[test]
+    fn test_merge_cli_observer_false() {
+        let mut cfg = defaults();
+        cfg.observer = true;
+        cfg.merge_cli(CliOverrides { observer: Some(false), ..Default::default() });
+        assert!(!cfg.observer);
+    }
+
+    // -----------------------------------------------------------------------
+    // Validation: observer only (passes)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_key_file_passes() {
+        let mut cfg = defaults();
+        cfg.key_file = Some("/path/key.json".to_string());
+        cfg.genesis = Some("genesis.json".to_string());
+        assert!(cfg.validate().is_ok());
+    }
 }

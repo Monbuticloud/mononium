@@ -420,4 +420,39 @@ mod tests {
 
         assert!(Falcon512::verify(&pk_reconstructed, msg, &sig_reconstructed));
     }
+
+    #[test]
+    fn test_private_key_roundtrip_from_private_key() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let pk_original = Falcon512::public_key(&kp);
+
+        // Export private key and reconstruct
+        let priv_bytes = kp.private_key_bytes();
+        let restored = Falcon512::from_private_key(&priv_bytes).unwrap();
+        let pk_restored = Falcon512::public_key(&restored);
+
+        assert_eq!(pk_original, pk_restored);
+    }
+
+    #[test]
+    fn test_from_private_key_too_short_fails() {
+        let err = Falcon512::from_private_key(&[0u8; 4]).unwrap_err();
+        assert!(err.to_string().contains("invalid private key"), "got: {err}");
+    }
+
+    #[test]
+    fn test_public_key_size_constant() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let pk = Falcon512::public_key(&kp);
+        assert_eq!(pk.as_ref().len(), FALCON_PUBLIC_KEY_SIZE);
+        assert_eq!(FALCON_PUBLIC_KEY_SIZE, 897);
+    }
+
+    #[test]
+    fn test_private_key_size_constant() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let priv_bytes = kp.private_key_bytes();
+        assert_eq!(priv_bytes.len(), FALCON_PRIVATE_KEY_SIZE);
+        assert_eq!(FALCON_PRIVATE_KEY_SIZE, 1281);
+    }
 }

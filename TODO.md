@@ -129,3 +129,36 @@
 - [x] **Mempool integrated into block production**: txs submitted via POST /tx → mempool → blocks
 - [x] **Balance handler fixed**: reads from StateMachine (populated from storage at startup)
 - [x] **Coverage**: 86.58% region / 85.62% line (lib + CLI)
+
+---
+
+## Coverage Improvement (Phase 1.11)
+
+**Target:** ≥95% region coverage across all `mononium-lib` modules
+
+| Module | Current | Target | Missed Regions | Strategy |
+|--------|---------|--------|---------------|---------|
+| storage/redb.rs | 63.64% | ≥95% | 80 | Error-path tests for all redb operations |
+| config/mod.rs | 88.26% | ≥95% | 56 | Validation edge cases, CLI override scenarios |
+| consensus/supply.rs | 90.41% | ≥95% | 14 | Edge-case inflation math |
+| core/account.rs | 93.39% | ≥95% | 25 | Address parsing edge cases, SCALE error handling |
+| core/state.rs | 96.03% | ≥95% | 19 | Apply-block tx-type dispatch |
+| core/transaction.rs | 97.46% | ≥95% | 6 | Register/stake/unstake roundtrip |
+| core/fee.rs | 97.44% | ≥95% | 3 | Burn flat fee bypass edge |
+| crypto/falcon.rs | 97.81% | ≥95% | 11 | Error-handling paths |
+| crypto/trie.rs | 98.92% | ≥95% | 5 | Sparse node edge cases |
+| storage/genesis.rs | 96.83% | ≥95% | 11 | Validator genesis, error paths |
+| mempool/mod.rs | 99.13% | ≥95% | 5 | Evict/select edge cases |
+
+- [ ] storage/redb.rs: test error paths (DB open failure, put/get/delete/commit failures)
+- [ ] config/mod.rs: test load_nonexistent_path, validate_with_zero_ports, observer config, merge_all_fields
+- [ ] consensus/supply.rs: test CappedInflation ceiling term dominance, headroom cap
+- [ ] core/account.rs: test parse_address variants (valid, checksum, long, short), Account serialization errors
+- [ ] core/state.rs: test unstake, register_validator, stake tx types
+- [ ] core/transaction.rs: test register_validator roundtrip, stake/unstake roundtrip
+- [ ] core/fee.rs: test BurnFee bypass edge cases
+- [ ] crypto/falcon.rs: test error-path from_seed failure, verify_edge_cases
+- [ ] crypto/trie.rs: test sparse node nonce hash, remove edge cases
+- [ ] storage/genesis.rs: test validator genesis, error paths
+- [ ] mempool/mod.rs: test evict cleans expired, select respects caps
+- [ ] Final coverage check: verify all modules ≥95%
