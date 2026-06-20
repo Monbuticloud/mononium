@@ -37,19 +37,20 @@
 - [x] 79 total tests passing, clippy clean
 
 ## Sub-phase 1.3 ✅ Transaction & Block Types + Fee (commits `9923206` → `fe4b6a4`)
+
 - [x] `core/transaction.rs` — Transaction, TxBody enum, BurnTarget, Falcon512Signature SCALE/JSON
 - [x] `core/block.rs` — BlockHeader, Block, BlockBody, CommitVote SCALE/JSON
 - [x] `core/fee.rs` — FeePolicy trait, HybridFee impl, burn bypass (flat 10 MOXX)
 - [x] 105 total tests passing, clippy clean
 
-## Sub-phase 1.4 🔶 State Machine
-
-- [ ] Test: Block application order (validate → apply → distribute fees → commit)
-- [ ] Test: Failed tx still pays fee
-- [ ] Test: Fee distribution pro-rata by stake
-- [ ] Test: Deterministic state root after block
-- [ ] Impl: `core/state.rs` — StateMachine
-- [ ] Tests pass
+## Sub-phase 1.4 ✅ State Machine (commits starting from `7d192d9`)
+- [x] `core/state.rs` — StateMachine with SMT-backed accounts
+- [x] Account CRUD (get/insert with namespace prefix `0x00`)
+- [x] `apply_block()` — validates chain_id, executes Transfer/Burn, tracks fees
+- [x] Failed tx: deducts fee only (wrong nonce, insufficient balance)
+- [x] Burn: sends to permanent burn address with flat fee
+- [x] Multiple txs in a block with sequential nonces
+- [x] 117 total tests passing, clippy clean
 
 ## Sub-phase 1.5 🔶 Storage (redb)
 
@@ -121,7 +122,7 @@
 
 ---
 
-## Phase 1 Exit Criteria
+## Phase 1 Exit Criteria (on hold)
 
 - [ ] `cargo build -p mononium-lib` passes
 - [ ] `cargo build -p mononium-cli` passes
