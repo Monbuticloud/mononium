@@ -3,10 +3,13 @@
 //! The state machine is the core of the protocol. It holds all on-chain
 //! state in a Sparse Merkle Tree and processes blocks deterministically.
 
-use crate::core::account::{Account, Address};
+use primitive_types::U256;
+
+use crate::core::account::{Account, Address, scale_encode_account};
 use crate::core::block::Block;
-use crate::crypto::trie::SparseMerkleTree;
-use crate::error::Result;
+use crate::core::transaction::{BurnTarget, TxBody};
+use crate::crypto::trie::{SparseMerkleTree, namespace_key, NS_ACCOUNTS};
+use crate::error::{LibError, Result};
 
 /// Receipt returned after successfully applying a block.
 #[derive(Debug, Clone)]
@@ -77,16 +80,139 @@ impl StateMachine {
     ///
     /// Returns `LibError::Consensus` if the block is invalid at the
     /// header level (wrong chain_id, height mismatch, etc.).
-    pub fn apply_block(&mut self, _block: &Block) -> Result<BlockReceipt> {
-        // TODO: full block application
-        // For now, return an empty receipt
+    pub fn apply_block(&mut self, block: &Block) -> Result<BlockReceipt> {
+        let mut block_fees: u128 = 0;
+        let mut tx_count: u32 = 0;
+        let mut failed_count: u32 = 0;
+
+        for tx in &block.body.transactions {
+            // Validate basic chain_id
+            if tx.chain_id != block.header.chain_id {
+                failed_count += 1;
+                continue;
+            }
+
+            // Get sender account — missing sender = fatal skip
+            let Some(mut sender_acct) = self.get_account(&tx.sender) else {
+                failed_count += 1;
+                continue;
+            };
+
+            // Attempt to execute the tx body
+            let executed = match &tx.body {
+                TxBody::Transfer { recipient, amount } => {
+                    self.try_transfer(&mut sender_acct, recipient, *amount, tx.fee, tx.nonce)
+                }
+                TxBody::Burn { target, amount } => {
+                    let destination = match target {
+                        BurnTarget::Permanent => crate::core::account::burn_address(),
+                        BurnTarget::CapRefill => crate::core::account::cap_refill_address(),
+                    };
+                    self.try_transfer(&mut sender_acct, &destination, *amount, tx.fee, tx.nonce)
+                }
+                TxBody::RegisterValidator
+                | TxBody::Stake { .. }
+                | TxBody::RegisterAndStake { .. }
+                | TxBody::Unstake { .. } => {
+                    // Validate nonce + deduct fee at minimum
+                    self.try_deduct_fee_only(&mut sender_acct, tx.fee, tx.nonce)
+                }
+            };
+
+            match executed {
+                Ok(()) => {
+                    // Successful tx
+                    self.set_account(&tx.sender, &sender_acct);
+                    block_fees += fee_as_u128(tx.fee);
+                    tx_count += 1;
+                }
+                Err(_) => {
+                    // Failed tx — still deduct fee if possible
+                    if sender_acct.balance >= tx.fee {
+                        sender_acct.balance -= tx.fee;
+                        self.set_account(&tx.sender, &sender_acct);
+                        block_fees += fee_as_u128(tx.fee);
+                    }
+                    failed_count += 1;
+                }
+            }
+        }
+
+        // TODO: fee distribution (needs active validator set)
+        // TODO: state root verification
+
         Ok(BlockReceipt {
-            total_fees: 0,
-            tx_count: 0,
-            failed_count: 0,
+            total_fees: block_fees,
+            tx_count,
+            failed_count,
             state_root: self.state.root(),
         })
     }
+
+    /// Try to execute a Transfer/Burn tx.
+    /// Deducts `amount + fee`, credits `recipient`, increments nonce.
+    /// On failure, does NOT mutate state.
+    fn try_transfer(
+        &mut self,
+        sender: &mut Account,
+        recipient: &Address,
+        amount: U256,
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        // Verify nonce
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+
+        let total_debit = amount + fee;
+        if sender.balance < total_debit {
+            return Err(LibError::InsufficientBalance(sender.balance, total_debit));
+        }
+
+        // Deduct from sender
+        sender.balance -= total_debit;
+        sender.nonce += 1;
+
+        // Credit recipient
+        let mut recipient_acct = self.get_account(recipient).unwrap_or_else(|| Account::new(U256::zero()));
+        recipient_acct.balance += amount;
+        self.set_account(recipient, &recipient_acct);
+
+        Ok(())
+    }
+
+    /// Try to deduct fee only (for tx types without transfer execution).
+    /// Validates nonce and balance.
+    fn try_deduct_fee_only(
+        &mut self,
+        sender: &mut Account,
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+        if sender.balance < fee {
+            return Err(LibError::InsufficientBalance(sender.balance, fee));
+        }
+
+        sender.balance -= fee;
+        sender.nonce += 1;
+        Ok(())
+    }
+
+    /// Write an account to state.
+    fn set_account(&mut self, addr: &Address, acct: &Account) {
+        let key = namespace_key(NS_ACCOUNTS, addr.as_bytes());
+        let value = scale_encode_account(acct);
+        self.state.insert(&key, value);
+    }
+}
+
+/// Convert a U256 fee to u128 (sat at max u128).
+fn fee_as_u128(fee: U256) -> u128 {
+    U256::min(fee, U256::from(u128::MAX)).low_u128()
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +224,7 @@ mod tests {
     use super::*;
     use primitive_types::U256;
     use crate::core::block::{Block, BlockBody, BlockHeader};
-    use crate::core::transaction::{Transaction, TxBody, BurnTarget};
+    use crate::core::transaction::{Transaction, TxBody};
     use crate::crypto::falcon::Falcon512Signature;
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
 
