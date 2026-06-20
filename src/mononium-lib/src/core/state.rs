@@ -119,22 +119,17 @@ impl StateMachine {
                 }
             };
 
-            match executed {
-                Ok(()) => {
-                    // Successful tx
+            if executed.is_ok() {
+                self.set_account(&tx.sender, &sender_acct);
+                block_fees += fee_as_u128(tx.fee);
+                tx_count += 1;
+            } else {
+                if sender_acct.balance >= tx.fee {
+                    sender_acct.balance -= tx.fee;
                     self.set_account(&tx.sender, &sender_acct);
                     block_fees += fee_as_u128(tx.fee);
-                    tx_count += 1;
                 }
-                Err(_) => {
-                    // Failed tx — still deduct fee if possible
-                    if sender_acct.balance >= tx.fee {
-                        sender_acct.balance -= tx.fee;
-                        self.set_account(&tx.sender, &sender_acct);
-                        block_fees += fee_as_u128(tx.fee);
-                    }
-                    failed_count += 1;
-                }
+                failed_count += 1;
             }
         }
 
@@ -185,7 +180,7 @@ impl StateMachine {
     /// Try to deduct fee only (for tx types without transfer execution).
     /// Validates nonce and balance.
     fn try_deduct_fee_only(
-        &mut self,
+        &self,
         sender: &mut Account,
         fee: U256,
         nonce: u64,
@@ -327,7 +322,164 @@ mod tests {
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
 
+        let alice_post = sm.get_account(&alice()).unwrap();
         let bob_post = sm.get_account(&bob()).unwrap();
         assert_eq!(bob_post.balance, U256::from(100));
+        // Alice: 1000 - 100 (transfer) - 100 (fee) = 800
+        assert_eq!(alice_post.balance, U256::from(800));
+        assert_eq!(alice_post.nonce, 1);
+    }
+
+    #[test]
+    fn test_transfer_insufficient_balance_pays_fee() {
+        // Alice has 50 — can't transfer 100, but fee of 100 also fails
+        let accounts = vec![(alice(), make_account(50))];
+        let mut sm = StateMachine::new(accounts);
+        let block = transfer_block(alice(), bob(), 100, 0, 0);
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+
+        // Alice pays nothing — can't even cover fee
+        let alice_post = sm.get_account(&alice()).unwrap();
+        assert_eq!(alice_post.balance, U256::from(50));
+    }
+
+    #[test]
+    fn test_transfer_wrong_nonce_fails() {
+        let accounts = vec![(alice(), make_account(1000))];
+        let mut sm = StateMachine::new(accounts);
+        // Nonce 5, but account nonce is 0
+        let block = transfer_block(alice(), bob(), 100, 5, 0);
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+
+        // Fee should be deducted
+        let alice_post = sm.get_account(&alice()).unwrap();
+        assert_eq!(alice_post.balance, U256::from(900)); // 1000 - 100 (fee)
+        assert_eq!(alice_post.nonce, 0); // nonce not incremented for failed tx
+    }
+
+    #[test]
+    fn test_burn_permanent_deducts_balance() {
+        let accounts = vec![(alice(), make_account(1000))];
+        let mut sm = StateMachine::new(accounts);
+        let tx = Transaction {
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
+            fee: U256::from(100),
+            body: TxBody::Burn {
+                target: BurnTarget::Permanent,
+                amount: U256::from(200),
+            },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.tx_count, 1);
+
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // 1000 - 200 (burn) - 100 (fee) = 700
+        assert_eq!(alice_post.balance, U256::from(700));
+        assert_eq!(alice_post.nonce, 1);
+
+        // Burn address has 200
+        let burn_addr = crate::core::account::burn_address();
+        let burn_acct = sm.get_account(&burn_addr).unwrap();
+        assert_eq!(burn_acct.balance, U256::from(200));
+    }
+
+    #[test]
+    fn test_multiple_transfers_in_block() {
+        let accounts = vec![
+            (alice(), make_account(1000)),
+            (bob(), make_account(0)),
+        ];
+        let mut sm = StateMachine::new(accounts);
+
+        let tx1 = Transaction {
+            chain_id: 0, nonce: 0, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::Transfer { recipient: bob(), amount: U256::from(100) },
+            signature: dummy_sig(),
+        };
+        let tx2 = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::Transfer { recipient: bob(), amount: U256::from(200) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader {
+                height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx1, tx2] },
+        };
+
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.tx_count, 2);
+
+        let alice_post = sm.get_account(&alice()).unwrap();
+        let bob_post = sm.get_account(&bob()).unwrap();
+        // Alice: 1000 - 100 - 50 (tx1) - 200 - 50 (tx2) = 600
+        assert_eq!(alice_post.balance, U256::from(600));
+        assert_eq!(alice_post.nonce, 2);
+        assert_eq!(bob_post.balance, U256::from(300));
+    }
+
+    #[test]
+    fn test_block_wrong_chain_id() {
+        let accounts = vec![(alice(), make_account(1000))];
+        let mut sm = StateMachine::new(accounts);
+        // Test mismatch between tx.chain_id and block.header.chain_id
+        let tx = Transaction {
+            chain_id: 99, nonce: 0, sender: alice(),
+            fee: U256::from(100),
+            body: TxBody::Transfer { recipient: bob(), amount: U256::from(100) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader {
+                height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+    }
+
+    #[test]
+    fn test_receipt_tracks_fees() {
+        let accounts = vec![(alice(), make_account(1000))];
+        let mut sm = StateMachine::new(accounts);
+        let block = transfer_block(alice(), bob(), 100, 0, 0);
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.total_fees, 100);
+        assert_eq!(receipt.tx_count, 1);
+        assert_eq!(receipt.failed_count, 0);
+    }
+
+    #[test]
+    fn test_apply_empty_block_returns_zero_receipt() {
+        let mut sm = StateMachine::new(vec![(alice(), make_account(100))]);
+        let receipt = sm.apply_block(&empty_block(alice(), 1)).unwrap();
+        assert_eq!(receipt.total_fees, 0);
+        assert_eq!(receipt.tx_count, 0);
+        assert_eq!(receipt.failed_count, 0);
     }
 }
