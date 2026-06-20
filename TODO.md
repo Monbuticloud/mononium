@@ -62,15 +62,14 @@
 - [x] 5 test groups: StorageEngine contract (put/get/delete/list_keys/isolation), genesis chain_id, accounts, validators, duplicate rejection, error handling
 - [x] 134 total tests passing, clippy clean
 
-## Sub-phase 1.6 🔶 Mempool
+## Sub-phase 1.6 ✅ Mempool
 
-- [ ] Test: Insert, remove, select by tip→time→nonce
-- [ ] Test: TTL eviction
-- [ ] Test: Nonce buffering
-- [ ] Test: Per-sender cap
-- [ ] Impl: `mempool/mod.rs`
-- [ ] Impl: `mempool/ordering.rs`
-- [ ] Tests pass
+- [x] `mempool/ordering.rs` — PoolTx wrapper, cmp_priority (fee desc → time asc → nonce asc)
+- [x] `mempool/mod.rs` — Mempool struct with config, insert/remove/select/evict/contains/len
+- [x] Constraints: max_size, min_fee, per_sender_cap (insert), per_sender_cap (select), TTL expiry
+- [x] Duplicate (sender + nonce) rejection, empty-pool select
+- [x] 24 mempool tests: priority ordering (fee/time/nonce), insert, remove, select order, per-sender cap, TTL eviction, mixed eviction, sender query
+- [x] 159 total tests passing
 
 ## Sub-phase 1.7 🔶 Consensus Basics
 
