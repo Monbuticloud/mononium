@@ -1,5 +1,5 @@
 [package]
-name = "mononium-rust-lib"
+name = "mononium-lib"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-only"
@@ -21,7 +21,7 @@ tokio.workspace = true
 libp2p.workspace = true
 
 # Crypto crates (ADR-019)
-falcon = "0.2"
+falcon-rs = "0.2"
 argon2 = "0.5"
 chacha20poly1305 = "0.10"
 

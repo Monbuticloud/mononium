@@ -11,7 +11,7 @@ Mononium is a **Cargo workspace** with three crates:
 ```
 mononium/
 ├── Cargo.toml              # workspace root
-├── mononium-rust-lib/      # core library (all shared logic)
+├── mononium-lib/      # core library (all shared logic)
 ├── mononium-cli/           # CLI binary (node + wallet)
 └── mononium-gui/           # GUI binary (desktop app)
 ```
@@ -38,8 +38,8 @@ graph TD
         GUI[GUI Desktop App]
     end
 
-    mononium-cli --> mononium-rust-lib
-    mononium-gui --> mononium-rust-lib
+    mononium-cli --> mononium-lib
+    mononium-gui --> mononium-lib
     Node --> Storage
     Node --> Network
     Node --> Consensus
@@ -47,12 +47,12 @@ graph TD
     GUI --> RPC
 ```
 
-## mononium-rust-lib
+## mononium-lib
 
 The shared library that both CLI and GUI depend on. Contains all blockchain logic:
 
 ```
-mononium-rust-lib/src/
+mononium-lib/src/
 ├── lib.rs                    # re-exports, crate-level types
 ├── constants.rs              # Shared constants (chain-wide protocol values)
 ├── core/

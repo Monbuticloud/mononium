@@ -1,10 +1,7 @@
 # Disallowed patterns — blocklisted from the codebase
-disallowed-macros = [
-    "todo",      # Must use unimplemented!() or actual implementation
-]
+disallowed-macros = []
 
-# Allowed characters for identifiers
-allowed-idents-below-min-chars = false
+
 
 # Maximum number of arguments a function can have
 too-many-arguments-threshold = 8

@@ -5,7 +5,7 @@ edition = "2021"
 license = "AGPL-3.0-only"
 
 [dependencies]
-mononium-rust-lib = { path = "../mononium-rust-lib" }
+mononium-lib = { path = "../mononium-lib" }
 
 # CLI
 clap = { version = "4", features = ["derive"] }

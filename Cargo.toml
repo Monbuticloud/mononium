@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "src/mononium-rust-lib",
+    "src/mononium-lib",
     "src/mononium-cli",
 ]
 
@@ -18,14 +18,14 @@ parity-scale-codec = { version = "3", features = ["derive"] }
 blake3 = "1"
 hex = "0.4"
 subtle = "2"
-primitive-types = { version = "0.12", features = ["scale-codec"] }
+primitive-types = { version = "0.12", features = ["codec", "serde"] }
 
 # Database
 redb = "2"
 
 # Networking
-libp2p = { version = "0.54", default-features = false, features = [
-    "gossipsub", "kademlia", "identify", "mdns", "ping", "tokio"
+libp2p = { version = "0.56", default-features = false, features = [
+    "gossipsub", "kad", "identify", "mdns", "ping", "tokio"
 ] }
 
 # Error handling
@@ -67,13 +67,13 @@ incremental = false
 overflow-checks = false
 codegen-units = 1
 
-[lints.rust]
+[workspace.lints.rust]
 unused = "warn"
 dead_code = "warn"
 unused_imports = "warn"
 unused_variables = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = "warn"
 pedantic = "warn"
 nursery = "warn"
