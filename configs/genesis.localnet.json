@@ -1,0 +1,8 @@
+{
+  "chain_id": 0,
+  "genesis_time": "2026-06-17T00:00:00Z",
+  "initial_accounts": {
+    "abababababababababababababababababababababababababababababababab": "10000000000000000000000000000000000"
+  },
+  "initial_validators": []
+}
