@@ -72,8 +72,9 @@ mononium/
 ### Versioning
 
 - **V0.x.x** = planning phase (docs only, no code)
-- **V1.x.x** = development phase (building the chain)
-- **V2.0.0** = first stable release
+- **V1.x.x** = development phase (building the chain, partial semver)
+- **V2.x.x** = feature completion phase (remaining features, full semver)
+- **V3.0.0** = first stable release
 
 ## Update After Editing
 

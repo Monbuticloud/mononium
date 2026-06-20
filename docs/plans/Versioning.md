@@ -15,7 +15,7 @@ docs/plans/V0.1.0/    ← next revision (if needed)
 
 No breaking/feature/patch semantics. These are just names to organize plan versions.
 
-## Development Phase (V1.x.x+ — semver)
+## Development Phase (V2.x.x+ — semver)
 
 Once development starts, real **Semantic Versioning** applies: `V[Breaking].[Feature].[Patch]`
 
@@ -30,32 +30,38 @@ Once development starts, real **Semantic Versioning** applies: `V[Breaking].[Fea
 ```mermaid
 graph LR
     subgraph Planning
-        V0[V0.x.x — just labels]
+        V0[V0.x.x — labels only]
     end
     subgraph Development
-        V0 --> V1[V1.x.x semver starts]
+        V0 --> V1[V1.x.x partial semver]
+    end
+    subgraph Feature
+        V1 --> V2[V2.x.x full semver]
     end
     subgraph Stable
-        V1 --> V2[V2.0.0]
+        V2 --> V3[V3.0.0]
     end
 ```
 
 | Range               | Phase          | Semver?        | What It Means                                  |
 | ------------------- | -------------- | -------------- | ---------------------------------------------- |
 | **V0.x.x**          | 🧠 Planning    | ❌ Just labels | Docs, designs, specs. No production code.      |
-| **V1.0.0 → V2.0.0** | 🔨 Development | ✅ Yes         | Building the chain. Breaking changes expected. |
-| **V2.0.0+**         | 🚀 Stable      | ✅ Yes         | First stable mainnet release.                  |
+| **V1.0.0 → V2.0.0** | 🔨 Development | ✅ Partial     | Building the chain. Breaking changes expected. |
+| **V2.0.0 → V3.0.0** | 🔨 Feature completion | ✅ Yes         | Adding remaining features before stable. Breaking changes expected. |
+| **V3.0.0+**         | 🚀 Stable      | ✅ Yes         | First stable mainnet release.                  |
 
-## Dev Versions (V1.x.x → V2.0.0)
+## Dev Versions (V1.0.0 → V3.0.0)
 
 - **V1.0.0-alpha** — First code written. Core lib skeleton.
 - **V1.0.0-beta** — CLI node runs locally.
 - **V1.1.0** — Multi-validator localnet.
 - **V1.2.0** — Public devnet.
 - **...**
-- **V2.0.0** — Mainnet launch. First stable.
+- **V2.0.0** — Feature completion phase (full semver, remaining features).
+- **V2.x.x** — Additional features, benchmarks, optimisation.
+- **V3.0.0** — Mainnet launch. First stable.
 
-## Release Checklist (V2.0.0 target)
+## Release Checklist (V3.0.0 target)
 
 - [ ] All planning docs finalized
 - [ ] mononium-rust-lib: all core modules complete

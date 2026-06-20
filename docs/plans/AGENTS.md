@@ -12,7 +12,8 @@ This doc owns all versioned plan directories (`V0.0.0/`, `V0.1.0/`, etc.) and `V
 
 - Plan versions use folder naming: `V{semver}/` (e.g., `V0.0.0/`)
 - V0.x.x = planning phase — semver does not apply, these are just labels
-- V1.0.0+ = development and stable releases — semver applies
+- V1.0.0+ = development and feature completion phases — semver applies (partial in V1.x.x, full in V2.x.x)
+- V3.0.0+ = stable release phase — full semver
 - Each plan version is a full snapshot of the docs at that point
 - Cross-reference ADRs using `[[Vx.x.x/ADR-NNN]]` wikilinks
 
