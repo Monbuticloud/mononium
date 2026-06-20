@@ -21,6 +21,27 @@ const EMPTY_HASH: [u8; 32] = [0u8; 32];
 const DEPTH: usize = 256;
 
 // ---------------------------------------------------------------------------
+// Trie trait (per protocol spec)
+// ---------------------------------------------------------------------------
+
+/// A key-value trie capable of producing a Merkle root.
+///
+/// This is the abstraction that the state machine uses for storage.
+/// The [`SparseMerkleTree`] is the V1 implementation.
+pub trait Trie {
+    /// Retrieve a value by key, if it exists.
+    fn get(&self, key: &[u8]) -> Option<Vec<u8>>;
+    /// Insert a value at the given key.
+    fn insert(&mut self, key: &[u8], value: Vec<u8>);
+    /// Return the Merkle root hash.
+    fn root(&mut self) -> [u8; 32];
+    /// Generate a Merkle proof for the given key (future light clients).
+    fn prove(&self, _key: &[u8]) -> Vec<u8> {
+        todo!() // placeholder for future use
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Default hash precomputation
 // ---------------------------------------------------------------------------
 
@@ -164,6 +185,20 @@ impl Default for SparseMerkleTree {
     }
 }
 
+impl Trie for SparseMerkleTree {
+    fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
+        SparseMerkleTree::get(self, key).map(|s| s.to_vec())
+    }
+
+    fn insert(&mut self, key: &[u8], value: Vec<u8>) {
+        SparseMerkleTree::insert(self, key, value);
+    }
+
+    fn root(&mut self) -> [u8; 32] {
+        SparseMerkleTree::root(self)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -208,5 +243,73 @@ mod tests {
         smt.insert(b"alice", vec![1, 2, 3, 4]);
         let after_root = smt.root();
         assert_ne!(after_root, empty_root);
+    }
+
+    #[test]
+    fn test_deterministic_root_same_keys() {
+        let mut a = SparseMerkleTree::new();
+        let mut b = SparseMerkleTree::new();
+        a.insert(b"x", vec![1]);
+        b.insert(b"x", vec![1]);
+        assert_eq!(a.root(), b.root());
+    }
+
+    #[test]
+    fn test_different_values_different_roots() {
+        let mut a = SparseMerkleTree::new();
+        let mut b = SparseMerkleTree::new();
+        a.insert(b"x", vec![1]);
+        b.insert(b"x", vec![2]);
+        assert_ne!(a.root(), b.root());
+    }
+
+    #[test]
+    fn test_multiple_keys() {
+        let mut smt = SparseMerkleTree::new();
+        smt.insert(b"alice", vec![1]);
+        smt.insert(b"bob", vec![2]);
+        smt.insert(b"carol", vec![3]);
+        assert_eq!(smt.get(b"alice"), Some(&[1][..]));
+        assert_eq!(smt.get(b"bob"), Some(&[2][..]));
+        assert_eq!(smt.get(b"carol"), Some(&[3][..]));
+        assert_eq!(smt.get(b"dave"), None);
+    }
+
+    #[test]
+    fn test_root_caching_repeated_calls_same_value() {
+        let mut smt = SparseMerkleTree::new();
+        smt.insert(b"key", vec![42]);
+        let root_a = smt.root();
+        let root_b = smt.root();
+        assert_eq!(root_a, root_b);
+    }
+
+    #[test]
+    fn test_large_value() {
+        let mut smt = SparseMerkleTree::new();
+        let large = vec![0xABu8; 10_000];
+        smt.insert(b"big", large.clone());
+        assert_eq!(smt.get(b"big"), Some(large.as_slice()));
+    }
+
+    // -----------------------------------------------------------------------
+    // Trie trait tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_trie_trait_insert_get() {
+        let mut trie: Box<dyn Trie> = Box::new(SparseMerkleTree::new());
+        trie.insert(b"trait", vec![9, 9, 9]);
+        let val = trie.get(b"trait");
+        assert_eq!(val, Some(vec![9, 9, 9]));
+    }
+
+    #[test]
+    fn test_trie_trait_root() {
+        let mut trie: Box<dyn Trie> = Box::new(SparseMerkleTree::new());
+        let empty = trie.root();
+        trie.insert(b"a", vec![1]);
+        let after = trie.root();
+        assert_ne!(after, empty);
     }
 }
