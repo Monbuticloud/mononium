@@ -30,7 +30,7 @@ mononium/
 ├── AGENTS.md                 # ← this file
 ├── README.md                 # project overview, architecture, quick start
 ├── src/
-│   ├── mononium-rust-lib/        # core blockchain library
+│   ├── mononium-lib/             # core blockchain library
 │   └── mononium-cli/             # CLI binary (node + wallet)
 ├── mononium-gui/             # GUI binary (desktop app, Phase 3)
 ├── docs/

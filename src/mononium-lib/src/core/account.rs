@@ -214,11 +214,13 @@ mod hex_serde {
 // ---------------------------------------------------------------------------
 
 /// The Burn address (`0x00..00`) — slashed and voluntarily burned MONEX.
+#[must_use]
 pub fn burn_address() -> Address {
     Address::from([0u8; 32])
 }
 
 /// The Cap-Refill address (`0x00..01`) — expands mainnet inflation cap.
+#[must_use]
 pub fn cap_refill_address() -> Address {
     let mut bytes = [0u8; 32];
     bytes[31] = 1;

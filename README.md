@@ -31,12 +31,12 @@ Development and contribution are designed around containers — spin up a localn
 mononium/
 ├── Cargo.toml                     # workspace root
 ├── src/
-│   ├── mononium-rust-lib/         # core library (all blockchain logic)
+│   ├── mononium-lib/              # core library (all blockchain logic)
 │   └── mononium-cli/              # CLI binary (node daemon + wallet)
 └── mononium-gui/                  # GUI binary (desktop app)
 ```
 
-- `mononium-rust-lib`, types, state machine, consensus engine, crypto, storage, P2P, RPC
+- `mononium-lib`, types, state machine, consensus engine, crypto, storage, P2P, RPC
 - `mononium-cli`, node daemon, wallet keygen, transfer, staking commands
 - `mononium-gui`, connects to a running node via RPC (does not run a node itself)
 
@@ -131,13 +131,13 @@ PRs welcome. All dependencies must be MIT, Apache-2.0, BSD, or Zlib licensed —
 cargo build
 
 # Run tests
-cargo nextest run -p mononium-rust-lib
+cargo nextest run -p mononium-lib
 
 # Run benchmarks
-cargo bench -p mononium-rust-lib
+cargo bench -p mononium-lib
 
 # Lint
-cargo clippy -p mononium-rust-lib -- -D warnings
+cargo clippy -p mononium-lib -- -D warnings
 ```
 
 ## Documentation

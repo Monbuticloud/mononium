@@ -67,6 +67,9 @@ pub enum LibError {
     #[error("consensus error: {0}")]
     Consensus(&'static str),
 
+    #[error("crypto error: {0}")]
+    Crypto(String),
+
     #[error("network error: {0}")]
     Network(String),
 

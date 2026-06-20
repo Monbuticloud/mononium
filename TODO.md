@@ -13,9 +13,10 @@
 - [x] Impl: `constants.rs` — chain-wide constants
 - [x] Impl: `error.rs` — LibError enum
 - [x] Impl: `core/constants.rs` — core constants (denomination, fees, supply)
-- [x] Impl: `core/account.rs` — Account, Address types
-- [ ] Impl: `core/account.rs` — Address checksum parsing
-- [ ] Tests pass: `cargo nextest run -p mononium-rust-lib -- test_account`
+- [x] Impl: `core/account.rs` — Account, Address types with checksum parsing
+- [x] Rename: mononium-rust-lib → mononium-lib across workspace + docs
+- [x] Fix deps: libp2p 0.56, primitive-types 0.12 features, workspace lints
+- [x] 18 tests passing, clippy clean, committed
 
 ## Sub-phase 1.1 🔶 Cryptography (Falcon-512, BLAKE3, SignatureScheme)
 - [ ] Test: SignatureScheme trait round-trip (sign → verify)
