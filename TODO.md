@@ -81,18 +81,16 @@
 - [x] 33 new tests: Top-N sort/max/ties/empty/zero, round-robin cycles/single/large/panic, era calc/boundary/modes/starts, fixed supply, capped inflation math at various supply levels
 - [x] 192 total tests passing, clippy clean
 
-## Sub-phase 1.8 🔶 Config + Genesis Files
+## Sub-phase 1.8 ✅ Config + Genesis Files
 
-- [ ] Test: Config file loading (YAML + TOML)
-- [ ] Test: CLI flag override precedence
-- [ ] Test: Genesis JSON parsing
-- [ ] Impl: `config/mod.rs` — Config struct, load/merge
-- [ ] Impl: `config/constants.rs` — default ports, paths
-- [ ] Config files: `configs/genesis.localnet.json`
-- [ ] Config files: `configs/genesis.devnet.json`
-- [ ] Config files: `configs/genesis.testnet.json`
-- [ ] Config files: `configs/node.devnet.yaml`
-- [ ] Tests pass
+- [x] `config/mod.rs` — NodeConfig with nested sections, YAML/TOML serde, CliOverrides merging, validation
+- [x] `config/constants.rs` — default ports (30333/9944/9933), paths, Argon2 params (256 MiB / 16 iters), storage
+- [x] `configs/genesis.localnet.json` — single validator bootstrap
+- [x] `configs/genesis.devnet.json` — 3-validator bootstrap with stakes
+- [x] `configs/genesis.testnet.json` — single validator bootstrap
+- [x] `configs/node.devnet.yaml` — complete node config example
+- [x] 20 new tests: defaults, YAML parse, TOML parse, CLI merge rules, validation rules, file loading
+- [x] 212 total tests passing, clippy clean
 
 ## Sub-phase 1.9 🔶 CLI Node Daemon
 
