@@ -737,6 +737,214 @@ mod tests {
         assert_eq!(alice_post.nonce, 0);
     }
 
+    // -----------------------------------------------------------------------
+    // Stake happy path
+    // -----------------------------------------------------------------------
+
+    fn setup_bob_with_balance(sm: &mut StateMachine, balance: U256) {
+        let mut acct = sm.get_account(&bob()).unwrap();
+        acct.balance = balance;
+        let key = crate::crypto::trie::namespace_key(
+            crate::crypto::trie::NS_ACCOUNTS,
+            bob().as_bytes(),
+        );
+        let value = crate::core::account::scale_encode_account(&acct);
+        sm.state.insert(&key, value);
+    }
+
+    #[test]
+    fn test_stake_increases_validator_stake() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0)), (bob(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        // Alice registers, Bob stakes to Alice
+        setup_alice_with_balance(&mut sm, U256::from(1000) + deposit);
+        setup_bob_with_balance(&mut sm, U256::from(1000));
+        create_validator(&mut sm, alice(), [0x42u8; 897], 0, 0);
+
+        // Bob stakes 500 to Alice
+        let stake_amount = U256::from(500);
+        let tx = Transaction {
+            chain_id: 0, nonce: 0, sender: bob(),
+            fee: U256::from(50),
+            body: TxBody::Stake { validator: alice(), amount: stake_amount },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.tx_count, 1);
+
+        let entry = sm.get_validator(&alice()).unwrap();
+        assert_eq!(entry.stake, stake_amount);
+        assert_eq!(entry.status, ValidatorStatus::Staked { stake: stake_amount });
+
+        // Bob's balance decreased by fee + amount
+        let bob_post = sm.get_account(&bob()).unwrap();
+        assert_eq!(bob_post.balance, U256::from(1000) - stake_amount - U256::from(50));
+        assert_eq!(bob_post.nonce, 1);
+    }
+
+    #[test]
+    fn test_stake_self_stake_allowed() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
+        create_validator(&mut sm, alice(), [0x42u8; 897], 0, 0);
+
+        // Self-stake: Alice stakes to herself
+        let stake_amount = U256::from(300);
+        let tx = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::Stake { validator: alice(), amount: stake_amount },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.tx_count, 1);
+
+        let entry = sm.get_validator(&alice()).unwrap();
+        assert_eq!(entry.stake, stake_amount);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // Alice's balance after registration: (2000 + deposit) - 0(fee) - deposit = 2000
+        // After self-stake: 2000 - 300(stake) - 50(fee) = 1650
+        assert_eq!(alice_post.balance, U256::from(1650));
+    }
+
+    // -----------------------------------------------------------------------
+    // Stake error paths
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_stake_nonexistent_validator() {
+        let accounts = vec![(alice(), make_account(1000))];
+        let mut sm = StateMachine::new(accounts);
+
+        let tx = Transaction {
+            chain_id: 0, nonce: 0, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::Stake { validator: bob(), amount: U256::from(100) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        assert_eq!(alice_post.balance, U256::from(950)); // 1000 - 50 (fee-only)
+        assert_eq!(alice_post.nonce, 0);
+    }
+
+    #[test]
+    fn test_stake_amount_zero() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(1000) + deposit);
+        create_validator(&mut sm, alice(), [0x42u8; 897], 0, 0);
+
+        let tx = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::Stake { validator: alice(), amount: U256::zero() },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // Alice after register: (1000 + deposit) - 50 - deposit = 950
+        // After failed stake: fee-only 50 → 900
+        assert_eq!(alice_post.balance, U256::from(900));
+    }
+
+    #[test]
+    fn test_stake_to_frozen_validator() {
+        // This tests the status check — we create a frozen validator entry directly
+        let accounts = vec![(alice(), make_account(1000))];
+        let mut sm = StateMachine::new(accounts);
+        // Manually insert a frozen validator
+        let entry = ValidatorEntry {
+            address: bob(),
+            public_key: [0x42u8; 897],
+            stake: U256::from(500),
+            status: ValidatorStatus::Frozen { frozen_until: 720 },
+            registration_era: 0,
+        };
+        let key = crate::crypto::trie::namespace_key(
+            crate::crypto::trie::NS_VALIDATORS,
+            bob().as_bytes(),
+        );
+        let value = entry.encode();
+        sm.state.insert(&key, value);
+
+        let tx = Transaction {
+            chain_id: 0, nonce: 0, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::Stake { validator: bob(), amount: U256::from(100) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        assert_eq!(alice_post.balance, U256::from(950)); // 1000 - 50
+    }
+
+    /// Helper: register Alice as a validator with the given public key.
+    fn create_validator(
+        sm: &mut StateMachine,
+        addr: Address,
+        pk: [u8; 897],
+        nonce: u64,
+        fee: u64,
+    ) {
+        let tx = Transaction {
+            chain_id: 0, nonce, sender: addr,
+            fee: U256::from(fee),
+            body: TxBody::RegisterValidator { public_key: pk },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: addr, chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        sm.apply_block(&block).unwrap();
+    }
+
     #[test]
     fn test_register_and_stake_deducts_fee_only() {
         let accounts = vec![(alice(), make_account(1000)), (bob(), make_account(500))];
