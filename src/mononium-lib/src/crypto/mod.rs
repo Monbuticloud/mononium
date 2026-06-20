@@ -17,3 +17,5 @@ pub mod constants;
 pub mod falcon;
 pub mod hash;
 pub mod signature;
+pub mod trie;
+
