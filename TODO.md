@@ -92,14 +92,15 @@
 - [x] 20 new tests: defaults, YAML parse, TOML parse, CLI merge rules, validation rules, file loading
 - [x] 212 total tests passing, clippy clean
 
-## Sub-phase 1.9 🔶 CLI Node Daemon
+## Sub-phase 1.9 ✅ CLI Node Daemon
 
-- [ ] Test: CLI arg parsing (clap)
-- [ ] Impl: `mononium-cli/src/main.rs` — CLI structure (node, wallet, query)
-- [ ] Impl: `mononium-cli/src/node.rs` — startup lifecycle
-- [ ] `mononium-cli node` starts and produces blocks locally
-- [ ] REST API: `/health`, `/block/latest`, `/balance/{address}`
-- [ ] Tests pass
+- [x] `mononium-cli/src/main.rs` — clap CLI tree (node, wallet, query, logfmt) with all flags
+- [x] `mononium-cli/src/node.rs` — startup lifecycle: config→DB→genesis→state→REST→block loop
+- [x] REST API: `/health`, `/block/latest`, `/block/{height}`, `/balance/{address}`, `/height`, `/era`
+- [x] Block production: empty blocks every 5s, stored in redb
+- [x] `mononium-cli node --help` shows all 14 flags
+- [x] `mononium-cli logfmt` converts JSON logs to text
+- [x] CLI binary builds: `cargo build -p mononium-cli`
 
 ## Sub-phase 1.10 🔶 CLI Wallet
 
