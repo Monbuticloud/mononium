@@ -71,18 +71,15 @@
 - [x] 24 mempool tests: priority ordering (fee/time/nonce), insert, remove, select order, per-sender cap, TTL eviction, mixed eviction, sender query
 - [x] 159 total tests passing
 
-## Sub-phase 1.7 🔶 Consensus Basics
+## Sub-phase 1.7 ✅ Consensus Basics
 
-- [ ] Test: Top-N election sorts by stake desc, tie by registration
-- [ ] Test: Round-robin proposer schedule
-- [ ] Test: Era boundary transitions
-- [ ] Test: Fixed supply = zero block reward
-- [ ] Impl: `consensus/election.rs` — ValidatorElection trait + TopNElection
-- [ ] Impl: `consensus/proposer.rs` — ProposerSelection + RoundRobin
-- [ ] Impl: `consensus/era.rs` — Era calculation, ElectionMode
-- [ ] Impl: `consensus/supply.rs` — SupplyPolicy + FixedSupply + CappedInflation
-- [ ] Impl: `consensus/mod.rs` — ConsensusConfig
-- [ ] Tests pass
+- [x] `consensus/election.rs` — ValidatorElection trait, TopNElection, ValidatorCandidate, ElectionMode
+- [x] `consensus/proposer.rs` — ProposerSelection trait, RoundRobin
+- [x] `consensus/era.rs` — Era calculation, is_era_boundary, election_mode_for_era
+- [x] `consensus/supply.rs` — SupplyPolicy trait, FixedSupply (zero reward), CappedInflation (55.5/block flat → decaying)
+- [x] `consensus/mod.rs` — ConsensusConfig
+- [x] 33 new tests: Top-N sort/max/ties/empty/zero, round-robin cycles/single/large/panic, era calc/boundary/modes/starts, fixed supply, capped inflation math at various supply levels
+- [x] 192 total tests passing, clippy clean
 
 ## Sub-phase 1.8 🔶 Config + Genesis Files
 
