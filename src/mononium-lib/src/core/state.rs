@@ -8,7 +8,8 @@ use primitive_types::U256;
 use crate::core::account::{Account, Address, scale_encode_account};
 use crate::core::block::Block;
 use crate::core::transaction::{BurnTarget, TxBody};
-use crate::core::validator::ValidatorEntry;
+use parity_scale_codec::{Decode, Encode};
+use crate::core::validator::{ValidatorEntry, ValidatorStatus};
 use crate::crypto::trie::{SparseMerkleTree, namespace_key, NS_ACCOUNTS, NS_VALIDATORS};
 use crate::error::{LibError, Result};
 
@@ -72,6 +73,14 @@ impl StateMachine {
         Some(crate::core::account::scale_decode_account(bytes))
     }
 
+    /// Retrieve a validator entry from state by address, if it exists.
+    #[must_use]
+    pub fn get_validator(&self, address: &Address) -> Option<ValidatorEntry> {
+        let key = namespace_key(NS_VALIDATORS, address.as_bytes());
+        let bytes = self.state.get(&key)?;
+        Some(ValidatorEntry::decode(&mut &bytes[..]).ok()?)
+    }
+
     /// Apply a block to the state machine.
     ///
     /// Validates the block, executes all transactions, distributes fees,
@@ -111,8 +120,16 @@ impl StateMachine {
                     };
                     self.try_transfer(&mut sender_acct, &destination, *amount, tx.fee, tx.nonce)
                 }
-                TxBody::RegisterValidator { .. }
-                | TxBody::Stake { .. }
+                TxBody::RegisterValidator { public_key } => {
+                    self.apply_register_validator(
+                        &mut sender_acct,
+                        &tx.sender,
+                        public_key,
+                        tx.fee,
+                        tx.nonce,
+                    )
+                }
+                TxBody::Stake { .. }
                 | TxBody::RegisterAndStake { .. }
                 | TxBody::Unstake { .. } => {
                     // Validate nonce + deduct fee at minimum
@@ -204,6 +221,52 @@ impl StateMachine {
         let value = scale_encode_account(acct);
         self.state.insert(&key, value);
     }
+
+    /// Write a validator entry to state.
+    fn set_validator(&mut self, addr: &Address, entry: &ValidatorEntry) {
+        let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
+        let value = entry.encode();
+        self.state.insert(&key, value);
+    }
+
+    /// Apply a RegisterValidator transaction.
+    ///
+    /// Creates a `ValidatorEntry` with status `Registered` and deducts the
+    /// fee + anti-spam deposit from the sender. Rejects if already registered.
+    fn apply_register_validator(
+        &mut self,
+        sender: &mut Account,
+        addr: &Address,
+        public_key: &[u8; 897],
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        // Verify not already registered
+        if self.get_validator(addr).is_some() {
+            return Err(LibError::Consensus("already registered"));
+        }
+        // Verify nonce
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+        let total_debit = fee + crate::core::constants::ANTI_SPAM_DEPOSIT;
+        if sender.balance < total_debit {
+            return Err(LibError::InsufficientBalance(sender.balance, total_debit));
+        }
+
+        sender.balance -= total_debit;
+        sender.nonce += 1;
+
+        let entry = ValidatorEntry {
+            address: *addr,
+            public_key: *public_key,
+            stake: U256::zero(),
+            status: ValidatorStatus::Registered,
+            registration_era: 0,
+        };
+        self.set_validator(addr, &entry);
+        Ok(())
+    }
 }
 
 /// Convert a U256 fee to u128 (sat at max u128).
@@ -221,10 +284,8 @@ mod tests {
     use primitive_types::U256;
     use crate::core::block::{Block, BlockBody, BlockHeader};
     use crate::core::transaction::{Transaction, TxBody};
-    use crate::core::validator::ValidatorEntry;
     use crate::crypto::falcon::Falcon512Signature;
     use crate::crypto::constants::{FALCON_SIGNATURE_SIZE, FALCON_PUBLIC_KEY_SIZE};
-    use crate::crypto::trie::namespace_key;
 
     fn alice() -> Address { Address::from([0xAAu8; 32]) }
     fn bob() -> Address { Address::from([0xBBu8; 32]) }
@@ -487,9 +548,19 @@ mod tests {
     }
 
     #[test]
-    fn test_register_validator_deducts_fee_only() {
-        let accounts = vec![(alice(), make_account(1000))];
+    fn test_register_validator_deducts_fee_and_deposit() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
+        // Give Alice enough balance via set_account
+        let mut acct = sm.get_account(&alice()).unwrap();
+        acct.balance = U256::from(1000) + deposit;
+        let key = crate::crypto::trie::namespace_key(
+            crate::crypto::trie::NS_ACCOUNTS,
+            alice().as_bytes(),
+        );
+        let value = crate::core::account::scale_encode_account(&acct);
+        sm.state.insert(&key, value);
         let tx = Transaction {
             chain_id: 0, nonce: 0, sender: alice(),
             fee: U256::from(50),
@@ -507,7 +578,7 @@ mod tests {
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
         let alice_post = sm.get_account(&alice()).unwrap();
-        assert_eq!(alice_post.balance, U256::from(950)); // 1000 - 50 (fee)
+        assert_eq!(alice_post.balance, U256::from(950)); // (1000 + deposit) - 50(fee) - deposit = 950
         assert_eq!(alice_post.nonce, 1);
     }
 
@@ -687,8 +758,18 @@ mod tests {
     fn test_register_validator_creates_entry() {
         let alice_addr = alice();
         let pk = [0x42u8; FALCON_PUBLIC_KEY_SIZE];
-        let accounts = vec![(alice_addr, make_account(1000))];
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice_addr, make_account(0))];
         let mut sm = StateMachine::new(accounts);
+        // Give Alice enough for fee + deposit (use set_account via raw SMT)
+        let mut acct = sm.get_account(&alice_addr).unwrap();
+        acct.balance = U256::from(1000) + deposit;
+        let key = crate::crypto::trie::namespace_key(
+            crate::crypto::trie::NS_ACCOUNTS,
+            alice_addr.as_bytes(),
+        );
+        let value = crate::core::account::scale_encode_account(&acct);
+        sm.state.insert(&key, value);
 
         let tx = Transaction {
             chain_id: 0,
@@ -720,8 +801,7 @@ mod tests {
 
         // Alice: balance decreased by fee + deposit
         let alice_post = sm.get_account(&alice_addr).unwrap();
-        let expected = U256::from(1000) - U256::from(50) // fee
-            - crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let expected = (U256::from(1000) + deposit) - U256::from(50) - deposit;
         assert_eq!(alice_post.balance, expected);
         assert_eq!(alice_post.nonce, 1);
     }
