@@ -97,13 +97,62 @@ impl StateMachine {
 mod tests {
     use super::*;
     use primitive_types::U256;
+    use crate::core::block::{Block, BlockBody, BlockHeader};
+    use crate::core::transaction::{Transaction, TxBody, BurnTarget};
+    use crate::crypto::falcon::Falcon512Signature;
+    use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
 
-    fn alice() -> Address {
-        Address::from([0xAAu8; 32])
+    fn alice() -> Address { Address::from([0xAAu8; 32]) }
+    fn bob() -> Address { Address::from([0xBBu8; 32]) }
+
+    fn dummy_sig() -> Falcon512Signature {
+        Falcon512Signature::from_bytes(&[0xEEu8; FALCON_SIGNATURE_SIZE]).unwrap()
     }
 
     fn make_account(balance: u64) -> Account {
         Account::new(U256::from(balance))
+    }
+
+    fn empty_block(proposer: Address, height: u64) -> Block {
+        Block {
+            header: BlockHeader {
+                height,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer,
+                chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![] },
+        }
+    }
+
+    fn transfer_block(sender: Address, recipient: Address, amount: u64,
+                       nonce: u64, chain_id: u64) -> Block {
+        let tx = Transaction {
+            chain_id,
+            nonce,
+            sender,
+            fee: U256::from(100),
+            body: TxBody::Transfer {
+                recipient,
+                amount: U256::from(amount),
+            },
+            signature: dummy_sig(),
+        };
+        Block {
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: Address::from([0u8; 32]),
+                chain_id,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        }
     }
 
     #[test]
@@ -126,5 +175,33 @@ mod tests {
     fn test_get_account_missing_returns_none() {
         let sm = StateMachine::new(vec![]);
         assert!(sm.get_account(&alice()).is_none());
+    }
+
+    #[test]
+    fn test_empty_block_no_state_change() {
+        let accounts = vec![(alice(), make_account(100))];
+        let mut sm = StateMachine::new(accounts);
+        let pre_root = sm.state_root();
+        let receipt = sm.apply_block(&empty_block(alice(), 1)).unwrap();
+        assert_eq!(receipt.tx_count, 0);
+        assert_eq!(receipt.failed_count, 0);
+        // Root should not change for an empty block
+        // (fee distribution with 0 fees is a no-op)
+        assert_eq!(sm.state_root(), pre_root);
+    }
+
+    #[test]
+    fn test_transfer_moves_balance() {
+        let accounts = vec![
+            (alice(), make_account(1000)),
+            (bob(), make_account(0)),
+        ];
+        let mut sm = StateMachine::new(accounts);
+        let block = transfer_block(alice(), bob(), 100, 0, 0);
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.tx_count, 1);
+
+        let bob_post = sm.get_account(&bob()).unwrap();
+        assert_eq!(bob_post.balance, U256::from(100));
     }
 }
