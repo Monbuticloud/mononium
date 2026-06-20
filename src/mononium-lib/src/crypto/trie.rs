@@ -11,6 +11,7 @@
 //! node is `BLAKE3(left_child || right_child)`. The default root is computed
 //! by hashing up 256 levels of default values.
 
+use primitive_types::U256;
 use std::collections::HashMap;
 
 /// Default empty-node hash (leaf level).
@@ -18,6 +19,35 @@ const EMPTY_HASH: [u8; 32] = [0u8; 32];
 
 /// Maximum depth of the SMT (256 bits = 32 bytes).
 const DEPTH: usize = 256;
+
+// ---------------------------------------------------------------------------
+// Default hash precomputation
+// ---------------------------------------------------------------------------
+
+/// Precompute the default hash at each depth.
+///
+/// `defaults[d]` = hash of a subtree of depth `d` where all leaves are empty.
+/// - `defaults[0]` = EMPTY_HASH (leaf level)
+/// - `defaults[d]` = BLAKE3(defaults[d-1] || defaults[d-1])
+fn compute_defaults() -> [[u8; 32]; DEPTH + 1] {
+    let mut defaults = [[0u8; 32]; DEPTH + 1];
+    defaults[0] = EMPTY_HASH;
+    for d in 1..=DEPTH {
+        let mut combined = [0u8; 64];
+        combined[..32].copy_from_slice(&defaults[d - 1]);
+        combined[32..].copy_from_slice(&defaults[d - 1]);
+        let hash = blake3::hash(&combined);
+        defaults[d] = *hash.as_bytes();
+    }
+    defaults
+}
+
+/// Return the precomputed defaults (lazily computed once).
+fn defaults() -> &'static [[u8; 32]; DEPTH + 1] {
+    static DEFAULTS: std::sync::LazyLock<[[u8; 32]; DEPTH + 1]> =
+        std::sync::LazyLock::new(compute_defaults);
+    &DEFAULTS
+}
 
 // ---------------------------------------------------------------------------
 // Sparse Merkle Tree
@@ -36,7 +66,7 @@ const DEPTH: usize = 256;
 pub struct SparseMerkleTree {
     /// Non-default leaves: `key_hash → SCALE_bytes`.
     leaves: HashMap<[u8; 32], Vec<u8>>,
-    /// Cached root hash for efficient repeated reads.
+    /// Cached root hash after last mutation.
     cached_root: Option<[u8; 32]>,
 }
 
@@ -55,28 +85,76 @@ impl SparseMerkleTree {
     /// For an empty tree, this is the 256-level default hash (all empty
     /// subtrees hashed up to the root).
     #[must_use]
-    pub fn root(&self) -> [u8; 32] {
-        // For now, just return the empty default root.
-        // Full computation is implemented in the next commit.
-        self.cached_root.unwrap_or(EMPTY_HASH)
+    pub fn root(&mut self) -> [u8; 32] {
+        if let Some(cached) = self.cached_root {
+            return cached;
+        }
+        if self.leaves.is_empty() {
+            return defaults()[DEPTH];
+        }
+        let root = self.compute_root();
+        self.cached_root = Some(root);
+        root
     }
 
     /// Insert a value at the given key.
     ///
     /// The value is stored as-is (caller should SCALE-encode before inserting).
     pub fn insert(&mut self, key: &[u8], value: Vec<u8>) {
-        let key_hash = blake3::hash(key);
-        let hash_bytes = *key_hash.as_bytes();
-        self.leaves.insert(hash_bytes, value);
+        let key_hash = *blake3::hash(key).as_bytes();
+        self.leaves.insert(key_hash, value);
         self.cached_root = None; // invalidate
     }
 
     /// Retrieve a value by key, if it exists.
     #[must_use]
     pub fn get(&self, key: &[u8]) -> Option<&[u8]> {
-        let key_hash = blake3::hash(key);
-        let hash_bytes = *key_hash.as_bytes();
-        self.leaves.get(&hash_bytes).map(|v| v.as_slice())
+        let key_hash = *blake3::hash(key).as_bytes();
+        self.leaves.get(&key_hash).map(|v| v.as_slice())
+    }
+
+    /// Internal root computation by walking up from all leaves.
+    fn compute_root(&self) -> [u8; 32] {
+        let defs = defaults();
+
+        // Convert leaf positions to U256 for bitwise operations
+        let mut nodes: HashMap<U256, [u8; 32]> = HashMap::new();
+        for (key_hash, value) in &self.leaves {
+            let pos = U256::from_big_endian(key_hash);
+            let leaf_hash = *blake3::hash(value).as_bytes();
+            nodes.insert(pos, leaf_hash);
+        }
+
+        // Walk up from depth 0 (leaf) to depth 255 (just below root)
+        for depth in 0..DEPTH {
+            let mut parents: HashMap<U256, [u8; 32]> = HashMap::new();
+
+            for (&pos, &hash) in &nodes {
+                let sibling_pos = pos ^ U256::one();
+                let parent_pos = pos >> 1;
+
+                let sibling_hash = nodes.get(&sibling_pos).copied().unwrap_or(defs[depth]);
+
+                // Left child has the lower (even) position
+                let (left, right) = if pos < sibling_pos {
+                    (hash, sibling_hash)
+                } else {
+                    (sibling_hash, hash)
+                };
+
+                let mut combined = [0u8; 64];
+                combined[..32].copy_from_slice(&left);
+                combined[32..].copy_from_slice(&right);
+                let parent_hash = *blake3::hash(&combined).as_bytes();
+                parents.insert(parent_pos, parent_hash);
+            }
+
+            nodes = parents;
+        }
+
+        // After DEPTH iterations we should have exactly one node (the root)
+        debug_assert_eq!(nodes.len(), 1, "root computation must produce exactly one node");
+        nodes.into_values().next().unwrap_or(defs[DEPTH])
     }
 }
 
@@ -94,27 +172,10 @@ impl Default for SparseMerkleTree {
 mod tests {
     use super::*;
 
-    /// Compute the 256-level default root hash.
-    ///
-    /// For an empty tree, every leaf is `[0u8; 32]` and each internal node
-    /// is `blake3(left_child || right_child)`. After 256 levels of hashing
-    /// the default up, we get the empty-tree root.
-    fn compute_empty_root() -> [u8; 32] {
-        let mut h = EMPTY_HASH;
-        for _ in 0..DEPTH {
-            let mut combined = [0u8; 64];
-            combined[..32].copy_from_slice(&h);
-            combined[32..].copy_from_slice(&h);
-            let hash = blake3::hash(&combined);
-            h = *hash.as_bytes();
-        }
-        h
-    }
-
     #[test]
     fn test_empty_smt_has_correct_default_root() {
-        let smt = SparseMerkleTree::new();
-        let expected = compute_empty_root();
+        let mut smt = SparseMerkleTree::new();
+        let expected = defaults()[DEPTH];
         assert_eq!(smt.root(), expected);
         // Also verify it's not just all zeros
         assert_ne!(smt.root(), [0u8; 32]);
