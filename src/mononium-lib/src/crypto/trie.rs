@@ -48,7 +48,7 @@ pub trait Trie {
 /// Precompute the default hash at each depth.
 ///
 /// `defaults[d]` = hash of a subtree of depth `d` where all leaves are empty.
-/// - `defaults[0]` = EMPTY_HASH (leaf level)
+/// - `defaults[0]` = [`EMPTY_HASH`] (leaf level)
 /// - `defaults[d]` = BLAKE3(defaults[d-1] || defaults[d-1])
 fn compute_defaults() -> [[u8; 32]; DEPTH + 1] {
     let mut defaults = [[0u8; 32]; DEPTH + 1];
@@ -131,7 +131,7 @@ impl SparseMerkleTree {
     #[must_use]
     pub fn get(&self, key: &[u8]) -> Option<&[u8]> {
         let key_hash = *blake3::hash(key).as_bytes();
-        self.leaves.get(&key_hash).map(|v| v.as_slice())
+        self.leaves.get(&key_hash).map(Vec::as_slice)
     }
 
     /// Internal root computation by walking up from all leaves.
@@ -146,7 +146,10 @@ impl SparseMerkleTree {
             nodes.insert(pos, leaf_hash);
         }
 
-        // Walk up from depth 0 (leaf) to depth 255 (just below root)
+        // Walk up from leaf depth to root depth.
+        // At each level, siblings merge into their parent.
+        // The default hash changes at each depth (higher depth = more hashing).
+        #[allow(clippy::needless_range_loop)]
         for depth in 0..DEPTH {
             let mut parents: HashMap<U256, [u8; 32]> = HashMap::new();
 
@@ -187,16 +190,44 @@ impl Default for SparseMerkleTree {
 
 impl Trie for SparseMerkleTree {
     fn get(&self, key: &[u8]) -> Option<Vec<u8>> {
-        SparseMerkleTree::get(self, key).map(|s| s.to_vec())
+        self.get(key).map(<[u8]>::to_vec)
     }
 
     fn insert(&mut self, key: &[u8], value: Vec<u8>) {
-        SparseMerkleTree::insert(self, key, value);
+        self.insert(key, value);
     }
 
     fn root(&mut self) -> [u8; 32] {
-        SparseMerkleTree::root(self)
+        self.root()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Namespace helpers
+// ---------------------------------------------------------------------------
+
+/// Namespace prefix for account keys.
+pub const NS_ACCOUNTS: u8 = 0x00;
+/// Namespace prefix for validator keys.
+pub const NS_VALIDATORS: u8 = 0x01;
+/// Namespace prefix for meta keys.
+pub const NS_META: u8 = 0x02;
+
+/// Build a namespaced key by prepending the namespace prefix byte.
+///
+/// # Examples
+///
+/// ```
+/// # use mononium_lib::crypto::trie::namespace_key;
+/// let full = namespace_key(0x00, b"some_address");
+/// assert_eq!(full, &[0x00, 0x73, 0x6f, 0x6d, 0x65, 0x5f, 0x61, 0x64, 0x64, 0x72, 0x65, 0x73, 0x73]);
+/// ```
+#[must_use]
+pub fn namespace_key(ns: u8, key: &[u8]) -> Vec<u8> {
+    let mut full = Vec::with_capacity(1 + key.len());
+    full.push(ns);
+    full.extend_from_slice(key);
+    full
 }
 
 // ---------------------------------------------------------------------------
@@ -311,5 +342,71 @@ mod tests {
         trie.insert(b"a", vec![1]);
         let after = trie.root();
         assert_ne!(after, empty);
+    }
+
+    // -----------------------------------------------------------------------
+    // Namespace tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_namespace_key_account() {
+        let addr = [0xABu8; 32];
+        let full = namespace_key(NS_ACCOUNTS, &addr);
+        assert_eq!(full.len(), 33);
+        assert_eq!(full[0], NS_ACCOUNTS);
+        assert_eq!(&full[1..], &addr[..]);
+    }
+
+    #[test]
+    fn test_namespace_key_validator() {
+        let pk = [0xBCu8; 32];
+        let full = namespace_key(NS_VALIDATORS, &pk);
+        assert_eq!(full[0], NS_VALIDATORS);
+    }
+
+    #[test]
+    fn test_namespace_key_meta() {
+        let meta = b"height";
+        let full = namespace_key(NS_META, meta);
+        assert_eq!(full, &[0x02, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74]);
+    }
+
+    #[test]
+    fn test_namespace_keys_are_disjoint() {
+        let addr = [0xABu8; 32];
+        let pk = [0xBCu8; 32];
+
+        let mut acct_trie = SparseMerkleTree::new();
+        let mut val_trie = SparseMerkleTree::new();
+
+        let acct_key = namespace_key(NS_ACCOUNTS, &addr);
+        let val_key = namespace_key(NS_VALIDATORS, &pk);
+
+        acct_trie.insert(&acct_key, vec![100]);
+        val_trie.insert(&val_key, vec![200]);
+
+        assert_eq!(acct_trie.get(&acct_key), Some(&[100][..]));
+        assert_eq!(acct_trie.get(&val_key), None);
+        assert_eq!(val_trie.get(&val_key), Some(&[200][..]));
+        assert_eq!(val_trie.get(&acct_key), None);
+    }
+
+    #[test]
+    fn test_namespace_deterministic_root_with_prefixes() {
+        let mut smt = SparseMerkleTree::new();
+        let addr = [0xABu8; 32];
+        let key = namespace_key(NS_ACCOUNTS, &addr);
+        smt.insert(&key, vec![42]);
+        let root = smt.root();
+
+        // Same data → same root
+        let mut smt2 = SparseMerkleTree::new();
+        smt2.insert(&namespace_key(NS_ACCOUNTS, &addr), vec![42]);
+        assert_eq!(root, smt2.root());
+
+        // Different namespace → different root
+        let mut smt3 = SparseMerkleTree::new();
+        smt3.insert(&namespace_key(NS_VALIDATORS, &addr), vec![42]);
+        assert_ne!(root, smt3.root());
     }
 }
