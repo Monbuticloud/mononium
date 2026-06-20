@@ -39,5 +39,8 @@ snap.workspace = true
 default = []
 gui = []
 
+[dev-dependencies]
+tempfile = "3"
+
 [lints]
 workspace = true
