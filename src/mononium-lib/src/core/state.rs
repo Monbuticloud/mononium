@@ -663,4 +663,16 @@ mod tests {
         assert_eq!(alice_post.balance, U256::from(950)); // 1000 - 50 (fee still paid)
         assert_eq!(alice_post.nonce, 0); // nonce NOT incremented on failure
     }
+
+    #[test]
+    fn test_fee_as_u128_normal() {
+        let fee = U256::from(42);
+        assert_eq!(fee_as_u128(fee), 42);
+    }
+
+    #[test]
+    fn test_fee_as_u128_saturated() {
+        let huge = U256::MAX;
+        assert_eq!(fee_as_u128(huge), u128::MAX);
+    }
 }

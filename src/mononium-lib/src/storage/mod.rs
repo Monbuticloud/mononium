@@ -216,4 +216,11 @@ mod tests {
         engine.delete(tables::ACCOUNTS, b"tmp").unwrap();
         assert!(!engine.exists(tables::ACCOUNTS, b"tmp").unwrap());
     }
+
+    #[test]
+    fn test_exists_unknown_table_errors() {
+        let (_dir, engine) = setup_engine();
+        let err = engine.exists("bad_table", b"k").unwrap_err();
+        assert!(err.to_string().contains("unknown table"), "got: {err}");
+    }
 }

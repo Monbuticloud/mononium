@@ -344,6 +344,22 @@ mod tests {
         assert_ne!(after, empty);
     }
 
+    #[test]
+    fn test_trie_default_same_as_new() {
+        let mut a = SparseMerkleTree::default();
+        let mut b = SparseMerkleTree::new();
+        assert_eq!(a.root(), b.root());
+    }
+
+    #[test]
+    fn test_trie_insert_empty_value() {
+        let mut smt = SparseMerkleTree::new();
+        smt.insert(b"empty", vec![]);
+        assert_eq!(smt.get(b"empty"), Some(&[][..]));
+        let root = smt.root();
+        assert_ne!(root, defaults()[DEPTH]);
+    }
+
     // -----------------------------------------------------------------------
     // Namespace tests
     // -----------------------------------------------------------------------

@@ -455,4 +455,37 @@ mod tests {
         assert_eq!(priv_bytes.len(), FALCON_PRIVATE_KEY_SIZE);
         assert_eq!(FALCON_PRIVATE_KEY_SIZE, 1281);
     }
+
+    #[test]
+    fn test_keypair_public_key_method() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let pk_bytes = kp.public_key_bytes();
+        let pk = Falcon512::public_key(&kp);
+        assert_eq!(&pk_bytes, pk.as_ref());
+    }
+
+    #[test]
+    fn test_falcon_public_key_clone_eq() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let pk = Falcon512::public_key(&kp);
+        let pk_clone = pk.clone();
+        assert_eq!(pk, pk_clone);
+    }
+
+    #[test]
+    fn test_falcon_signature_clone_eq() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let sig = Falcon512::sign(&kp, b"msg").unwrap();
+        let sig_clone = sig.clone();
+        assert_eq!(sig, sig_clone);
+    }
+
+    #[test]
+    fn test_falcon_sign_as_ref_roundtrip() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let sig = Falcon512::sign(&kp, b"msg").unwrap();
+        let bytes = sig.as_ref().to_vec();
+        let sig2 = Falcon512Signature::from_bytes(&bytes).unwrap();
+        assert_eq!(sig, sig2);
+    }
 }

@@ -408,4 +408,12 @@ mod tests {
         let keys = engine.list_keys(tables::VALIDATORS).unwrap();
         assert!(keys.is_empty(), "expected no validators, got {}", keys.len());
     }
+
+    #[test]
+    fn test_parse_hex_addr_without_prefix() {
+        let hex = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let raw = parse_hex_addr(hex).unwrap();
+        assert_eq!(raw[0], 0xbb);
+        assert_eq!(raw[31], 0xbb);
+    }
 }

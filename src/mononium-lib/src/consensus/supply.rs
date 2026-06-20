@@ -332,4 +332,17 @@ mod tests {
         let expected = ceiling_term / U256::from(BLOCKS_PER_YEAR);
         assert_eq!(reward, expected);
     }
+
+    #[test]
+    fn test_fixed_supply_default_via_trait() {
+        let fs: Box<dyn SupplyPolicy> = Box::new(FixedSupply);
+        assert_eq!(fs.block_reward(0, U256::zero(), U256::zero()), U256::zero());
+    }
+
+    #[test]
+    fn test_capped_inflation_default_via_trait() {
+        let ci: Box<dyn SupplyPolicy> = Box::new(CappedInflation::default());
+        let reward = ci.block_reward(0, U256::zero(), U256::from(1_000_000_000_000u64));
+        assert!(reward > U256::zero());
+    }
 }

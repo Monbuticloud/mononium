@@ -753,4 +753,35 @@ mode = "compact"
         assert!(s.json.is_none());
         assert!(s.file.is_none());
     }
+
+    #[test]
+    fn test_node_section_default() {
+        let s = NodeSection::default();
+        assert!(s.data_dir.is_none());
+        assert!(s.unlock_timeout.is_none());
+    }
+
+    #[test]
+    fn test_crypto_section_default() {
+        let s = CryptoSec::default();
+        assert!(s.argon2_memory_mib.is_none());
+        assert!(s.argon2_iterations.is_none());
+    }
+
+    #[test]
+    fn test_network_section_default() {
+        let s = NetworkSection::default();
+        assert!(s.p2p_port.is_none());
+        assert!(s.rpc_port.is_none());
+        assert!(s.rest_port.is_none());
+        assert!(s.bootnodes.is_none());
+    }
+
+    #[test]
+    fn test_storage_section_default() {
+        let s = StorageSection::default();
+        assert!(s.mode.is_none());
+        assert!(s.compact_eras.is_none());
+        assert!(s.full_node_rpc.is_none());
+    }
 }
