@@ -204,430 +204,431 @@ All 12 sub-phases (1.0 through 1.11) are complete. Every sub-phase is tagged in 
 > **Goal:** 3+ validators produce blocks with consensus on a local machine. `mononium-cli wallet stake` commands work. P2P networking, staking txs, governance, slashing, and sync protocol operational.
 > **Approach:** TDD per sub-phase. All state machine changes tested deterministically first. Networking tested via in-process harness before real libp2p.
 > **Dependency order:** Staking txs (2.0) → P2P core (2.1) → block propagation (2.2) → consensus engine (2.3) → slashing (2.4) → governance (2.5) → RPC (2.6) → multi-validator CLI (2.7) → stake CLI (2.8) → crash recovery (2.9) → benchmarks (2.10) → docs (2.11).
-> **Source docs:** All items below are extracted from `docs/plans/V1.0.0/` — Architecture.md, Consensus.md, Network.md, Protocol.md, Validators.md, Genesis.md, Fees.md, Slashing.md, Governance.md, Storage.md, Testing.md, UserDocs.md, StateSharding.md.
+> **Source docs:** All items below are extracted from `docs/plans/V1.0.0/` — see individual doc references per section.
 
 ---
 
 ## Sub-phase 2.0 — Staking Transaction Types
 
-**From:** Protocol.md §Transaction Types, Validators.md §Lifecycle §Staking, Fees.md §Standard Fees, Architecture.md §mononium-lib module tree
+**From:** Protocol.md §Transaction Types, Validators.md §Lifecycle §Staking, Fees.md §Fees, Architecture.md §consensus/ module tree
 
-Add 4 staking TxBody variants and wire through the state machine. Implement the full validator lifecycle (Registered → Staked → Active → Unstaking → Frozen → Thawed → Inactive) with era boundary hooks for Open (era 0) and Top-N (era 1+) election.
+Add 4 staking TxBody variants (RegisterValidator, Stake, RegisterAndStake, Unstake). Wire through state machine with full validator lifecycle. Era 0 Open vs era 1+ Top-N election integration.
 
-### TxBody type definitions — `core/transaction.rs`
+### TxBody types — `core/transaction.rs`
 
-**4 new variants:**
-- `TxBody::RegisterValidator { public_key: [u8; 897] }` — one-time declaration tx. Falcon-512 public key. No amount — registration is gas-only.
-- `TxBody::Stake { validator: [u8; 32], amount: U256 }` — lock MONEX to a registered validator. `validator` = 32-byte address of target. `amount` must be > 0.
-- `TxBody::RegisterAndStake { validator: [u8; 32], amount: U256 }` — atomic convenience: register + stake in one tx. `validator` must equal sender's address (self-registration).
-- `TxBody::Unstake { validator: [u8; 32], amount: U256 }` — begin withdrawal from a validator. `amount` must be ≤ validator's current stake. `release_era = current_era + 168` computed at execution time.
-
-**Serialization:**
-- SCALE enum tag order: Transfer=0, RegisterValidator=1, Stake=2, RegisterAndStake=3, Unstake=4, Burn=5 — confirm tag values don't break existing deserialization
-- `Encode` + `Decode` derive for all 4 variants (parity-scale-codec)
-- `Serialize` + `Deserialize` for JSON (serde, adjacently tagged)
-- Symmetric roundtrip tests: SCALE encode → decode equals original for every variant
-- Symmetric roundtrip tests: JSON serialize → deserialize equals original
-- Edge case tests: `Stake { amount: U256::zero() }` serializes correctly (validation catches zero at state machine level)
-- Edge case tests: `Unstake { amount: U256::MAX }` serializes correctly
-- Edge case tests: `RegisterValidator { public_key: [0u8; 897] }` serializes correctly (validators must verify key != 0 at state machine level)
-- Envelope serialization: `Transaction { chain_id, nonce, sender, fee, body, signature }` SCALE roundtrip with each new body variant
-- Signature verification: `falcon_verify(SCALE(chain_id || nonce || sender || fee || body))` for each variant — test that signature covers all fields
+- [ ] `TxBody::RegisterValidator { public_key: [u8; 897] }` — one-time declaration tx with Falcon-512 public key. No amount, gas-only.
+- [ ] `TxBody::Stake { validator: [u8; 32], amount: U256 }` — lock MONEX to a registered validator. `validator` = 32-byte address. `amount` must be > 0.
+- [ ] `TxBody::RegisterAndStake { validator: [u8; 32], amount: U256 }` — atomic register + stake. `validator` must equal sender address.
+- [ ] `TxBody::Unstake { validator: [u8; 32], amount: U256 }` — begin withdrawal. `amount` ≤ validator's stake. `release_era = current_era + 168`.
+- [ ] SCALE enum tag order: Transfer=0, RegisterValidator=1, Stake=2, RegisterAndStake=3, Unstake=4, Burn=5 — verify backward compat
+- [ ] `Encode` + `Decode` derive for all 4 variants (parity-scale-codec)
+- [ ] `Serialize` + `Deserialize` for JSON (serde, adjacently tagged)
+- [ ] SCALE encode → decode symmetric roundtrip for every variant
+- [ ] JSON serialize → deserialize symmetric roundtrip for every variant
+- [ ] Edge: `Stake { amount: U256::zero() }` serializes correctly (validation catches zero later)
+- [ ] Edge: `Unstake { amount: U256::MAX }` serializes correctly
+- [ ] Edge: `RegisterValidator { public_key: [0u8; 897] }` serializes correctly
+- [ ] Envelope roundtrip: `Transaction { chain_id, nonce, sender, fee, body, signature }` with each new body variant
+- [ ] Signature covers all fields: `falcon_verify(SCALE(chain_id || nonce || sender || fee || body))` — test per variant
 
 ### Validator state types — `core/validator.rs` (new file)
 
-`ValidatorStatus` enum:
-```rust
-pub enum ValidatorStatus {
-    Registered,                                    // registered, no stake yet
-    Staked { stake: U256 },                        // has ≥ 1 MONEX (era 1+), in candidate pool
-    Active,                                         // in active validator set
-    Unstaking { release_era: u64, amount: U256 },   // cooldown in progress
-    Frozen { frozen_until: u64 },                  // slashed, 72-era exclusion
-    Thawed,                                         // freeze expired, back in pool
-}
-```
+- [ ] `ValidatorStatus` enum: `Registered | Staked { stake: U256 } | Active | Unstaking { release_era: u64, amount: U256 } | Frozen { frozen_until: u64 } | Thawed`
+- [ ] `ValidatorEntry` struct: `{ address: [u8;32], public_key: [u8;897], stake: U256, status: ValidatorStatus, registration_era: u64 }`
+- [ ] SCALE `Encode` + `Decode` for ValidatorStatus (all variants with inner fields)
+- [ ] SCALE `Encode` + `Decode` for ValidatorEntry (897-byte key + U256 + enum)
+- [ ] JSON `Serialize` + `Deserialize` for both types
+- [ ] Roundtrip tests: every ValidatorStatus variant, ValidatorEntry edge cases
 
-`ValidatorEntry` struct:
-```rust
-pub struct ValidatorEntry {
-    pub address: [u8; 32],
-    pub public_key: [u8; 897],       // Falcon-512 public key
-    pub stake: U256,                  // total MONEX staked to this validator
-    pub status: ValidatorStatus,
-    pub registration_era: u64,        // era in which RegisterValidator was included
-}
-```
+### State machine: RegisterValidator
 
-**SCALE/JSON derives:**
-- `Encode` + `Decode` for `ValidatorStatus` (including inner fields for Unstaking/Frozen)
-- `Encode` + `Decode` for `ValidatorEntry`
-- `Serialize` + `Deserialize` for both
-- Symmetric roundtrip tests: every ValidatorStatus variant, ValidatorEntry with edge-case values
+- [ ] `StateMachine::apply_register_validator(tx, sender)` — verify not already registered (check NS_VALIDATORS), deduct fee + deposit, increment nonce, create ValidatorEntry { status: Registered }, store in SMT
+- [ ] Error: already registered → fee-only deduction, skip
+- [ ] Error: insufficient balance for fee → fee-only deduction
+- [ ] Error: invalid nonce → fee-only deduction
+- [ ] Error: bad signature → fee-only deduction
 
-### State machine staking operations — `core/state.rs`
+### State machine: Stake
 
-**RegisterValidator:**
-- Look up `NS_VALIDATORS ++ sender_addr` in SMT — if exists, error "already registered" (fee-only deduction)
-- Verify sender has sufficient balance for fee (HybridFee) — if insufficient, fee-only deduction
-- Deduct fee, deduct anti-spam deposit (0.33 MONEX), increment nonce
-- Create ValidatorEntry { address: sender, public_key, stake: 0, status: Registered, registration_era: current_era }
-- Store in SMT at `NS_VALIDATORS ++ sender_addr`
-- Return `ExecutedResult { fee, deposit }`
-- Error cases: already registered, insufficient balance for fee, invalid nonce, bad signature
+- [ ] `StateMachine::apply_stake(tx, sender)` — look up validator, verify status not Frozen/Unstaking, deduct amount from sender balance, add to validator.stake, update SMT entry
+- [ ] Error: validator not found → fee-only deduction
+- [ ] Error: validator is Frozen → fee-only deduction
+- [ ] Error: validator is Unstaking → fee-only deduction
+- [ ] Error: insufficient sender balance (fee + amount + deposit) → fee-only deduction
+- [ ] Error: amount == 0 → fee-only deduction
+- [ ] Error: U256 overflow on validator.stake → fee-only deduction (defensive)
+- [ ] Self-stake (sender == validator) allowed
+- [ ] Cross-stake (sender != validator) allowed
 
-**Stake:**
-- Look up `NS_VALIDATORS ++ validator` — if not found, fee-only deduction, error "validator not found"
-- If validator.status is Frozen or Unstaking → reject with appropriate error, fee-only deduction
-- Deduct `amount` from sender's transferable balance — if insufficient (fee + amount + deposit), fee-only deduction
-- Add `amount` to validator.stake, update entry in SMT
-- Increment sender nonce, deduct fee + deposit
-- Error cases: validator not found, validator frozen, validator unstaking, insufficient sender balance, amount = 0, U256 overflow on validator.stake
+### State machine: RegisterAndStake
 
-**RegisterAndStake:**
-- Atomic: run RegisterValidator checks, then Stake checks in single transaction
-- Single fee deduction, single nonce increment, single deposit
-- If RegisterValidator fails → entire tx rejected (no partial state — validator NOT registered)
-- If RegisterValidator succeeds but Stake fails → entire tx rejected (validator NOT registered)
-- Era 1+ minimum: `amount >= 1 MONEX` required (era 0: no minimum)
-- Error cases: same as RegisterValidator + Stake combined
+- [ ] `StateMachine::apply_register_and_stake(tx, sender)` — atomic: register checks then stake checks in single tx. Single fee, single nonce, single deposit.
+- [ ] If register fails → full rejection (no partial state, validator NOT registered)
+- [ ] If register passes but stake fails → full rejection (validator NOT registered)
+- [ ] Era 1+ minimum: `amount >= 1 MONEX` required; era 0: no minimum
 
-**Unstake:**
-- Look up `NS_VALIDATORS ++ validator` — if not found, fee-only deduction
-- If validator is Frozen → reject (cannot unstake from frozen validator — must wait for thaw)
-- If sender != unstaking address → reject (only the staker can unstake — or can anyone unstake from any validator? Per Validators.md, staker initiates unstake, not the validator. So sender must be the original staker.)
-  - Actually, the stake tx moves amount from sender to validator.stake. The validator entry doesn't track "who staked what." All stake is fungible. Anyone can unstake — it reduces the validator's total stake. The amount goes to... the unstake tx sender? Or back to the original stakers? Per Validators.md §Unstaking: "Unstaked funds become available after the 168-era cooldown." The funds return to the sender of the Unstake tx (not the original staker). This means anyone can unstake from any validator, but the funds go to the Unstake tx sender.
-  - Per Governance.md: "voting power = total staked MONEX" — stake is tracked per-validator-total, not per-individual-staker. No delegation in V1.
-- **Decision:** Unstake tx sender receives `amount` after cooldown. Anyone can unstake from any validator (reduces validator's total stake). The validator operator cannot prevent this.
-- Set `release_era = current_era + UNSTAKING_COOLDOWN` (168)
-- Update validator entry in SMT
-- Error cases: validator not found, validator → Unstaking with release_era, amount = 0, amount > validator.stake
+### State machine: Unstake
 
-### Validator lifecycle integration
+- [ ] `StateMachine::apply_unstake(tx, sender)` — look up validator, verify status, set `release_era = current_era + 168`, update SMT
+- [ ] Anyone can unstake from any validator (funds go to Unstake tx sender, not original staker)
+- [ ] Error: validator not found → fee-only deduction
+- [ ] Error: validator is Frozen → fee-only deduction
+- [ ] Error: amount > validator.stake → fee-only deduction
+- [ ] Error: amount == 0 → fee-only deduction
+- [ ] Error: validator already in Unstaking status (nested unstaking: reduces remaining stake, allowed if cumulative ≤ total stake)
 
-**Era 0 Open election (hook in `consensus/era.rs`):**
-- When `election_mode == Open`: iterate all validators with status != Frozen, set top N up to `max_validators` to Active
-- No stake sorting — first-come-first-served (by registration_era) if count exceeds max_validators
-- Validators registered mid-era become Active immediately (not at next era boundary)
-- Unit tests: register 5 with max=3 → first 3 active, last 2 Registered; register mid-era → immediately active
+### Era boundary hooks
 
-**Era 1+ Top-N election (hook in `consensus/election.rs`):**
-- Collect validators with `stake >= MIN_VALIDATOR_STAKE` (1 MONEX) and status != Frozen
-- Sort by stake descending, take top `max_validators`, set to Active
-- Ties broken by registration_era (earliest wins)
-- Remaining validators stay Staked (candidate pool, eligible next era)
-- Frozen/Unstaking validators excluded from candidate pool
-- Thawed validators with remaining stake re-enter candidate pool
+- [ ] **Era 0 Open election:** iterate all validators with status != Frozen, set first N (up to max_validators) to Active. No stake sorting, first-registered-first-served.
+- [ ] Validators registered mid-era 0 become Active immediately (not at next boundary).
+- [ ] **Era 1+ Top-N election:** collect validators with `stake >= 1 MONEX` and status != Frozen, sort by stake desc, take top max_validators → Active. Ties: earliest registration_era wins.
+- [ ] Frozen/Unstaking validators excluded from candidate pool.
+- [ ] Thawed validators with remaining stake re-enter candidate pool.
+- [ ] **Unstaking cooldown:** for each Unstaking validator with `release_era <= current_era`:
+  - [ ] Full: `amount == validator.stake` → remove entry from SMT (Inactive)
+  - [ ] Partial: `validator.stake -= amount`, status = Staked (if ≥ 1 MONEX) or Registered (if < 1 MONEX)
+  - [ ] Transfer amount to Unstake tx sender's balance
 
-**Unstaking cooldown (era boundary hook):**
-- For each validator with `status == Unstaking { release_era, amount }` and `release_era <= current_era`:
-  - Full unstake: `amount == validator.stake` → remove entry from SMT (validator becomes Inactive)
-  - Partial unstake: `amount < validator.stake` → `validator.stake -= amount`, status = Staked (if ≥ 1 MONEX) or Registered (if < 1 MONEX)
-  - Transfer `amount` to the unstake tx sender's transferable balance
-  - Note: this requires tracking who submitted the Unstake tx. Store `unstake_initiator` in the Unstaking struct or as a separate record.
+### Validator status transitions (complete matrix)
 
-**Validator status transitions (comprehensive state machine):**
-- Registered → Staked (via Stake tx from any sender)
-- Registered → Active (era 0 auto-promotion)
-- Staked → Active (era boundary Top-N election)
-- Active → Staked (era boundary, fell out of top N)
-- Staked/Active → Frozen (equivocation evidence submitted)
-- Frozen → Thawed (72 eras pass)
-- Thawed → Staked (era boundary, re-enters candidate pool if stake ≥ 1 MONEX)
-- Thawed → Registered (era boundary, stake < 1 MONEX)
-- Staked/Active → Unstaking (via Unstake tx)
-- Unstaking → Inactive (cooldown expires, fully unstaked)
-- Unstaking → Staked (cooldown expires, partially unstaked)
-- Unstaking → Registered (cooldown expires, remaining < 1 MONEX)
+- [ ] Registered → Staked (via Stake tx from any sender)
+- [ ] Registered → Active (era 0 auto-promotion)
+- [ ] Staked → Active (era boundary Top-N)
+- [ ] Active → Staked (era boundary, fell out of top N)
+- [ ] Staked/Active → Frozen (equivocation evidence submitted, Phase 2.4)
+- [ ] Frozen → Thawed (72 eras elapse)
+- [ ] Thawed → Staked (era boundary, stake ≥ 1 MONEX)
+- [ ] Thawed → Registered (era boundary, stake < 1 MONEX)
+- [ ] Staked/Active → Unstaking (via Unstake tx)
+- [ ] Unstaking → Inactive (cooldown expires, fully unstaked)
+- [ ] Unstaking → Staked (cooldown expires, partially unstaked, remaining ≥ 1 MONEX)
+- [ ] Unstaking → Registered (cooldown expires, remaining < 1 MONEX)
 
-### Fee integration — `core/fee.rs`
-- Standard `HybridFee` (flat 0.00667 + per-byte 0.000467 + tip) applies to staking txs
-- RegisterValidator tx includes 897-byte public_key — larger per-byte component
-- Anti-spam deposit (0.33 MONEX) applies (no exemption per Fees.md)
-- Fee-only deduction on failed staking txs identically to Transfer/Burn
-- Unit tests: each staking tx variant calculates correct fee, fee-only deduction on failure
+### Fee integration
+
+- [ ] Standard `HybridFee` applies to all staking txs (flat 0.00667 + per-byte 0.000467 + tip)
+- [ ] RegisterValidator: 897-byte public_key → larger per-byte component — verify in fee test
+- [ ] Anti-spam deposit (0.33 MONEX) applies — no exemption per Fees.md
+- [ ] Fee-only deduction on failed staking txs (same as Transfer/Burn pattern)
 
 ### Constants — `core/constants.rs`
-- `UNSTAKING_COOLDOWN_ERAS: u64 = 168` — 168-era cooldown (~7 days)
-- `MIN_VALIDATOR_STAKE: U256 = U256::from_str(\"100000000000000000000000000000000\").unwrap()` — 1 MONEX in MOXX (10^32)
-- `MAX_VALIDATORS_DEFAULT: usize = 21`
-- Verify all new constants have unit tests
 
-### Full test matrix — `core/state.rs` and `core/transaction.rs`
+- [ ] `UNSTAKING_COOLDOWN_ERAS: u64 = 168`
+- [ ] `MIN_VALIDATOR_STAKE: U256 = one_monex()` (10^32 MOXX)
+- [ ] `MAX_VALIDATORS_DEFAULT: usize = 21`
+- [ ] Unit tests for all new constants
+
+### Tests for sub-phase 2.0
 
 **Happy path:**
-- RegisterValidator → ValidatorEntry created with correct fields
-- Stake → validator.stake increased, sender balance decreased
-- RegisterAndStake (era 0) → atomic register + stake in single tx
-- RegisterAndStake (era 1+) → minimum stake enforced
-- Unstake → status changes to Unstaking with correct release_era
-- Cooldown expiry → balance returned, validator entry updated
-- Cross-stake (sender != validator) → allowed, stake increases
-- Self-stake (sender == validator) → allowed
 
-**Error path (fee-only deduction for each):**
-- Register when already registered
-- Register with insufficient balance for fee
-- Stake to nonexistent validator
-- Stake to frozen validator
-- Stake to unstaking validator
-- Stake with amount = 0
-- Stake with insufficient sender balance
-- U256 overflow on validator's total stake
-- Unstake from nonexistent validator
-- Unstake amount > validator.stake
-- Unstake from frozen validator
-- Unstake amount = 0
-- RegisterAndStake with amount < 1 MONEX (era 1+, full tx rejected)
+- [ ] RegisterValidator creates ValidatorEntry with correct fields
+- [ ] Stake increases validator.stake, decreases sender balance
+- [ ] RegisterAndStake (era 0): atomic register + stake in single tx
+- [ ] RegisterAndStake (era 1+): minimum 1 MONEX enforced
+- [ ] Unstake sets status to Unstaking with correct release_era
+- [ ] Cooldown expiry returns balance, updates validator entry
+- [ ] Cross-stake (sender != validator) allowed
+- [ ] Self-stake (sender == validator) allowed
+
+**Error path (each → fee-only deduction):**
+
+- [ ] Register when already registered
+- [ ] Register with insufficient balance for fee
+- [ ] Stake to nonexistent validator
+- [ ] Stake to frozen validator
+- [ ] Stake to unstaking validator
+- [ ] Stake with amount = 0
+- [ ] Stake with insufficient sender balance
+- [ ] Stake causing U256 overflow on validator.stake
+- [ ] Unstake from nonexistent validator
+- [ ] Unstake amount > validator.stake
+- [ ] Unstake from frozen validator
+- [ ] Unstake amount = 0
+- [ ] RegisterAndStake (era 1+) with amount < 1 MONEX → full tx rejected
 
 **Era boundary:**
-- Era 0: 5 validators register, max=3 → first 3 active
-- Era 1+: stakes [100, 50, 30, 20, 10], max=3 → active = [100, 50, 30]
-- Tie-breaking: equal stakes, different registration_era
-- Frozen validator excluded from election
-- Unstaking cooldown expires at era boundary
 
-**Coverage target:** ≥ 95% region on staking state machine paths, ≥ 100% on TxBody variants
+- [ ] Era 0: register 5, max_validators=3 → first 3 active
+- [ ] Era 1+: stakes [100,50,30,20,10], max=3 → active = [100,50,30]
+- [ ] Tie-breaking: equal stakes, different registration_era
+- [ ] Frozen validator excluded from election
+- [ ] Unstaking cooldown expiry at era boundary
+
+**Coverage target:** ≥ 95% region staking paths, ≥ 100% new TxBody variants
 
 ---
 
 ## Sub-phase 2.1 — P2P Networking (Core)
 
-**From:** Network.md §P2P Layer §Topics §Peer Discovery §Transport Compression §Ports, Architecture.md §mononium-lib `network/` module tree, NodeConfig.md §network.*
+**From:** Network.md §P2P Layer §Topics §Peer Discovery §Peer Scoring §Transport Compression, Architecture.md §network/ module tree, NodeConfig.md §network.\*
 
-Build the `network/` module. libp2p gossipsub with 4 topics, kademlia + mDNS discovery, Identify protocol, peer scoring with ban mechanics, snappy compression.
+Build `network/` module with libp2p gossipsub (4 topics), kademlia + mDNS discovery, Identify protocol, peer scoring with ban mechanics, snappy compression.
 
-### Files to create — `mononium-lib/src/network/`
+### Module files — `mononium-lib/src/network/`
 
-**`network/mod.rs` — Public API:**
-- `P2pService` struct: `{ swarm: Swarm<Behaviour>, local_peer_id: PeerId, chain_id: u64, peer_scores: Arc<RwLock<PeerScoreRepo>> }`
-- `P2pService::new(config: P2pConfig, chain_id: u64) -> Result<Self>` — construct swarm
-- `P2pService::start(self) -> JoinHandle` — spawn async event loop
-- `P2pService::stop(&self)` — graceful shutdown signal
-- `P2pService::publish_tx(txs: &[Transaction]) -> Result<MessageId>`
-- `P2pService::publish_block(block: &Block) -> Result<MessageId>`
-- `P2pService::publish_vote(vote: &CommitVote) -> Result<MessageId>`
-- `P2pService::publish_evidence(evidence: &EquivocationEvidence) -> Result<MessageId>`
-- Event loop: poll swarm → match on event → dispatch to handler
-- `P2pConfig`: `{ p2p_port: u16, bootstrap_peers: Vec<Multiaddr>, enable_mdns: bool, max_peers: usize }`
+- [ ] `network/mod.rs` — `P2pService { swarm, local_peer_id, chain_id, peer_scores }` with start/stop/publish methods
+- [ ] `P2pService::new(config: P2pConfig, chain_id) -> Result<Self>` — construct swarm with all behaviours
+- [ ] `P2pService::start(self) -> JoinHandle` — spawn async event loop on tokio
+- [ ] `P2pService::stop(&self)` — graceful shutdown signal
+- [ ] `P2pService::publish_tx(txs: &[Transaction]) -> Result<MessageId>`
+- [ ] `P2pService::publish_block(block: &Block) -> Result<MessageId>`
+- [ ] `P2pService::publish_vote(vote: &CommitVote) -> Result<MessageId>`
+- [ ] `P2pService::publish_evidence(evidence: &EquivocationEvidence) -> Result<MessageId>`
+- [ ] Event loop: poll swarm → match on event → dispatch to topic handler
+- [ ] `P2pConfig { p2p_port: u16, bootstrap_peers: Vec<Multiaddr>, enable_mdns: bool, max_peers: usize }`
+- [ ] `network/constants.rs` — `DEFAULT_P2P_PORT=30333`, `PROTOCOL_VERSION`, `AGENT_VERSION`, `MAX_PEERS=50`, kademlia config constants
+- [ ] `network/topics.rs` — `TopicConfig { name, max_message_size, max_rate_per_peer }`, 4 instances matching Network.md limits
+- [ ] `RateLimiter` — per-peer sliding window counter (1s window), `check()` and `increment()`
+- [ ] `validate_message_size(topic, raw_bytes) -> bool` — applied to raw SCALE before deserialization
+- [ ] Unit: RateLimiter accepts under limit, rejects over, resets after 1s
+- [ ] Unit: per-topic size limits match Network.md (txs=1MB, blocks=500KB, votes=1KB, evidence=5KB)
+- [ ] `network/messages.rs` — `GossipMessage` enum (SCALE): `Txs(Vec<Transaction>)`, `Block(Box<Block>)`, `Vote(CommitVote)`, `Evidence(EquivocationEvidence)`
+- [ ] SCALE Encode + Decode for GossipMessage — all 4 variants roundtrip
+- [ ] `network/discovery.rs` — bootstrap peer dial (concurrent, 10s timeout), kademlia random walk (60s), mDNS, Identify
 
-**`network/constants.rs`:**
-- `DEFAULT_P2P_PORT: u16 = 30333`
-- `PROTOCOL_VERSION: &str = \"mononium/1.0\"`
-- `AGENT_VERSION: &str = \"mononium-node/0.1.0\"`
-- `MAX_PEERS: usize = 50`
-- `MAX_CONNECTIONS_PER_PEER: u32 = 1`
-- `KADEMLIA_REPLICATION_FACTOR: usize = 20`
-- Topic name templates: `\"mononium/txs/{chain_id}\"`, `\"mononium/blocks/{chain_id}\"`, `\"mononium/votes/{chain_id}\"`, `\"mononium/evidence/{chain_id}\"`
+### Gossipsub configuration
 
-**`network/topics.rs` — Topic config + validation:**
-- `TopicConfig { name: String, max_message_size: usize, max_rate_per_peer: u32 }`
-- 4 instances matching Network.md table:
-  - txs: 1_048_576 bytes, 20 msg/s
-  - blocks: 512_000 bytes, 1 msg/s
-  - votes: 1_024 bytes, 100 msg/s
-  - evidence: 5_120 bytes, 5 msg/s
-- `RateLimiter` — per-peer sliding window counter (1s window)
-- `RateLimiter::check(peer_id, topic) -> bool` — returns false if exceeded
-- `RateLimiter::increment(peer_id, topic)` — record message
-- `validate_message_size(topic, raw_bytes) -> bool` — raw SCALE bytes, before deserialization
-- Unit tests: rate limiter accepts under limit, rejects over limit, resets after window; size validation passes/fails at boundaries
+- [ ] GossipsubConfigBuilder: message_id_fn (BLAKE3 raw bytes), max_transmit_size=1MB, history_length=10, gossip_factor=0.25
+- [ ] Subscribe to all 4 topics on P2pService::start()
+- [ ] Incoming handler: deserialize → validate size + rate → score peer → route to handler
+- [ ] Outgoing: serialize → validate size (≤ topic max) → publish via gossipsub
 
-**`network/messages.rs` — Wire message types:**
-- `GossipMessage` enum (SCALE): `Txs(Vec<Transaction>)`, `Block(Box<Block>)`, `Vote(CommitVote)`, `Evidence(EquivocationEvidence)`
-- SCALE `Encode` + `Decode` for all variants
-- Each variant size-limited at publish time
-- Unit tests: all 4 variants encode/decode symmetric, roundtrip with real data
+### Peer scoring — `network/peer_score.rs`
 
-**`network/discovery.rs` — Peer discovery:**
-- Bootstrap: dial all `bootstrap_peers` multiaddrs concurrently (10s timeout)
-- Kademlia: random walk every 60s, provider records for chain_id
-- mDNS: local network discovery (localnet only)
-- Identify: exchange agent version, protocol version, listen addrs
-- `PeerMetadata { shards: Vec<u16> }` stored in `HashMap<PeerId, PeerMetadata>`
+- [ ] `PeerScore { score: i32 [-100,100], banned_at_height: Option<u64>, last_positive: Instant }`
+- [ ] `adjust(delta: i32)` — clamp to [-100, 100]
+- [ ] `is_banned(current_height) -> bool` — `banned_at_height.is_some() && current_height < banned_at_height + BAN_DURATION`
+- [ ] `should_ban() -> bool` — score < -20
+- [ ] `apply_ban(current_height)` — set banned_at_height
+- [ ] `BAN_DURATION: u64 = 720` blocks (~1 hour); chain height < 720 → 1-hour wall-clock fallback
+- [ ] Score adjustment events (11):
+  - [ ] Valid block propagated → +1
+  - [ ] Valid vote propagated → +1
+  - [ ] Successful sync batch → +2
+  - [ ] Sync batch hash mismatch → -10
+  - [ ] Sync batch verify fail (state root mismatch) → -20
+  - [ ] Empty sync response (has blocks but won't serve) → -2
+  - [ ] Sync timeout (2+ consecutive) → -4
+  - [ ] Invalid block gossiped → -10
+  - [ ] Invalid vote gossiped → -10
+  - [ ] Connect/disconnect loop (>3 in 5min) → -10
+  - [ ] Duplicate block gossip (>3 identical) → -2
+- [ ] Score tiers: >0 Good (preferred), -20–0 Neutral (connected deprioritized), < -20 Banned (disconnected)
+- [ ] Ban expiry: auto-unban at `banned_at_height + 720`, score persists (recidivism protection)
+- [ ] `PeerScoreRepo` — `HashMap<PeerId, PeerScore>` behind `Arc<RwLock<>>`
+- [ ] Unit: every delta clamps correctly, ban threshold at -20, ban at block 50 expires at 770, wall-clock fallback at height 0, recidivism
 
-**`network/peer_score.rs` — Peer scoring + bans:**
-- `PeerScore { score: i32, banned_at_height: Option<u64>, last_positive: Instant }`
-- Range: [-100, 100], starts at 0
-- `adjust(delta: i32)` — clamp to bounds
-- `is_banned(current_height: u64) -> bool` — `banned_at_height.is_some() && current_height < banned_at_height + BAN_DURATION`
-- `should_ban() -> bool` — `score < -20`
-- `apply_ban(current_height: u64)` — set `banned_at_height`
-- `BAN_DURATION: u64 = 720` blocks (~1 hour)
-- Fresh-genesis edge case: if chain height < 720, use 1-hour wall-clock fallback
-- Score adjustments (11 events from Network.md table):
-  | Event | Delta | Triggering condition |
-  |-------|-------|---------------------|
-  | Valid block propagated | +1 | Block verification passed |
-  | Valid vote propagated | +1 | Signature verified |
-  | Successful sync batch | +2 | Batch matched + full verification passed |
-  | Sync batch hash mismatch | -10 | ADR-018 rolling hash differs |
-  | Sync batch verify fail | -20 | global_state_root mismatch |
-  | Empty sync response | -2 | Peer has blocks but returns empty |
-  | Sync timeout (2+ consecutive) | -4 | No response |
-  | Invalid block gossiped | -10 | Block fails basic validation |
-  | Invalid vote gossiped | -10 | Signature fails |
-  | Connect/disconnect loop | -10 | >3 disconnects in 5 min |
-  | Duplicate block gossip (>3 identical) | -2 | Repeated identical blocks |
-- `PeerScoreRepo` — `HashMap<PeerId, PeerScore>` behind `Arc<RwLock<>>`
-- Unit tests: every delta adjusts correctly, clamping, ban threshold at -20, ban expiry at +720 blocks, wall-clock fallback at height 0, recidivism (score persists after unban)
+### Transport
 
-### Gossipsub configuration:
-- `GossipsubConfigBuilder`: message_id_fn (BLAKE3 hash of raw bytes), max_transmit_size=1MB, history_length=10, gossip_factor=0.25
-- Subscribe to all 4 topics on `P2pService::start()`
-- Incoming message handler: deserialize → validate size/rate → store score → route to handler
-- Outgoing: serialize → validate size → publish via gossipsub
+- [ ] TCP with Noise XX + yamux (libp2p built-in)
+- [ ] Snappy compression at transport layer
+- [ ] DNS multiaddr resolution
+- [ ] Port reuse for NAT traversal
 
-### Transport:
-- TCP with Noise XX + yamux (libp2p built-in)
-- Snappy compression at transport layer
-- DNS resolution for multiaddrs
-- Port reuse for NAT traversal
+### Config integration
 
-### Config integration:
-- `config/mod.rs`: `network.p2p_port` (u16, default 30333), `network.bootnodes` (Vec<String>, default []), `network.enable_mdns` (bool, default true)
-- Validation: p2p_port != rest_port (9933), p2p_port != rpc_port (9944); bootnodes must be valid multiaddrs
-- CLI flags: `--p2p-port`, `--bootnodes` (repeatable)
-- `config/constants.rs`: `DEFAULT_P2P_PORT: u16 = 30333`
-- Example configs: `node.localnet.yaml` (mdns=true, empty bootnodes), `node.devnet.yaml` (bootnodes populated)
+- [ ] `config/mod.rs`: `network.p2p_port` (u16, default 30333), `network.bootnodes` (`Vec<String>`, default []), `network.enable_mdns` (bool, default true)
+- [ ] Validation: p2p_port != rest_port (9933) and != rpc_port (9944)
+- [ ] CLI flags: `--p2p-port`, `--bootnodes` (repeatable)
+- [ ] `config/constants.rs`: `DEFAULT_P2P_PORT: u16 = 30333`
+- [ ] `configs/node.localnet.yaml` — mdns=true, bootnodes=[]
+- [ ] `configs/node.devnet.yaml` — mdns=false, bootnodes populated
 
-### Integration tests:
-- Two P2pService instances on loopback TCP → connect, subscribe, publish/receive message
-- mDNS discovers peer on loopback
-- Kademlia bootstrap with known peer
-- Oversized message rejected at topic level, sender score decremented
-- Rate-limited peer score decremented, recovers after window
+### Integration tests (loopback libp2p)
+
+- [ ] Two P2pService instances connect on loopback TCP, subscribe to all 4 topics
+- [ ] Instance A publishes a message → B receives it on correct topic
+- [ ] mDNS discovers peer on loopback interface
+- [ ] Kademlia bootstrap with known peer
+- [ ] Oversized message rejected at topic level, sender score decremented
+- [ ] Rate-limited peer score decremented, recovers after window
 
 ---
 
 ## Sub-phase 2.2 — Block Propagation + Sync Protocol
 
-**From:** Network.md §Sync Protocol (complete flow, BlockSyncRequest/Response, BlockByHashRequest/Response, SyncCursor, Disconnection, Fork Detection, Retry Logic, No-Peer Stall), ADR-018 (rolling batch hash)
+**From:** Network.md §Sync Protocol (BlockSyncRequest/Response, BlockByHashRequest/Response, SyncCursor, Disconnection, Fork Detection, Retry, No-Peer Stall), ADR-018
 
-Blocks gossiped on `mononium/blocks/{chain_id}`. Sync protocol via libp2p Request-Response for catch-up. SyncCursor persists position across restarts. Rolling BLAKE3 batch hash per ADR-018.
+Blocks gossiped on `mononium/blocks/{chain_id}`. Sync via libp2p Request-Response. SyncCursor persists position. Rolling BLAKE3 batch hash per ADR-018.
 
-### Block gossip handler:
-- On receive: deserialize → validate size ≤ 500KB (consensus cap) → verify proposer Falcon sig → verify parent_hash exists in chain → verify timestamp ±2s → verify chain_id → check duplicate (reject if exists) → queue for state machine → re-gossip
-- Invalid block: log warning, score proposer peer -10, do NOT re-gossip
+### Block gossip
 
-### Sync protocol messages (`network/messages.rs` additions):
-- `BlockSyncRequest { start_height: u64, max_blocks: u16 (max 500), direction: SyncDirection, known_block_hash: Option<[u8;32]> }`
-- `BlockSyncResponse { blocks: Vec<Block>, highest_height: u64, batch_hash: [u8;32] }`
-- `BlockByHashRequest { block_hashes: Vec<[u8;32]> }` (max 100)
-- `BlockByHashResponse { blocks: Vec<Block> }` (request order, missing omitted)
-- `SyncDirection` enum: `Forward | Backward`
-- `compute_batch_hash(genesis_hash, blocks) -> [u8;32]` — rolling BLAKE3 per ADR-018
-- All types: SCALE encode/decode, validation (max_blocks ∈ [1,500], max_hashes ∈ [1,100])
-- Registered as libp2p Request-Response protocols: `/mononium/sync/1.0`, `/mononium/hash-sync/1.0`
+- [ ] `P2pService::publish_block(block)` — serialize SCALE, validate ≤ 500KB, publish via gossipsub
+- [ ] Incoming block handler: deserialize → validate size ≤ 500KB → verify proposer Falcon sig → verify parent_hash exists → verify timestamp ±2s → verify chain_id → deduplicate (hash in blocks table) → queue for state machine → re-gossip
+- [ ] Invalid block: log warning, score proposer peer -10, do NOT re-gossip
 
-### SyncCursor (`network/sync.rs`):
-- `SyncCursor { last_verified_height: u64, last_verified_hash: [u8;32], target_height: u64, pending_range: Option<HeightRange> }`
-- `HeightRange { start: u64, end: u64, peer_id: PeerId }`
-- Methods: `new(genesis_hash)`, `advance(to_height, to_hash)`, `set_target(height)`, `set_pending(range)`, `clear_pending()`, `gap() -> u64`, `needs_checkpoint() -> bool`
-- Persistence: `save(path)` / `load(path)` — JSON file at `{data_dir}/{chain_id}/sync_cursor.json`
-- On load failure: return `new(genesis_hash)` → full replay fallback
-- Persist frequency: after every verified batch (100 blocks)
+### Sync protocol messages — `network/messages.rs` additions
 
-### Sync flow:
-**Init:** Load cursor → connect to ≥1 peer (30s timeout, backoff) → send Backward request (max=1) → set `target_height = response.highest_height` → if `gap > 2*ERA_LENGTH` → checkpoint path (Phase 2.9) else → block catch-up
+- [ ] `BlockSyncRequest { start_height: u64, max_blocks: u16 (max 500), direction: SyncDirection, known_block_hash: Option<[u8;32]> }`
+- [ ] `BlockSyncResponse { blocks: Vec<Block>, highest_height: u64, batch_hash: [u8;32] }`
+- [ ] `BlockByHashRequest { block_hashes: Vec<[u8;32]> }` (max 100)
+- [ ] `BlockByHashResponse { blocks: Vec<Block> }` — request order, missing omitted
+- [ ] `SyncDirection` enum: `Forward | Backward`
+- [ ] `compute_batch_hash(genesis_hash, &[Block]) -> [u8;32]` — rolling BLAKE3 per ADR-018
+- [ ] SCALE Encode + Decode for all 4 message types
+- [ ] Validation: max_blocks ∈ [1,500], max_hashes ∈ [1,100]
+- [ ] Register as libp2p Request-Response protocols: `/mononium/sync/1.0`, `/mononium/hash-sync/1.0`
+
+### SyncCursor — `network/sync.rs`
+
+- [ ] `SyncCursor { last_verified_height, last_verified_hash, target_height, pending_range: Option<HeightRange> }`
+- [ ] `HeightRange { start, end, peer_id }`
+- [ ] `new(genesis_hash)` → height 0, hash = genesis
+- [ ] `advance(to_height, to_hash)` — update cursor
+- [ ] `set_target(height)`, `set_pending(range)`, `clear_pending()`
+- [ ] `gap() -> u64`, `needs_checkpoint() -> bool`
+- [ ] Persistence: `save(path)` / `load(path)` — JSON at `{data_dir}/{chain_id}/sync_cursor.json`
+- [ ] On load failure: return `new(genesis_hash)` (full replay fallback)
+- [ ] Persist after every verified batch (100 blocks), not after every block
+
+### Sync flow
+
+**Init:**
+
+- [ ] Load cursor from disk → connect to ≥ 1 peer (30s timeout, backoff: 30s→60s→120s→300s cap)
+- [ ] Learn tip: send Backward request (max_blocks=1) → set `target_height = response.highest_height`
+- [ ] If `gap > 2 * ERA_LENGTH` → checkpoint path (Phase 2.9); else → block catch-up
 
 **Block catch-up loop:**
-- Select peer (round-robin through Good peers, skip Neutral)
-- Request 100 blocks with `known_block_hash = last_verified_hash`
-- Timeout: 5s → 10s → 15s per peer; after 3 peers → 10s pause, restart range
-- On response: compute `local_batch_hash` → compare to `response.batch_hash` → mismatch means fork
-- If hash matches: verify parent_hash chain → verify each block (sig, timestamp, re-execute) → if any fails → entire batch rejected
-- If all pass: `cursor.advance(len, last_hash)`, persist, continue
 
-**known_block_hash anchor (fork prevention):**
-- Requesting peer sends `last_verified_hash` as anchor
-- Responding peer MUST verify anchor exists at `start_height - 1`; if not → return empty `blocks: []`
-- Syncing node receives empty → tries different peer (first peer is on different fork)
+- [ ] While `cursor.last_verified_height < cursor.target_height`:
+  - [ ] Select peer (round-robin through Good peers, skip Neutral)
+  - [ ] Request 100 blocks with `known_block_hash = last_verified_hash`
+  - [ ] Timeout: 5s → 10s → 15s per peer; after 3 peers → 10s pause, restart range
+  - [ ] On response: compute `local_batch_hash` → compare to `response.batch_hash`
+  - [ ] If mismatch → fork/corrupt → disconnect, score -= 10, try next peer
+  - [ ] If match: verify parent_hash chain → verify each block (sig, timestamp, re-execute)
+  - [ ] If any block fails → entire batch rejected, score -= 20, try next peer
+  - [ ] If all pass → `cursor.advance(len, last_hash)`, persist
 
-**Fork detection:**
-- Batch hash mismatch → disconnect, score -= 10, try next peer
-- If peer B returns different blocks than peer A → request from peer C (tiebreaker, majority wins)
-- Minority peer scored down (score -= 5)
+**known_block_hash anchor:**
 
-**Disconnection handling:**
-- Mid-batch disconnect: discard unverified blocks, clear pending_range, request same range from next peer with same known_block_hash
-- Stateless: no session, no partial batch tracking
+- [ ] Request includes last verified hash; responder MUST return empty if anchor doesn't exist at `start_height - 1`
+- [ ] Empty response → try different peer (first peer is on different fork)
 
-**Retry (per Network.md table):** 5s/10s/15s per attempt, 10s pause after 3 failures, exponential backoff (10s→30s→60s→120s→300s) after 10 consecutive batch failures across all peers
-**No-peer stall:** retry forever (5s→10s→30s→30s), never exit or panic
-**Sync complete:** `last_verified_height >= target_height` AND last block timestamp within 10s of local clock AND ≥1 peer AND no pending verification
+**Fork disagreement resolution:**
 
-### Integration tests:
-- Two nodes (height 100 vs 0) → B syncs to A's tip, state roots match
-- Disconnection mid-batch (50/100 blocks) → resume with new peer, no gaps
-- Fork detection: peer A serves wrong fork → B detects via batch_hash, switches to peer C
+- [ ] Peers A and B return different batch_hashes for same range → request from peer C (tiebreaker, majority wins)
+- [ ] Minority peer scored down (score -= 5)
+
+**Disconnection:**
+
+- [ ] Mid-batch disconnect: discard incomplete (unverified), clear pending_range, request same range from next peer with same known_block_hash
+- [ ] No session state, no partial batch tracking
+
+**Retry:**
+
+- [ ] Retry per Network.md table: 5s/10s/15s → 10s pause after 3 failures
+- [ ] 10 consecutive batch failures → log critical, exponential backoff (10s→30s→60s→120s→300s cap)
+- [ ] No-peer stall: retry forever (5s→10s→30s→30s repeated), never exit or panic
+
+**Sync complete:**
+
+- [ ] Conditions: `last_verified_height >= target_height` AND last block timestamp within 10s of local clock AND ≥ 1 peer AND no pending verification
+- [ ] Emit event to consensus engine → begin consensus participation
+
+### Tests
+
+- [ ] Unit: `compute_batch_hash` — 0 blocks = genesis_hash, N blocks deterministic, any change = different hash
+- [ ] Unit: SyncCursor new/advance/gap/persist roundtrip, load failure → fallback
+- [ ] Unit: all 4 sync message types SCALE roundtrip
+- [ ] Integration: node A at height 100, B at 0 → B syncs to A's tip, state roots match
+- [ ] Integration: disconnect mid-batch (50/100) → resume with new peer, no gaps
+- [ ] Integration: fork detection → peer A serves wrong fork → B catches batch_hash mismatch, switches to C
 
 ---
 
 ## Sub-phase 2.3 — PoS Consensus Engine
 
-**From:** Consensus.md §Finality §Flow §Slot Model §Missed Slots §Fork-Choice §DI Pattern, Architecture.md §consensus/finality.rs, Protocol.md §Block Application Order
+**From:** Consensus.md §Finality §Slot Model §Fork Choice §Missed Slots §Clock Drift §DI Pattern, Architecture.md §consensus/finality.rs, Protocol.md §Block Application Order
 
-BFT commit tracking, proposer schedule integrated with real block production, verification window (4 blocks), slot timer, fork-choice (heaviest chain), missed slot penalty (0.08 MONEX/slot).
+BFT commit tracking, proposer schedule with real block production, verification window (4 blocks), slot timer, fork-choice (heaviest chain), missed slot penalty.
 
-### `consensus/finality.rs` — CommitTracker
-- `CommitTracker { commits: BTreeMap<u64, Vec<CommitVote>>, stake_weights: HashMap<[u8;32], U256>, total_active_stake: U256, finalized: BTreeSet<u64> }`
-- `new(stake_weights)` — load from state at era boundary
-- `add_vote(vote) -> bool` — verify: active validator, valid Falcon sig, not duplicate; if new and `cumulative_weight > 2/3 * total_active_stake` → mark finalized
-- `cumulative_weight(height) -> U256` — sum of unique validators' stakes who committed
-- `is_final(height) -> bool`, `last_finalized_height() -> u64`, `finality_ratio(height) -> f64`
-- Strict threshold: `> 2/3` (NOT ≥ 2/3)
-- Unit tests: vote adds weight, finality at >2/3, NOT at exactly 2/3, duplicate rejected, non-active validator rejected, bad signature rejected, 3 validators (33% each) → 2 votes final, 1 vote not
+### BFT commit tracking — `consensus/finality.rs`
 
-### `consensus/proposer.rs` — ProposerSchedule
-- `ProposerSchedule { active_set: Vec<[u8;32]>, era: u64, start_height: u64 }`
-- `proposer_for_height(height) -> [u8;32]` — `active_set[height % len]`
-- `is_scheduled_proposer(proposer, height) -> bool`
-- Unit tests: 3 validators cycle correctly, single validator proposes every slot, empty set panics (guarded by era 0 guarantee)
+- [ ] `CommitTracker { commits: BTreeMap<u64, Vec<CommitVote>>, stake_weights: HashMap<[u8;32], U256>, total_active_stake: U256, finalized: BTreeSet<u64> }`
+- [ ] `new(stake_weights)` — load active validator stakes at era boundary
+- [ ] `add_vote(vote) -> bool` — verify: active validator, valid Falcon sig over `SCALE(height || block_hash)`, not duplicate; if `cumulative_weight > 2/3 * total_active_stake` → mark finalized
+- [ ] `cumulative_weight(height) -> U256` — sum unique validators' stake weights
+- [ ] `is_final(height) -> bool`, `last_finalized_height() -> u64`, `finality_ratio(height) -> f64`
+- [ ] Strict threshold: `> 2/3` (NOT ≥ 2/3 — exactly 2/3 is not final)
+- [ ] Votes received on `mononium/votes/{chain_id}` → add_vote → if new, re-gossip
+- [ ] Unit: add votes → finality at >2/3, not at 2/3; duplicate rejected; non-active rejected; bad sig rejected
 
-### `consensus/mod.rs` — ConsensusEngine
-- Dependencies: ConsensusConfig, ProposerSchedule, CommitTracker, StateMachine, StorageEngine, Mempool, P2pService, optional ValidatorKey
-- `start_slot_timer()` — tokio interval at 5s, aligned to `genesis_time + N * block_time`
-- Each slot tick: if proposer → `propose_block()`, else → `await_block(5s)` with timeout
+### Proposer schedule — `consensus/proposer.rs`
 
-**Proposer:**
-- Collect txs from mempool (up to 500 txs / 500KB)
-- Include collected CommitVotes (gossiped during verification window)
-- Build BlockHeader, execute all txs → compute global_state_root, tx_root
-- Sign with `proposer_signature: [u8;666]` (new field on BlockHeader)
-- Store block in redb, publish via gossipsub
+- [ ] `ProposerSchedule { active_set: Vec<[u8;32]>, era, start_height }`
+- [ ] `proposer_for_height(height)` → `active_set[height % len]`
+- [ ] `is_scheduled_proposer(proposer, height) -> bool`
+- [ ] Unit: 3 validators cycle correctly, single validator all slots, empty set panics (guarded)
 
-**Non-proposer:**
-- Wait for block (5s timeout)
-- On receive: verify proposer sig, proposer match, timestamp ±2s, parent_hash match, re-execute txs → verify global_state_root
-- If valid: sign CommitVote, gossip, store block, advance height
-- If invalid: reject, no vote, score proposer peer
+### ConsensusEngine — `consensus/mod.rs`
 
-**BlockHeader change:** Add `proposer_signature: [u8;666]` field. SCALE + JSON roundtrip. Backward compat: Phase 1 blocks don't have this field — dev-only, acceptable.
+- [ ] `ConsensusEngine { config, schedule, commit_tracker, state_machine, storage, mempool, p2p, local_validator: Option<ValidatorKey>, current_height, last_block_time }`
+- [ ] `start_slot_timer()` — tokio interval at 5s, aligned to `genesis_time + N * block_time`
 
-### Fork-choice: `select_canonical(chain_a, chain_b, stake_weights)`
-- `total_stake_backing(chain)` — sum unique proposers' stake weights
-- Heavier chain wins; equal weight → no switch
-- Used in sync when peers disagree (tiebreaker from Phase 2.2)
+**Proposer behavior:**
 
-### Missed slot penalty (`consensus/era.rs`):
-- `MISSED_SLOT_PENALTY: U256 = 8 * 10^30 MOXX` (0.08 MONEX)
-- At era boundary: for each active validator, `missed = ERA_LENGTH - blocks_proposed`, penalty = `missed * MISSED_SLOT_PENALTY`
-- Penalty sent to Cap-Refill (`0x00..01`)
-- If penalty > validator.stake → fully de-staked, ejected from active set (no debt)
-- Unit tests: 10 missed slots → 0.8 MONEX penalty; 720 missed → 57.6 MONEX; penalty > stake → de-staked
+- [ ] Collect txs from mempool (up to 500 txs / 500KB)
+- [ ] Include collected CommitVotes (gossiped during verification window)
+- [ ] Build BlockHeader: height, parent_hash, global_state_root (computed), tx_root, timestamp, proposer, chain_id, **proposer_signature**
+- [ ] Execute all txs against StateMachine → compute global_state_root
+- [ ] Compute tx_root (BLAKE3 Merkle tree over tx hashes)
+- [ ] Sign header: `falcon_sign(local_sk, SCALE(header))` → store as proposer_signature
+- [ ] Store block in redb (blocks table + tx tables)
+- [ ] Publish via `P2pService::publish_block()`
 
-### Fee distribution (end of each block):
-- `total_fees = sum(all_tx_fees)`, `total_active_stake = sum(all_active_stakes)`
-- Each validator: `share = total_fees * own_stake / total_active_stake`
-- Remainder (integer truncation) → validator with lowest address among highest-stake
+**Non-proposer behavior:**
 
-### Integration tests:
-- Single proposer produces N blocks, height advances, blocks stored
-- 3-validator cluster produces 20 blocks with >2/3 BFT commits on each
-- Missed slot → empty slot, next proposer builds on last canonical
-- Clock drift rejection (timestamp >2s from local)
-- Fee distribution correct across all validators
+- [ ] Wait for block from gossipsub (event channel, 5s timeout)
+- [ ] On receive: verify proposer sig, `proposer == schedule.proposer_for_height(height)`, timestamp ±2s, parent_hash matches tip, size ≤ 500KB
+- [ ] Re-execute ALL txs → compute local_state_root → assert == block.header.global_state_root
+- [ ] If valid: sign `CommitVote { height, block_hash, validator, signature }`, gossip on votes topic, store block, advance height
+- [ ] If invalid: reject, no vote, score proposer peer -10
+- [ ] If timeout (5s): slot goes empty, height unchanged
+
+**BlockHeader update:**
+
+- [ ] Add `proposer_signature: [u8;666]` field to BlockHeader
+- [ ] SCALE + JSON roundtrip for updated header
+- [ ] Backward compat: Phase 1 single-node blocks lack this field — dev-only, acceptable break
+
+### Fork-choice — `ForkChoice::select_canonical`
+
+- [ ] `total_stake_backing(chain, stake_weights)` — sum unique proposers' stake weights
+- [ ] Heavier chain wins; equal weight → no switch (keep existing canonical)
+- [ ] Used in sync when peers disagree on blocks at same height
+
+### Missed slot penalty — `consensus/era.rs`
+
+- [ ] `MISSED_SLOT_PENALTY: U256 = 8 * 10^30` MOXX (0.08 MONEX)
+- [ ] At era boundary: for each active validator, `missed = ERA_LENGTH - blocks_proposed`, `penalty = missed * MISSED_SLOT_PENALTY`
+- [ ] Penalty sent to Cap-Refill (`0x00..01`)
+- [ ] If penalty > validator.stake → fully de-staked, ejected from active set (no debt)
+- [ ] No mid-era slashing for missed slots — reconciled at era boundary
+- [ ] Unit: 10 missed → 0.8 MONEX; 720 missed → full de-stake if stake < 57.6 MONEX
+
+### Fee distribution (end of each block)
+
+- [ ] `total_fees = sum(all tx fees in block)`, `total_active_stake = sum(all active stakes)`
+- [ ] Each validator: `share = total_fees * own_stake / total_active_stake`
+- [ ] Remainder (integer truncation) → validator with lowest address among highest-stake validators
+
+### Clock drift
+
+- [ ] `block.timestamp` is u64 Unix seconds, validated ±2s of local clock
+- [ ] Monotonic: `block.timestamp >= parent_block.timestamp`
+- [ ] Drifted block rejected → slot goes empty, missed slot penalty applies
+
+### Integration tests
+
+- [ ] Single proposer: produces N blocks, height advances, blocks stored in redb
+- [ ] 3-validator cluster produces 20 blocks with >2/3 BFT commits on each
+- [ ] Missed slot: proposer offline → slot empty → next proposer builds on last canonical
+- [ ] Clock drift: block with timestamp >2s from local rejected
+- [ ] Fee distribution: all validators receive correct pro-rata share
+- [ ] All validators have same canonical chain height and state root after N blocks
 
 ---
 
@@ -635,142 +636,229 @@ BFT commit tracking, proposer schedule integrated with real block production, ve
 
 **From:** Slashing.md §Evidence Format §Freeze Period §Thaw §Double-Slashing, Consensus.md §Equivocation Fork Resolution
 
-Equivocation evidence type + verification. State machine: 90% stake slash + 10% reporter bounty. 72-era freeze management. Evidence gossiping.
+Equivocation evidence type + 5-check verification. State machine: 90% stake slash + 10% reporter bounty. 72-era freeze management. Evidence gossiping.
 
-### `EquivocationEvidence` struct (`consensus/slashing.rs`):
-- `{ header_a: BlockHeader, signature_a: [u8;666], header_b: BlockHeader, signature_b: [u8;666], proposer: [u8;32] }`
-- SCALE + JSON derives, roundtrip tests
-- `verify_equivocation(evidence, public_key) -> Result<()>`:
-  1. `header_a.height == header_b.height` — same height
-  2. `header_a.parent_hash == header_b.parent_hash` — same parent
-  3. `header_a != header_b` — distinct (hash differs)
-  4. `falcon_verify(pk, SCALE(header_a), sig_a)` — valid
-  5. `falcon_verify(pk, SCALE(header_b), sig_b)` — valid
-- 5 distinct error variants in LibError for each failure
-- Unit tests: all 5 checks with valid/invalid inputs; identical blocks rejected; one good + one bad sig rejected
+### Evidence type — `consensus/slashing.rs`
 
-### Evidence gossip:
-- Published on `mononium/evidence/{chain_id}` via `P2pService::publish_evidence()`
-- Incoming handler: validate size ≤ 5KB, queue for state machine
-- Evidence submitted via P2P gossip (NOT as a transaction — direct state machine call)
+- [ ] `EquivocationEvidence { header_a: BlockHeader, signature_a: [u8;666], header_b: BlockHeader, signature_b: [u8;666], proposer: [u8;32] }`
+- [ ] SCALE + JSON derives, roundtrip tests
+- [ ] `verify_equivocation(evidence, public_key) -> Result<()>`:
+  1. `header_a.height == header_b.height`
+  2. `header_a.parent_hash == header_b.parent_hash`
+  3. `header_a != header_b` (hash differs)
+  4. `falcon_verify(pk, SCALE(header_a), sig_a)`
+  5. `falcon_verify(pk, SCALE(header_b), sig_b)`
+- [ ] 5 distinct LibError variants: `EquivocationHeightMismatch`, `EquivocationParentMismatch`, `EquivocationIdenticalBlocks`, `EquivocationSigAInvalid`, `EquivocationSigBInvalid`
+- [ ] Unit: all 5 checks — valid accepted, each violation independently rejected, identical blocks rejected, one good + one bad sig rejected
 
-### State machine: `apply_slash(evidence, reporter_addr)`:
-- Load validator entry, verify evidence, verify not already frozen
-- Compute: `slashed = stake * 90 / 100`, `burn = slashed * 90 / 100`, `bounty = slashed * 10 / 100`, `remaining = stake - slashed`
-- Send `burn` to `0x00..00` (permanent destruction)
-- Credit `bounty` to reporter's locked balance
-- Reporter types: active validator → bounty added to stake; inactive staker → added to stake; non-validator → locked MONEX balance (not spendable)
-- Update validator: `stake = remaining, status = Frozen { frozen_until: current_era + 72 }`
-- Return `SlashResult { slashed_amount, burn_amount, bounty_amount, remaining_stake }`
-- Unit tests: 1000 MONEX → 810 burn + 90 bounty + 100 remaining; 10 MONEX → 8.1 burn + 0.9 bounty + 1 remaining; already-frozen rejected; bad evidence rejected
+### Evidence gossip
 
-### Freeze management (era boundary hook):
-- For each validator with `status == Frozen` and `frozen_until <= current_era`:
-  - If `stake >= MIN_VALIDATOR_STAKE` → status = Thawed (re-enters candidate pool)
-  - If `stake < MIN_VALIDATOR_STAKE` → status = Registered (no stake, must re-stake)
-- Frozen validators: excluded from proposer schedule, cannot vote, excluded from fee distribution
-- Mid-era freeze: slot goes empty (not reassigned), no additional missed-slot penalty
-- Era boundary processing order: thaw → election → proposer schedule
-- Double-slashing: can be slashed again after thawed (fresh 72-era freeze)
-- Already-frozen: secondary evidence ignored
-- Unit tests: freeze countdown, thaw at era boundary, mid-era freeze excludes from fee distribution, thawed validator re-elected
+- [ ] Published on `mononium/evidence/{chain_id}` via P2pService
+- [ ] Incoming handler: validate size ≤ 5KB, queue for state machine (direct call, not a transaction)
+- [ ] Re-gossip to peers (flood for important messages)
 
-### Integration tests:
-- 3-validator cluster, A equivocates → B submits evidence → A slashed, frozen → A's remaining slots go empty → fork resolved by heaviest chain → 72 eras later A thaws
+### State machine — `apply_slash`
+
+- [ ] `StateMachine::apply_slash(evidence, reporter_addr)` — load validator, verify evidence, verify not already frozen
+- [ ] Compute: `slashed = stake * 90 / 100`, `burn = slashed * 90 / 100`, `bounty = slashed * 10 / 100`, `remaining = stake - slashed`
+- [ ] Send `burn` to `0x00..00` (permanent destruction)
+- [ ] Credit `bounty` to reporter's locked balance:
+  - [ ] Reporter is active validator → bounty added to validator stake
+  - [ ] Reporter is inactive staker → bounty added to existing stake
+  - [ ] Reporter is non-validator → locked MONEX balance (not spendable)
+- [ ] Update validator: `stake = remaining, status = Frozen { frozen_until: current_era + 72 }`
+- [ ] Return `SlashResult { slashed_amount, burn_amount, bounty_amount, remaining_stake }`
+- [ ] Unit: 1000 MONEX → 810 burn + 90 bounty + 100 remaining; 10 MONEX → 8.1 + 0.9 + 1; already-frozen rejected; bad evidence rejected
+
+### Freeze management (era boundary hook)
+
+- [ ] For each Frozen validator with `frozen_until <= current_era`:
+  - [ ] If `stake >= 1 MONEX` → status = Thawed (re-enters candidate pool)
+  - [ ] If `stake < 1 MONEX` → status = Registered (no stake)
+- [ ] Frozen validators: excluded from proposer schedule, cannot vote, excluded from fee distribution
+- [ ] Mid-era freeze: excluded from remaining fee distribution; scheduled slots go empty (not reassigned); no additional missed-slot penalty
+- [ ] Era boundary processing order: thaw → election → proposer schedule
+- [ ] Double-slashing: can be slashed again after thawed (fresh 72-era freeze); already-frozen: secondary evidence ignored
+- [ ] Unit: freeze countdown, thaw at era boundary, thawed validator re-elected, mid-era freeze excludes from fee distribution
+
+### Integration tests
+
+- [ ] 3-validator cluster, A equivocates → B submits evidence via gossipsub → A slashed 90% → A frozen → A's slots go empty → fork resolved by heaviest chain (B+C > A) → 72 eras later A thaws and re-enters candidate pool
+- [ ] Reporter bounty: non-validator reporter receives locked balance (not immediately spendable)
 
 ---
 
 ## Sub-phase 2.5 — Governance Module
 
-**From:** Governance.md (complete — Proposal Lifecycle, Types, Tally, Execution, Era-boundary Hook, Parameter Bounds, State Machine Integration)
+**From:** Governance.md (complete spec), Architecture.md §governance/ module tree
 
-On-chain stake-weighted governance. Proposal submission, 7-era voting window, era-boundary tally (quorum ≥2/3, threshold >50%), automatic execution at next era boundary. 10 mutable parameters with bounds.
+On-chain stake-weighted governance. Proposal submission, 7-era voting window, era-boundary tally (quorum ≥2/3, threshold >50%), automatic execution. 10 mutable parameters with bounds.
 
 ### Module structure — `governance/`
-- `types.rs` — `Proposal { proposal_id, proposer, title, description, actions, deposit, submission_era, status }`
-- `ProposalStatus { Active, Approved, Rejected, Expired, Cancelled }`
-- `Vote { proposal_id, voter, approve: bool, weight: U256, block_height: u64 }`
-- `GovernanceAction { UpdateParam { param: GovernanceParam, new_value: U256 }, IncreaseShards { new_count, effective_era } }`
-- `GovernanceParam` enum (10 variants): MaxValidators, EraLength, BlockSizeCapBytes, BlockTxCap, FlatFee, PerByteRate, AntiSpamDeposit, MissedSlotPenalty, SupplyCeilingRate, SupplyHeadroomRate
-- All types: SCALE + JSON derives, roundtrip tests
-- `constants.rs` — `PROPOSAL_DEPOSIT = 100 * ONE_MONEX`, `VOTING_WINDOW_ERAS = 7`, `MAX_ACTIVE_PROPOSALS_PER_PROPOSER = 5`, `MAX_PROPOSALS_PER_ERA = 50`, quorum = 2/3 numerator/denominator, title max 256 bytes, desc max 4096 bytes
-- `PARAM_BOUNDS: HashMap<GovernanceParam, (U256, U256)>` — min/max per param matching Governance.md bounds table
 
-### GovernanceEngine (`governance/mod.rs`):
-- `submit_proposal(tx_args)` — validate stake ≥ 100 MONEX, title/desc size, actions, param bounds, rate limits, param lock; deduct deposit; store in SMT at `NS_GOVERNANCE ++ prop_{id}`
-- `cast_vote(tx_args)` — validate proposal exists and in window, voter has >0 stake, snapshot weight, store/overwrite vote at `NS_GOVERNANCE ++ vote_{id}_{voter}`
-- `cancel_proposal(proposal_id, caller)` — only proposer, only before any votes, only during window; return deposit
-- `tally_proposals(current_era)` — for each proposal at `submission_era + 7 == current_era`: sum votes, check quorum (≥2/3 total active stake), check threshold (>50% of participating), return deposit or forfeit
-- `execute_approved(current_era)` — sort approved proposals by proposal_id hash, apply each action in order; last-write-wins for conflicting params
-- SMT namespace: `NS_GOVERNANCE = 0x03`
+- [ ] `governance/types.rs`:
+  - [ ] `Proposal { proposal_id: [u8;32], proposer, title: Vec<u8> (max 256B), description: Vec<u8> (max 4096B), actions: Vec<GovernanceAction>, deposit: U256, submission_era: u64, status: ProposalStatus }`
+  - [ ] `ProposalStatus { Active, Approved, Rejected, Expired, Cancelled }`
+  - [ ] `Vote { proposal_id, voter, approve: bool, weight: U256 (snapshotted), block_height: u64 }`
+  - [ ] `GovernanceAction::UpdateParam { param: GovernanceParam, new_value: U256 }`
+  - [ ] `GovernanceAction::IncreaseShards { new_count: u16, effective_era: u64 }`
+  - [ ] `GovernanceParam` enum (10 variants): MaxValidators, EraLength, BlockSizeCapBytes, BlockTxCap, FlatFee, PerByteRate, AntiSpamDeposit, MissedSlotPenalty, SupplyCeilingRate, SupplyHeadroomRate
+  - [ ] SCALE + JSON derives for all types, roundtrip tests
+- [ ] `governance/constants.rs`:
+  - [ ] `PROPOSAL_DEPOSIT = 100 * ONE_MONEX`
+  - [ ] `VOTING_WINDOW_ERAS = 7`
+  - [ ] `MAX_ACTIVE_PROPOSALS_PER_PROPOSER = 5`
+  - [ ] `MAX_PROPOSALS_PER_ERA = 50`
+  - [ ] Quorum: ≥ 2/3 of total active stake (≥, not >)
+  - [ ] Threshold: > 50% of participating stake
+  - [ ] Title max 256 bytes, desc max 4096 bytes
+- [ ] `PARAM_BOUNDS: HashMap<GovernanceParam, (U256, U256)>`:
+  - [ ] MaxValidators: [1, 1000]; EraLength: [100, 10000]; BlockSizeCapBytes: [1024, 2097152]
+  - [ ] BlockTxCap: [1, 10000]; FlatFee: [0, 100 MONEX]; PerByteRate: [0, 1 MONEX]
+  - [ ] AntiSpamDeposit: [0, 100 MONEX]; SupplyCeilingRate: [0, 20]; SupplyHeadroomRate: [0, 20]
 
-### TxBody variants:
-- Option A (chosen): Governance as regular transactions — `TxBody::Propose { proposal }`, `TxBody::Vote { proposal_id, approve }`, `TxBody::CancelProposal { proposal_id }`
-- Standard fee + anti-spam deposit apply
+### GovernanceEngine — `governance/mod.rs`
 
-### Era-boundary integration:
-- After validator set recalculation, before proposer schedule reset:
-  1. Tally proposals whose window closed
+**Proposal submission:**
+
+- [ ] `submit_proposal(tx_args)` — compute `proposal_id = blake3(proposer || nonce || title)`, validate stake ≥ 100 MONEX, title/desc size, actions valid, param bounds, rate limits (5/proposer, 50/era), param lock (no active proposal for same param); deduct deposit; store in SMT at `NS_GOVERNANCE ++ prop_{id}`
+
+**Vote casting:**
+
+- [ ] `cast_vote(tx_args)` — validate proposal exists and in window (`submission_era ≤ current_era < submission_era + 7`), voter has > 0 stake, snapshot weight, store/overwrite at `NS_GOVERNANCE ++ vote_{id}_{voter}`
+- [ ] Second vote overwrites first (allows changing position)
+
+**Cancellation:**
+
+- [ ] `cancel_proposal(proposal_id, caller)` — only proposer, only before any votes cast, only during window; return deposit; set status = Cancelled
+
+**Tally (era boundary hook):**
+
+- [ ] For each Active proposal where `submission_era + 7 == current_era`:
+  - [ ] Sum all approve/reject weights → total_participating
+  - [ ] Load total_active_stake from state
+  - [ ] `total_participating >= total_active_stake * 2/3`? Quorum met?
+  - [ ] If quorum: `approve_weight > total_participating / 2` → Approved; else → Rejected; return deposit
+  - [ ] If no quorum: Expired, deposit forfeited to Cap-Refill (`0x00..01`)
+
+**Execution (next era boundary):**
+
+- [ ] Collect Approved proposals, sort by proposal_id (lexicographic ascending)
+- [ ] Apply each action: `UpdateParam` → write to `gov_param_{name}` in SMT; `IncreaseShards` → trigger event (Phase 3+)
+- [ ] Last-write-wins for conflicting params (last in sorted order)
+
+### TxBody variants
+
+- [ ] `TxBody::Propose { proposal_id, title, description, actions }` — regular tx, pays fee + deposit
+- [ ] `TxBody::Vote { proposal_id, approve: bool }` — regular tx, pays fee
+- [ ] `TxBody::CancelProposal { proposal_id }` — regular tx, pays fee
+- [ ] SCALE + JSON roundtrip for all 3 variants
+- [ ] Standard HybridFee applies to governance txs
+
+### State namespace
+
+- [ ] `NS_GOVERNANCE = 0x03` in `crypto/trie.rs`
+- [ ] Sub-keys: `prop_{proposal_id_hex}` → Proposal, `vote_{id_hex}_{voter_hex}` → Vote, `gov_param_{name}` → U256, `gov_active_count` → u64
+
+### Era boundary integration
+
+- [ ] At era boundary, after validator set recalculation, before proposer schedule reset:
+  1. Tally proposals whose voting window closed
   2. Execute approved proposals
-  3. Update consensus params from governance state
+  3. Update consensus params from governance state (max_validators, era_length, etc.)
+- [ ] Approved proposals execute at next era boundary after tallying (never mid-era)
 
-### 31 unit tests + 6 integration tests (from Governance.md test matrix):
-- All validation rules (stake, size, bounds, rate limits, locks, param bounds for every param)
-- All vote rules (window, stake, overwrite)
-- Cancel rules (proposer, no votes, window)
-- Tally: quorum met/passed, met/rejected, not met/expired; boundaries (exactly 2/3, 50/50 split)
-- Execution: single param, multiple params, last-write-wins, sorted order
-- Deposit: deduction, return, forfeit
-- Full flow: propose → vote → tally → execute param change
-- Parameter lock: same param blocked, different params allowed
+### Tests
+
+**Unit tests (31):**
+
+- [ ] Submit: insufficient stake rejected, title/desc size exceeded, param out of bounds (each param tested), IncreaseShards not-increase rejected, increase grace < 24 eras rejected, proposer at 5-cap rejected, global 50/era cap rejected, param lock active → second same-param rejected, different-param allowed
+- [ ] Vote: non-existent proposal, before window opens, after window closes, voter 0 stake, overwrite (second vote changes)
+- [ ] Cancel: non-proposer, after votes exist, before any votes returns deposit
+- [ ] Tally: quorum met/passed, quorum met/rejected, quorum not met/expired; boundaries (exactly 2/3 qualifies, 50/50 split = rejected)
+- [ ] Execution: single param, multiple params, last-write-wins, sorted order
+- [ ] Deposit: deducted on submit, returned on pass/reject, forfeited on expire
+
+**Integration tests (6):**
+
+- [ ] Full flow: propose → vote → era boundary tally → passes → next era boundary → param takes effect
+- [ ] Expiry: propose → vote (insufficient quorum) → era boundary → expired → deposit forfeited
+- [ ] Cancellation: propose → cancel (before votes) → deposit returned
+- [ ] Overwrite: propose → vote A → vote B (changed position) → final vote counts
+- [ ] Param lock: propose MaxValidators → second MaxValidators rejected → propose EraLength accepted
+- [ ] Multi-execution: two proposals pass for different params → both execute in sorted order
 
 ---
 
 ## Sub-phase 2.6 — RPC (jsonrpsee + REST Expansion)
 
-**From:** Architecture.md §RPC Interface (JSON-RPC methods table, error codes, subscriptions table), NodeConfig.md §network.rpc_port
+**From:** Architecture.md §RPC Interface (methods table, subscriptions, error codes), NodeConfig.md §network.rpc_port
 
-Add jsonrpsee WebSocket server. 16 JSON-RPC methods + 3 subscriptions. Expand REST with missing endpoints. Both servers on separate ports.
+Add jsonrpsee WebSocket server (16 methods + 3 subscriptions). Expand REST with missing endpoints. Both servers on separate ports behind graceful shutdown.
 
-### `rpc/jsonrpc.rs` — jsonrpsee server
-- Port: `network.rpc_port` (default 9944)
-- Methods (exact params + returns from Architecture.md table):
-  - `tx_submit(Transaction)` → `TxHash`
-  - `tx_status(TxHash)` → `{ status: \"pending\"|\"finalized\"|\"failed\", height?: u64, index?: u32 }`
-  - `block_get(BlockId)` → `Block`
-  - `block_header(BlockId)` → `BlockHeader`
-  - `block_latest()` → `BlockHeader`
-  - `state_get_balance(Address)` → `U256` (hex string)
-  - `state_get_nonce(Address)` → `u64`
-  - `validator_set()` → `Vec<ValidatorInfo>`
-  - `validator_stake(Address)` → `U256`
-  - `era_current()` → `u64`
-  - `chain_get_height()` → `u64`
-  - `chain_get_genesis()` → `Hash`
-  - `chain_get_health()` → `{ status, height, peers, finalized_height }`
-  - `network_peers()` → `Vec<PeerInfo>`
-  - `governance_proposals(status?)` → `Vec<Proposal>`
-  - `governance_params()` → `Vec<GovernanceParamValue>`
-- Subscriptions: `subscribe_blocks` (→ BlockHeader), `subscribe_finality` (→ FinalityEvent), `subscribe_votes` (→ CommitVote)
-- Error codes: 0=Success, -1=Internal, -2=Invalid params, -3=Tx validation, -4=Block not found, -5=Tx not found, -6=Address not found, -7=Rate limited
+### jsonrpsee server — `rpc/jsonrpc.rs`
 
-### REST expansion (`rpc/rest.rs`):
-- GET `/nonce/{address}` — returns u64
-- GET `/validators` — `Vec<ValidatorInfo>`
-- GET `/validator/{address}` — `ValidatorInfo`
-- GET `/genesis` — genesis block hash (hex)
-- GET `/block/{hash}` — block by 32-byte hex hash
+- [ ] `RpcServer { config: RpcConfig, state: Arc<AppState> }`
+- [ ] `RpcConfig { rpc_port: u16 (default 9944), rest_port: u16 (default 9933), max_connections: u32 }`
+- [ ] `start()` — spawn jsonrpsee (WebSocket) + axum (REST) on separate ports
+- [ ] Graceful shutdown: SIGINT/SIGTERM → drain → stop both servers
+- [ ] CORS: allow all origins (devnet), configurable for production
+- [ ] `AppState { state_machine, storage, mempool, consensus, p2p }` shared across both servers
 
-### Config integration:
-- `network.rpc_port` (u16, default 9944)
-- Validation: rpc_port != p2p_port (30333) and != rest_port (9933)
-- CLI: `--rpc-port`, `--rest-port`
+### JSON-RPC methods (16)
 
-### Integration tests:
-- Submit tx via jsonrpsee → query status → verify in block
-- REST + JSON-RPC simultaneously on different ports
-- WebSocket subscription receives block events
-- Error codes correct per method
+- [ ] `tx_submit(Transaction)` → `TxHash` — deserialize SCALE-hex tx, validate, submit to mempool
+- [ ] `tx_status(TxHash)` → `{ status: \"pending\"|\"finalized\"|\"failed\", height?: u64, index?: u32 }`
+- [ ] `block_get(BlockId)` → `Block` — by height or hash
+- [ ] `block_header(BlockId)` → `BlockHeader` — header only
+- [ ] `block_latest()` → `BlockHeader`
+- [ ] `state_get_balance(Address)` → `U256` (hex string)
+- [ ] `state_get_nonce(Address)` → `u64`
+- [ ] `validator_set()` → `Vec<ValidatorInfo>`
+- [ ] `validator_stake(Address)` → `U256`
+- [ ] `era_current()` → `u64`
+- [ ] `chain_get_height()` → `u64`
+- [ ] `chain_get_genesis()` → `Hash`
+- [ ] `chain_get_health()` → `{ status, height, peers, finalized_height }`
+- [ ] `network_peers()` → `Vec<PeerInfo>` (id, address, score, direction)
+- [ ] `governance_proposals(status?)` → `Vec<Proposal>`
+- [ ] `governance_params()` → `Vec<GovernanceParamValue>` (param, value, min, max)
+
+### Subscriptions (3)
+
+- [ ] `subscribe_blocks` → `Event<BlockHeader>` — on each new block
+- [ ] `subscribe_finality` → `Event<FinalityEvent>` — when block reaches >2/3 commits
+- [ ] `subscribe_votes` → `Event<CommitVote>` — on each verified vote
+
+### Error codes (consistent across REST + JSON-RPC)
+
+- [ ] 0 = Success, -1 = Internal, -2 = Invalid params, -3 = Tx validation, -4 = Block not found, -5 = Tx not found, -6 = Address not found, -7 = Rate limited
+- [ ] REST: `{ \"error\": { \"code\": int, \"message\": string } }` with HTTP 400/404/500
+- [ ] JSON-RPC: standard `{ \"jsonrpc\": \"2.0\", \"error\": { \"code\", \"message\" }, \"id\" }`
+
+### REST expansion — `rpc/rest.rs`
+
+- [ ] GET `/nonce/{address}` → u64
+- [ ] GET `/validators` → `Vec<ValidatorInfo>`
+- [ ] GET `/validator/{address}` → `ValidatorInfo`
+- [ ] GET `/genesis` → genesis block hash (hex)
+- [ ] GET `/block/{hash}` → block by 32-byte hex hash
+- [ ] GET `/health` — expanded to include `{ height, peers, finalized_height }`
+
+### Config integration
+
+- [ ] `config/mod.rs`: `network.rpc_port` (u16, default 9944)
+- [ ] Validation: rpc_port != p2p_port (30333) and != rest_port (9933)
+- [ ] CLI flags: `--rpc-port` (default 9944), `--rest-port` (default 9933)
+
+### Tests
+
+- [ ] Unit: all 16 method param parsing + response serialization
+- [ ] Unit: all 8 error codes returned from correct failure modes
+- [ ] Integration: submit tx via jsonrpsee → query status → confirm in block
+- [ ] Integration: REST + JSON-RPC simultaneously on different ports
+- [ ] Integration: WebSocket subscription receives block events
+- [ ] Integration: bad request returns correct error code + message
 
 ---
 
@@ -778,117 +866,107 @@ Add jsonrpsee WebSocket server. 16 JSON-RPC methods + 3 subscriptions. Expand RE
 
 **From:** Architecture.md §Node Startup Lifecycle (steps 1-16) §Startup Preview, Consensus.md §Bootstrap Phase, Network.md §Network Configuration, Validators.md §Multi-Validator Simulation
 
-Full node startup lifecycle with P2P, consensus, bootstrap phase. Observer mode. Docker compose for local multi-validator.
+Full node startup lifecycle with P2P, consensus, bootstrap phase. Observer mode. Docker compose.
 
-### Node startup (mononium-cli/src/node.rs):
+### Node startup — `mononium-cli/src/node.rs`
 
-**Step 1-6 (Phase 1):** CLI args → config → merge → key load → passphrase → key derivation. Verify all Phase 2 config flags added.
+- [ ] Step 1-6 (Phase 1): CLI args → config → merge → key load → passphrase → key derivation. Verify Phase 2 flags added.
+- [ ] **Step 7 — Startup preview (NEW):** Display network, role, address, data dir, genesis, P2P/REST/RPC ports, boot peer count, storage mode. [y/N] prompt. Observer mode: \"Role: Observer (no signing)\".
+- [ ] Step 8-10 (Phase 1): Open DB → genesis → load state. Verify.
+- [ ] **Step 11:** Start libp2p host — `P2pService::new()` + `::start()` with merged config
+- [ ] **Step 12:** Connect bootnodes → kademlia → ≥1 peer (30s timeout)
+- [ ] **Step 13:** Init consensus — load active set, generate proposer schedule
+- [ ] **Step 14:** Start slot timer — begin block production/voting (enter sync mode first if behind)
+- [ ] **Step 15:** Start RPC — axum (REST) + jsonrpsee (WebSocket) on separate ports
+- [ ] **Step 16:** Signal handlers — SIGINT/SIGTERM → graceful shutdown (10s timeout)
 
-**Step 7 — Startup preview (NEW):**
-```
-Mononium Node v0.1.0 — Startup Preview
-  Network:      Devnet (chain ID: 1)
-  Role:         Validator (key: my-validator)
-  Address:      0x3a1b...checksum
-  Data dir:     ~/.mononium/data/devnet/
-  Genesis:      configs/genesis.devnet.json
-  P2P:          127.0.0.1:30333
-  REST:         127.0.0.1:9933
-  RPC:          127.0.0.1:9944
-  Boot peers:   3
-  Storage:      full mode
+### Bootstrap phase
 
-Start node? [y/N]
-```
-- If N → clean exit (code 0). Prevents running wrong key on wrong network.
-- Observer mode: show \"Role: Observer (no signing)\"
+- [ ] Genesis `bootstrap { public_keys: [...], blocks: N }` field parsed
+- [ ] Bootstrap duration per tier: localnet=1, devnet=20, testnet=100, mainnet=100
+- [ ] Round-robin proposer selection over bootstrap keys for blocks 1..N
+- [ ] Non-bootstrap validator blocks rejected during phase
+- [ ] Bootstrap proposers include RegisterValidator/Stake txs from other validators
+- [ ] At block N+1: snapshot registered validators, run Open election → commit active set (up to max_validators)
+- [ ] Bootstrap keys have no special status after phase ends (regular validators if registered)
+- [ ] Era 0: any registered validator active (no stake minimum)
+- [ ] Era 1+: Top-N by stake (≥1 MONEX)
+- [ ] Update all 4 genesis files with bootstrap field
 
-**Step 8-10 (Phase 1):** Open DB → genesis → load state
+### Observer mode
 
-**Step 11 — Start libp2p:** `P2pService::new()` with merged config, `::start()`
+- [ ] `observer: true` config or `--observer` CLI flag
+- [ ] No key loaded, no passphrase prompt, no consensus participation
+- [ ] Full block validation (same as non-proposer), no votes, no proposals
+- [ ] Sync-only: follows canonical chain, serves RPC
+- [ ] P2P fully functional (receives all gossip)
 
-**Step 12 — Connect bootnodes:** Bootstrap → kademlia → ≥1 peer required (30s timeout)
+### Config files
 
-**Step 13 — Init consensus:** Load active set, generate proposer schedule
+- [ ] `configs/node.localnet.yaml` — mdns=true, bootnodes=[]
+- [ ] `configs/node.devnet.yaml` — bootnodes populated, mdns=false
+- [ ] `configs/node.observer.yaml` — observer mode example
+- [ ] CLI: `--observer` override, `--rpc-port`, `--rest-port`
 
-**Step 14 — Start slot timer:** Begin block production/voting
+### Docker compose
 
-**Step 15 — Start RPC:** axum + jsonrpsee
+- [ ] `Dockerfile` — multi-stage: build on `rust:1.85-slim-bookworm`, runtime on `debian:bookworm-slim`
+- [ ] `docker/docker-compose.yml` — bootstrap node + N validators + RPC observer
+- [ ] Unique ports per container: P2P 30333+N, REST 9933+N, RPC 9944+N
+- [ ] Shared docker network, mDNS disabled, explicit bootnodes
+- [ ] `docker/generate-keys.sh` — generates N Falcon-512 key files
+- [ ] `docker compose up -d --scale validator=3` → 1 bootstrap + 3 validators + 1 RPC
 
-**Step 16 — Signal handlers:** SIGINT/SIGTERM → graceful shutdown (10s timeout)
+### Integration tests
 
-### Bootstrap phase:
-- Genesis `bootstrap { public_keys: [...], blocks: N }` field
-- Bootstrap duration per tier: localnet=1, devnet=20, testnet=100, mainnet=100
-- Round-robin over bootstrap keys for first N blocks
-- Non-bootstrap blocks rejected during phase
-- At N+1: snapshot registered validators, run Open election, commit active set
-- Bootstrap keys have no special status after phase
-- Era 0: any registered validator is active (no stake needed)
-- Era 1+: Top-N by stake (≥1 MONEX minimum)
-- Update configs: all 4 genesis files with bootstrap field
-
-### Observer mode:
-- `observer: true` or `--observer` CLI flag
-- No key loaded, no passphrase, no consensus participation
-- Full block validation (same as non-proposer), no votes, no proposals
-- RPC fully functional, P2P fully functional
-
-### Config files:
-- `configs/node.localnet.yaml` — mDNS=true, empty bootnodes
-- `configs/node.devnet.yaml` — explicit bootnodes
-- `configs/node.observer.yaml` — observer mode example
-
-### Docker compose:
-- `Dockerfile` — multi-stage: `rust:1.85-slim-bookworm` build → `debian:bookworm-slim` runtime
-- `docker/docker-compose.yml` — bootstrap + N validators + RPC observer
-- Unique ports per container (30333+N, 9933+N, 9944+N)
-- Shared docker network, mDNS disabled, explicit bootnodes
-- Key generation script: `docker/generate-keys.sh`
-- `docker compose up -d --scale validator=3` → 1 bootstrap + 3 validators + 1 RPC
-
-### Integration tests:
-- Full startup lifecycle (16 steps, mocked I/O for passphrase)
-- 3-validator in-process cluster produces 20 blocks with consensus
-- Bootstrap phase: only bootstrap keys propose blocks 1..N
-- Era 0 → era 1+ transition
-- Observer node syncs from genesis without signing
+- [ ] Full startup lifecycle (16 steps, mocked passphrase I/O)
+- [ ] 3-validator in-process cluster produces 20 blocks with consensus
+- [ ] Bootstrap phase: only bootstrap keys propose blocks 1..N
+- [ ] Era 0 → era 1+ transition at era boundary
+- [ ] Observer node syncs from genesis without signing, serves RPC
 
 ---
 
 ## Sub-phase 2.8 — CLI Stake/Unstake Commands + Validator Queries
 
-**From:** Architecture.md §mononium-cli CLI tree (wallet stake, query validator), Protocol.md §Staking Tx, Validators.md §Staking
+**From:** Architecture.md §CLI tree (wallet stake, query validator), Protocol.md §Staking Tx, Validators.md §Staking
 
-Add CLI commands for staking. REST integration for submission + queries.
+Add CLI staking commands. REST integration for submission + queries.
 
-### Commands:
-- `mononium-cli wallet register [--key <name>]` — creates RegisterValidator tx, submits via POST /tx
-- `mononium-cli wallet stake <validator_addr> <amount> --key <name>` — creates Stake tx
-- `mononium-cli wallet register-and-stake <validator_addr> <amount> --key <name>` — atomic register + stake
-- `mononium-cli wallet unstake <validator_addr> <amount> --key <name>` — creates Unstake tx
-- `mononium-cli query validator <address>` — validator info via GET /validator/{address}
-- `mononium-cli query validators` — list all via GET /validators
-- `mononium-cli query nonce <address>` — current nonce via GET /nonce/{address}
-- All: `--node <url>` flag to override REST endpoint (default http://localhost:9933)
+### Commands
 
-### Amount parsing:
-- User enters MONEX (decimal, e.g. \"1000.50\")
-- Convert to MOXX: `amount_moxx = amount_monex * 10^32`
-- Parse via `U256::from_dec_str()` with decimal point handling
-- Display: MOXX → MONEX with 2 decimal places, comma-separated
+- [ ] `mononium-cli wallet register [--key <name>]` — creates and submits RegisterValidator tx via POST /tx
+- [ ] `mononium-cli wallet stake <validator_addr> <amount> --key <name>` — creates Stake tx
+- [ ] `mononium-cli wallet register-and-stake <validator_addr> <amount> --key <name>` — atomic register + stake
+- [ ] `mononium-cli wallet unstake <validator_addr> <amount> --key <name>` — creates Unstake tx
+- [ ] `mononium-cli query validator <address>` — validator info via GET /validator/{address}
+- [ ] `mononium-cli query validators` — list all via GET /validators
+- [ ] `mononium-cli query nonce <address>` — nonce via GET /nonce/{address}
+- [ ] All: `--node <url>` flag to override REST endpoint (default http://localhost:9933)
+- [ ] All staking: `--wait` flag to poll POST /tx until finalized (max 30s)
 
-### Output format:
-- Tx submission: `Tx submitted: 0x{tx_hash}` (with `--wait` flag: poll until finalized)
-- Validator query: address, status, stake (MONEX), registration era, frozen status
-- Validators list: table sorted by active first (stake desc), then candidates (stake desc)
+### Amount parsing
 
-### Tests:
-- CLI unit: parse args → correct TxBody for all 4 staking commands
-- CLI unit: MONEX→MOXX conversion edge cases (0, decimals, large)
-- CLI unit: error on missing --key, invalid address, invalid amount
-- CLI e2e: register → stake → query validator status
-- CLI e2e: unstake → verify cooldown
+- [ ] User enters MONEX (decimal, e.g. \"1000.50\")
+- [ ] Convert to MOXX: multiply by 10^32
+- [ ] Parse with `U256::from_dec_str()` with decimal point handling
+- [ ] Display: MOXX → MONEX with 2 decimal places and comma separators
+
+### Output format
+
+- [ ] Tx submission: `Tx submitted: 0x{tx_hash}` (with --wait: `Tx finalized in block {height}`)
+- [ ] Validator query: address (with checksum), status, stake (MONEX), registration era, frozen status
+- [ ] Validators list: table sorted active first (stake desc), then candidates (stake desc)
+- [ ] Balance query: show transferable + locked amounts where applicable
+
+### Tests
+
+- [ ] CLI unit: parse args → correct TxBody for all 4 staking commands
+- [ ] CLI unit: MONEX→MOXX edge cases (0, \"0.00000001\", large numbers, invalid format)
+- [ ] CLI unit: error on missing --key, invalid address hex, invalid amount
+- [ ] CLI unit: `--node` flag overrides default endpoint
+- [ ] CLI e2e: register → stake → query validator status
+- [ ] CLI e2e: unstake → verify cooldown state in response
 
 ---
 
@@ -896,40 +974,50 @@ Add CLI commands for staking. REST integration for submission + queries.
 
 **From:** Architecture.md §Crash Recovery, Storage.md §Checkpoints, Network.md §CheckpointRequest/Response
 
-Automatic crash recovery on restart. State checkpoints at era boundaries for fast sync. Checkpoint serving via sync protocol.
+Automatic crash recovery. State checkpoints at era boundaries. Checkpoint serving for fast sync.
 
-### Crash recovery:
-- On restart: read `current_height` from META table → load latest block → rebuild SMT from ACCOUNTS table → compare root with `global_state_root`
-- If match → resume from `current_height + 1`; if mismatch → panic (redb ACID guarantee)
-- After recovery: if `current_height < peer_tip` → enter sync mode (Phase 2.2)
+### Crash recovery
 
-### Checkpoint types (`storage/checkpoint.rs`):
-- `CheckpointMeta { era: u64, height: u64, global_state_root: [u8;32], timestamp: u64, num_shards: u16, generation: u64 }`
-- `ShardSnapshot { accounts: Vec<(Vec<u8>, Vec<u8>)>, validators: Vec<(Vec<u8>, Vec<u8>)>, meta: Vec<(Vec<u8>, Vec<u8>)> }`
-- Both SCALE-encoded, stored in `CHECKPOINTS` redb table
+- [ ] On restart: read `current_height` from META table
+- [ ] Load latest canonical block from blocks table at `current_height`
+- [ ] Rebuild SMT: iterate ACCOUNTS table → insert into fresh SMT → compute root
+- [ ] Compare with `latest_block.header.global_state_root`
+- [ ] If match → resume from `current_height + 1` (or enter sync mode if behind tip)
+- [ ] If mismatch → panic (redb ACID guarantee — should never happen)
 
-### Checkpoint production (era boundary, background task):
-- Spawn tokio task: snapshot all state tables → build ShardSnapshot → store checkpoint_meta + checkpoint_data
-- Does NOT block block production (next slot starts immediately)
-- If previous checkpoint still in progress → cancel via CancellationToken, start new (generation++)
-- Readers always see last completed checkpoint (redb MVCC)
+### Checkpoint types — `storage/checkpoint.rs`
 
-### Retention:
-- Full mode (default): keep latest 2 — overwrite N-2 when writing N
-- Compact mode: skip all checkpoint production
-- Archive mode: retain all (opt-in)
-- Config: `storage.mode` ∈ {full, compact, archive} — already in NodeConfig, wire into behavior
+- [ ] `CheckpointMeta { era: u64, height: u64, global_state_root: [u8;32], timestamp: u64, num_shards: u16, generation: u64 }`
+- [ ] `ShardSnapshot { accounts: Vec<(Vec<u8>,Vec<u8>)>, validators: Vec<(Vec<u8>,Vec<u8>)>, meta: Vec<(Vec<u8>,Vec<u8>)> }`
+- [ ] Both SCALE-encoded, stored in CHECKPOINTS redb table
 
-### Checkpoint serving (sync protocol):
-- `CheckpointRequest { target_height }` / `CheckpointResponse { height, smt_nodes, validator_set, validator_set_hash, checkpoint_block_header, checkpoint_hash }`
-- All SCALE-encoded, registered as `/mononium/checkpoint-sync/1.0` Request-Response
-- Trust model: verify BFT commits against validator_set → rebuild SMT → compare global_state_root
+### Checkpoint production (era boundary, background task)
 
-### Tests:
-- Checkpoint write/read roundtrip
-- Retention: full keeps 2, compact skips, archive keeps all
-- Crash recovery: simulate crash → restart → state consistent
-- Checkpoint produced at era boundary, readable via sync protocol
+- [ ] Spawn tokio task: snapshot ACCOUNTS, VALIDATORS, META tables → build ShardSnapshot → store checkpoint_meta + checkpoint_data
+- [ ] Does NOT block block production — next slot starts immediately
+- [ ] If previous still in progress → cancel via CancellationToken → start new (generation++)
+- [ ] Readers see last completed checkpoint via redb MVCC
+
+### Retention (per Storage.md)
+
+- [ ] Full mode (default): keep latest 2 — overwrite era N-2 when writing N
+- [ ] Compact mode: skip checkpoint production entirely
+- [ ] Archive mode: retain all (opt-in)
+- [ ] Config: `storage.mode` ∈ {full, compact, archive} — wire existing NodeConfig field
+
+### Checkpoint serving (sync protocol)
+
+- [ ] `CheckpointRequest { target_height }` — find nearest checkpoint ≤ target_height
+- [ ] `CheckpointResponse { height, smt_nodes, validator_set, validator_set_hash, checkpoint_block_header, checkpoint_hash }`
+- [ ] All fields SCALE-encoded, protocol `/mononium/checkpoint-sync/1.0`
+- [ ] Trust model: verify BFT commits (>2/3) against validator_set → rebuild SMT → compare global_state_root
+
+### Tests
+
+- [ ] Unit: CheckpointMeta + ShardSnapshot SCALE roundtrip
+- [ ] Unit: retention — full keeps 2, compact skips, archive keeps all
+- [ ] Integration: crash recovery — simulate crash mid-block, restart, state consistent
+- [ ] Integration: checkpoint produced at era boundary, readable via sync protocol
 
 ---
 
@@ -937,38 +1025,69 @@ Automatic crash recovery on restart. State checkpoints at era boundaries for fas
 
 **From:** Testing.md §Test Tiers 2-3 §Benchmarks §Target Metrics, Roadmap.md (100 tx/s target)
 
-In-process multi-validator test harness. criterion benchmarks. Integration tests for all Phase 2 features. 100 tx/s target.
+In-process multi-validator test harness. criterion benchmarks. Integration tests for all Phase 2 features.
 
-### In-process test harness (`tests/harness.rs`):
-- `ClusterBuilder{ validators: Vec<(String, KeyPair)>, genesis_path, block_time }` + builder methods
-- `Cluster::start()` — spawn validators with in-memory redb + loopback libp2p + fast block time (500ms)
-- `Cluster::run_until(blocks) -> Result` — poll until all validators reach height, timeout = blocks * block_time * 2
-- `Cluster::stop()` — graceful shutdown
-- `ValidatorHandle{ state, storage, p2p, consensus, mempool, key }` via `cluster.validator(name)`
-- `cluster.all_agree() -> bool` — same height + same state root across all validators
+### In-process test harness — `tests/harness.rs`
 
-### Integration tests:
-- `basic_transfer.rs` — submit tx → mempool → block → state updated
-- `multi_validator.rs` — 3 validators produce 20 blocks, all agree on canonical chain, >2/3 BFT commits per block
-- `era_transition.rs` — bootstrap → era 0 Open → era 1 Top-N, frozen validator excluded
-- `slashing_scenarios.rs` — equivocation → slash → freeze → fork resolution → thaw
-- `governance_flow.rs` — propose → vote → tally → execute param change
-- `staking_scenarios.rs` — register, stake, cross-stake, unstake cooldown
+- [ ] `ClusterBuilder { validators: Vec<(String, KeyPair)>, genesis_path, block_time }`
+- [ ] `with_validator(name, key) — add validator`
+- [ ] `with_genesis(path) — set genesis file`
+- [ ] `with_block_time(duration) — override (default 500ms for fast tests)`
+- [ ] `build() -> Cluster`
+- [ ] `Cluster::start()` — spawn all validators with in-memory redb + loopback libp2p + fast block time
+- [ ] `Cluster::run_until(blocks) -> Result<()>` — poll until all validators reach height (timeout: blocks _ block_time _ 2)
+- [ ] `Cluster::stop()` — graceful shutdown
+- [ ] `ValidatorHandle { state, storage, p2p, consensus, mempool, key }` via `cluster.validator(name)`
+- [ ] `cluster.all_agree() -> bool` — same height + state root across all validators
 
-### Benchmarks (criterion):
-- `crypto.rs`: Falcon sign (<10ms), verify (<5ms), batch verify 10 (<20ms), SMT insert 1000 (<50ms), SMT root (<10ms)
-- `state.rs`: Block apply 100 txs (<200ms), 500 txs (<1s), mempool insert 10000 (<50ms), mempool select 500
-- `e2e.rs`: 3-validator cluster 100 blocks (>50 tx/s), 500 blocks (>100 tx/s stretch goal), consensus overhead
-- `cargo bench -p mononium-lib` runs all; baseline comparison via `--baseline phase1`
+### Integration tests
 
-### Coverage targets:
-- All new `core/` state machine paths: ≥ 95% region
-- `network/` module: ≥ 85% region
-- `governance/` module: ≥ 95% region
-- `consensus/finality.rs`, `consensus/slashing.rs`: ≥ 95% region
-- `rpc/` module: ≥ 85% region
-- CLI: 0 clippy warnings, ≥ 60% pure-function coverage
-- Total lib tests: ≥ 450
+- [ ] `tests/integration/basic_transfer.rs` — submit tx → mempool → block → state updated
+- [ ] `tests/integration/multi_validator.rs` — 3 validators, 20 blocks, all agree, >2/3 BFT per block
+- [ ] `tests/integration/era_transition.rs` — bootstrap → era 0 Open → era 1 Top-N
+- [ ] `tests/integration/slashing_scenarios.rs` — equivocation → slash → freeze → fork resolution → thaw
+- [ ] `tests/integration/governance_flow.rs` — propose → vote → tally → execute param change
+- [ ] `tests/integration/staking_scenarios.rs` — register, stake, cross-stake, unstake cooldown
+
+### Benchmarks (criterion)
+
+**`benches/crypto.rs`:**
+
+- [ ] Falcon sign: target < 10ms
+- [ ] Falcon verify: target < 5ms
+- [ ] Falcon batch verify (10): target < 20ms
+- [ ] SMT insert 1000 accounts: target < 50ms
+- [ ] SMT root after 1000 inserts: target < 10ms
+- [ ] BLAKE3 hash throughput (MB/s)
+
+**`benches/state.rs`:**
+
+- [ ] Block apply 100 txs (all Falcon verify): target < 200ms
+- [ ] Block apply 500 txs: target < 1s
+- [ ] Mempool insert 10000: target < 50ms
+- [ ] Mempool select 500 from 10000-pool
+
+**`benches/e2e.rs`:**
+
+- [ ] E2E 3-validator, 100 blocks: target > 50 tx/s
+- [ ] E2E 3-validator, 500 blocks: target > 100 tx/s (stretch)
+- [ ] Consensus overhead: proposal → finality time
+
+### Benchmark infrastructure
+
+- [ ] `cargo bench -p mononium-lib` runs all suites
+- [ ] Baseline comparison: `cargo bench -- --baseline phase1`
+- [ ] Benchmark regressions in critical paths (Falcon verify, block apply) are CI-failures after Phase 2
+
+### Coverage targets
+
+- [ ] All new `core/` state machine paths: ≥ 95% region
+- [ ] `network/` module: ≥ 85% region (pure ≥ 95%, I/O ≥ 70%)
+- [ ] `governance/` module: ≥ 95% region
+- [ ] `consensus/finality.rs`, `consensus/slashing.rs`: ≥ 95% region
+- [ ] `rpc/` module: ≥ 85% region
+- [ ] CLI: 0 clippy warnings, ≥ 60% pure-function coverage
+- [ ] Total lib tests: ≥ 450
 
 ---
 
@@ -976,32 +1095,32 @@ In-process multi-validator test harness. criterion benchmarks. Integration tests
 
 **From:** UserDocs.md, Roadmap.md (Phase 2 goal)
 
-### User docs:
-- `user_docs/README.md` — index + quick start (clone → configure → run)
-- `user_docs/Devnet.md` — deployment guide:
-  - Hardware requirements per tier
-  - Bootstrap key generation
-  - Genesis configuration template
-  - Docker compose multi-validator
-  - Monitoring: Prometheus + Grafana
+Operator-facing documentation. Docker compose for devnet deployment. Monitoring setup.
 
-### Docker deployment:
-- `Dockerfile` — multi-stage build
-- `docker/docker-compose.yml` — bootstrap + 3 validators + RPC observer
-- `docker/grafana/dashboard.json`
-- `docker/prometheus/prometheus.yml`
+### User docs — `user_docs/`
 
-### Phase 2 exit criteria:
+- [ ] `user_docs/README.md` — index + quick start (clone → configure → run validator)
+- [ ] `user_docs/Devnet.md` — hardware requirements per tier, bootstrap key generation, genesis configuration template, Docker compose multi-validator, Prometheus + Grafana monitoring
+
+### Docker deployment
+
+- [ ] `Dockerfile` — multi-stage Rust build → distroless runtime
+- [ ] `docker/docker-compose.yml` — bootstrap + 3 validators + RPC observer
+- [ ] `docker/grafana/dashboard.json` — validator monitoring dashboard
+- [ ] `docker/prometheus/prometheus.yml` — scrape config
+
+### Phase 2 exit criteria
+
 - [ ] `cargo build -p mononium-lib` passes
 - [ ] `cargo build -p mononium-cli` passes
 - [ ] `cargo nextest run -p mononium-lib` passes (≥ 450 tests)
 - [ ] `cargo bench -p mononium-lib` runs all suites
-- [ ] 3-validator in-process cluster produces 20 blocks with BFT finality, all validators agree
-- [ ] `mononium-cli wallet register/stake/unstake` creates signed txs, validators process them
-- [ ] P2P sync: node A at height 200, node B starts from genesis → B catches up to A, state roots match
-- [ ] Slashing: equivocation evidence submitted → validator frozen → fork resolved by heaviest chain
-- [ ] Governance: propose → vote (meets quorum) → era boundary tally → param change executes at next era boundary
-- [ ] Docker compose: `docker compose up -d --scale validator=3` produces blocks with consensus
-- [ ] Crash recovery: kill validator → restart → resumes from last verified height, state consistent
-- [ ] Coverage: ≥ 90% region on all Phase 2 new modules (network, governance, consensus/finality, consensus/slashing)
+- [ ] 3-validator in-process cluster produces 20 blocks with BFT finality
+- [ ] `mononium-cli wallet register/stake/unstake` commands work end-to-end
+- [ ] P2P sync: node A at height 200 → node B catches up from genesis
+- [ ] Slashing: equivocation evidence → validator frozen → fork resolved
+- [ ] Governance: propose → vote → tally → execute param change
+- [ ] Docker compose: `docker compose up -d --scale validator=3` produces blocks
+- [ ] Crash recovery: kill validator → restart → resume without state loss
+- [ ] Coverage: ≥ 90% region on all Phase 2 new modules
 - [ ] `cargo clippy -p mononium-lib` passes (0 warnings)
