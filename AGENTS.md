@@ -132,6 +132,20 @@ Default section order:
 
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
+### Commit frequency
+
+- **Commit after every test** — write a test (red), commit. Then implement (green), commit. Then refactor, commit.
+- **Commit after every function** — each new public/private function gets its own commit.
+- **Even if tests fail** — commit captures the failing state (red) as a checkpoint.
+- **No batching** — avoid bundling unrelated work into a single commit.
+- **Message format:** `subphase: describe what this commit contains` (e.g. `smt: test trie::get returns None for unknown key`)
+
+### TDD workflow
+
+- Red → Green → Refactor, each stage committed separately
+- Vertical slices: one feature at a time, from test through implementation
+- TDD applies to all code: types, state machine, crypto, storage, CLI, config
+
 ## Child DOX Index
 
 | Path                          | Scope                                     |
