@@ -110,7 +110,7 @@ impl StateMachine {
                     };
                     self.try_transfer(&mut sender_acct, &destination, *amount, tx.fee, tx.nonce)
                 }
-                TxBody::RegisterValidator
+                TxBody::RegisterValidator { .. }
                 | TxBody::Stake { .. }
                 | TxBody::RegisterAndStake { .. }
                 | TxBody::Unstake { .. } => {

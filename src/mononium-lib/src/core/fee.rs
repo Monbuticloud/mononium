@@ -130,7 +130,7 @@ mod tests {
             nonce: 0,
             sender: Address::from([0x05u8; 32]),
             fee: U256::from(1000),
-            body: TxBody::RegisterValidator,
+            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
             signature: dummy_sig(),
         }
     }

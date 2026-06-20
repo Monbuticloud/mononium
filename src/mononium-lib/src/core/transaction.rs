@@ -11,6 +11,29 @@ use crate::core::account::Address;
 use crate::crypto::falcon::Falcon512Signature;
 
 // ---------------------------------------------------------------------------
+// Serde helper for large fixed-size byte arrays (e.g. Falcon-512 public key)
+// ---------------------------------------------------------------------------
+
+mod pubkey_serde {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+
+    pub fn serialize<S: Serializer>(key: &[u8; 897], serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&hex::encode(key))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[u8; 897], D::Error> {
+        let s = String::deserialize(deserializer)?;
+        let bytes = hex::decode(&s).map_err(D::Error::custom)?;
+        if bytes.len() != 897 {
+            return Err(D::Error::custom("expected 897 bytes"));
+        }
+        let mut arr = [0u8; 897];
+        arr.copy_from_slice(&bytes);
+        Ok(arr)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // BurnTarget enum
 // ---------------------------------------------------------------------------
 
@@ -31,28 +54,37 @@ pub enum BurnTarget {
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub enum TxBody {
     /// Transfer MONEX to another account.
+    #[codec(index = 0)]
     Transfer {
         recipient: Address,
         amount: U256,
     },
-    /// Declare intent to validate (one-time, prerequisite for staking).
-    RegisterValidator,
+    /// Declare intent to validate — includes the Falcon-512 public key.
+    #[codec(index = 1)]
+    RegisterValidator {
+        #[serde(with = "pubkey_serde")]
+        public_key: [u8; 897],
+    },
     /// Lock MONEX to become / activate a validator.
+    #[codec(index = 2)]
     Stake {
         validator: Address,
         amount: U256,
     },
     /// Convenience: registers + stakes atomically.
+    #[codec(index = 3)]
     RegisterAndStake {
         validator: Address,
         amount: U256,
     },
     /// Begin withdrawal from validator set (168-era cooldown).
+    #[codec(index = 4)]
     Unstake {
         validator: Address,
         amount: U256,
     },
     /// Send MONEX to permanent burn or cap-refill sink.
+    #[codec(index = 5)]
     Burn {
         target: BurnTarget,
         amount: U256,
