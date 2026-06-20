@@ -194,4 +194,26 @@ mod tests {
         assert_eq!(got.len(), 65536);
         assert_eq!(got, large_val);
     }
+
+    #[test]
+    fn test_exists_returns_true_for_existing_key() {
+        let (_dir, engine) = setup_engine();
+        engine.put(tables::ACCOUNTS, b"alice", b"data").unwrap();
+        assert!(engine.exists(tables::ACCOUNTS, b"alice").unwrap());
+    }
+
+    #[test]
+    fn test_exists_returns_false_for_missing_key() {
+        let (_dir, engine) = setup_engine();
+        assert!(!engine.exists(tables::ACCOUNTS, b"ghost").unwrap());
+    }
+
+    #[test]
+    fn test_exists_after_delete() {
+        let (_dir, engine) = setup_engine();
+        engine.put(tables::ACCOUNTS, b"tmp", b"x").unwrap();
+        assert!(engine.exists(tables::ACCOUNTS, b"tmp").unwrap());
+        engine.delete(tables::ACCOUNTS, b"tmp").unwrap();
+        assert!(!engine.exists(tables::ACCOUNTS, b"tmp").unwrap());
+    }
 }

@@ -58,3 +58,51 @@ pub const DEFAULT_STORAGE_MODE: &str = "full";
 
 /// Default compact eras retention.
 pub const DEFAULT_COMPACT_ERAS: u32 = 2;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_data_dir_returns_path() {
+        let path = default_data_dir();
+        assert!(path.to_string_lossy().contains(".mononium"));
+        assert!(path.to_string_lossy().contains("data"));
+    }
+
+    #[test]
+    fn test_default_key_dir_returns_path() {
+        let path = default_key_dir();
+        assert!(path.to_string_lossy().contains(".mononium"));
+        assert!(path.to_string_lossy().contains("keys"));
+    }
+
+    #[test]
+    fn test_default_config_dir_returns_path() {
+        let path = default_config_dir();
+        assert!(path.to_string_lossy().contains(".mononium"));
+        assert!(!path.to_string_lossy().contains("data"));
+        assert!(!path.to_string_lossy().contains("keys"));
+    }
+
+    #[test]
+    fn test_default_ports() {
+        assert_eq!(DEFAULT_P2P_PORT, 30333);
+        assert_eq!(DEFAULT_RPC_PORT, 9944);
+        assert_eq!(DEFAULT_REST_PORT, 9933);
+    }
+
+    #[test]
+    fn test_default_crypto_params() {
+        assert_eq!(DEFAULT_ARGON2_MEMORY_MIB, 256);
+        assert_eq!(DEFAULT_ARGON2_ITERATIONS, 16);
+    }
+
+    #[test]
+    fn test_default_storage_params() {
+        assert_eq!(DEFAULT_STORAGE_MODE, "full");
+        assert_eq!(DEFAULT_COMPACT_ERAS, 2);
+        assert_eq!(DEFAULT_MAX_TX_PER_ACCOUNT, 50);
+        assert_eq!(DEFAULT_UNLOCK_TIMEOUT_SECS, 20);
+    }
+}

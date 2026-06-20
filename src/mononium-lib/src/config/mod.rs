@@ -739,4 +739,18 @@ mode = "compact"
         cfg.genesis = Some("genesis.json".to_string());
         assert!(cfg.validate().is_ok());
     }
+
+    #[test]
+    fn test_mempool_section_default() {
+        let s = MempoolSection::default();
+        assert!(s.max_tx_per_account.is_none());
+    }
+
+    #[test]
+    fn test_log_section_default() {
+        let s = LogSection::default();
+        assert!(s.level.is_none());
+        assert!(s.json.is_none());
+        assert!(s.file.is_none());
+    }
 }

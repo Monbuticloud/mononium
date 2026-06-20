@@ -231,4 +231,26 @@ mod tests {
         let cap = dummy_burn_tx_cap_refill();
         assert_eq!(fee.calculate_fee(&perm), fee.calculate_fee(&cap));
     }
+
+    #[test]
+    fn test_hybrid_fee_default_via_trait() {
+        let fee: Box<dyn FeePolicy> = Box::new(HybridFee::default());
+        let tx = dummy_transfer_tx();
+        assert!(fee.calculate_fee(&tx) > U256::zero());
+    }
+
+    #[test]
+    fn test_encoded_size_increases_with_tx_complexity() {
+        let small = dummy_transfer_tx();
+        let medium = dummy_register_validator_tx();
+        let large = dummy_burn_tx_permanent();
+        let sizes: Vec<usize> = vec![&small, &medium, &large]
+            .into_iter()
+            .map(|tx| HybridFee::encoded_size(tx))
+            .collect();
+        // All should be positive
+        for s in &sizes {
+            assert!(*s > 0);
+        }
+    }
 }

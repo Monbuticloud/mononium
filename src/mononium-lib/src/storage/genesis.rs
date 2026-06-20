@@ -384,4 +384,28 @@ mod tests {
         let err = parse_u256("xyz").unwrap_err();
         assert!(err.to_string().contains("invalid decimal"), "got: {err}");
     }
+
+    #[test]
+    fn test_parse_u256_large_full_scale() {
+        let val = parse_u256("99999999999999999999999999999999999999").unwrap();
+        let expected = U256::from_dec_str("99999999999999999999999999999999999999").unwrap();
+        assert_eq!(val, expected);
+    }
+
+    #[test]
+    fn test_load_genesis_empty_validators_creates_no_entries() {
+        let (dir, engine) = setup_engine();
+        let json = r#"{
+            "chain_id": 0,
+            "genesis_time": "2025-01-01T00:00:00Z",
+            "initial_accounts": {
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": "1000"
+            },
+            "initial_validators": []
+        }"#;
+        let path = write_genesis_json(dir.path(), json);
+        load_genesis(&engine, &path).unwrap();
+        let keys = engine.list_keys(tables::VALIDATORS).unwrap();
+        assert!(keys.is_empty(), "expected no validators, got {}", keys.len());
+    }
 }

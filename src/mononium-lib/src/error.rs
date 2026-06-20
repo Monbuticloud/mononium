@@ -79,3 +79,76 @@ pub enum LibError {
     #[error("address checksum mismatch: expected {0}, computed {1}")]
     ChecksumMismatch(String, String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hex_bytes_display() {
+        let hb = HexBytes([0xABu8; 32]);
+        let s = hb.to_string();
+        assert!(s.starts_with("0x"));
+        assert_eq!(s.len(), 66); // 0x + 64 hex chars
+    }
+
+    #[test]
+    fn test_hex_bytes_from() {
+        let arr = [0x42u8; 32];
+        let hb: HexBytes = arr.into();
+        assert_eq!(hb.0, arr);
+    }
+
+    #[test]
+    fn test_hex_bytes_eq() {
+        let a = HexBytes([0x01u8; 32]);
+        let b = HexBytes([0x01u8; 32]);
+        let c = HexBytes([0x02u8; 32]);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn test_error_display_variants() {
+        assert_eq!(LibError::InvalidSignature.to_string(), "invalid signature");
+        assert_eq!(
+            LibError::InsufficientBalance(U256::from(10), U256::from(100)).to_string(),
+            "insufficient balance: have 10, need 100"
+        );
+        assert_eq!(
+            LibError::InvalidNonce(0, 5).to_string(),
+            "invalid nonce: expected 0, got 5"
+        );
+        assert!(LibError::Storage("disk full".to_string()).to_string().contains("disk full"));
+        assert!(LibError::Crypto("bad key".to_string()).to_string().contains("bad key"));
+        assert!(LibError::Codec("bad encode".to_string()).to_string().contains("bad encode"));
+        assert_eq!(
+            LibError::BlockNotFound(42).to_string(),
+            "block not found: 42"
+        );
+        assert_eq!(LibError::TxNotFound.to_string(), "tx not found");
+        assert_eq!(LibError::ProposalNotFound.to_string(), "proposal not found");
+        assert_eq!(
+            LibError::Consensus("bad proposal").to_string(),
+            "consensus error: bad proposal"
+        );
+        assert!(LibError::Network("timeout".to_string()).to_string().contains("timeout"));
+        assert!(LibError::GovernanceRejected("no").to_string().contains("no"));
+        assert_eq!(
+            LibError::InvalidAddress("bad".to_string()).to_string(),
+            "invalid address: bad"
+        );
+        assert_eq!(
+            LibError::AccountNotFound(HexBytes([0xAAu8; 32])).to_string(),
+            "account not found: 0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(
+            LibError::ValidatorNotFound(HexBytes([0xBBu8; 32])).to_string(),
+            "validator not found: 0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+        assert_eq!(
+            LibError::ChecksumMismatch("abc".to_string(), "def".to_string()).to_string(),
+            "address checksum mismatch: expected abc, computed def"
+        );
+    }
+}

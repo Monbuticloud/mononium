@@ -550,4 +550,40 @@ mod tests {
         let mut pool = make_pool();
         assert!(!pool.remove(&Address::from([99; 32]), 0));
     }
+
+    #[test]
+    fn test_clear_resets_pool() {
+        let mut pool = make_pool();
+        pool.insert(make_tx(1, 0, 100)).unwrap();
+        pool.insert(make_tx(2, 0, 200)).unwrap();
+        // Test that select(0) doesn't clear
+        let selected = pool.select(0);
+        assert!(selected.is_empty());
+        assert_eq!(pool.len(), 2);
+        // Select all to clear
+        let selected = pool.select(100);
+        assert_eq!(selected.len(), 2);
+        assert!(pool.is_empty());
+    }
+
+    #[test]
+    fn test_insert_min_fee_boundary() {
+        let mut pool = make_pool();
+        // min_fee is 10 in make_pool()
+        let low_fee_tx = make_tx(1, 0, 5);
+        let err = pool.insert(low_fee_tx).unwrap_err();
+        assert!(err.to_string().contains("min fee") || err.to_string().contains("fee"),
+                "got: {err}");
+    }
+
+    #[test]
+    fn test_select_only_takes_from_existing_txs() {
+        let mut pool = make_pool();
+        pool.insert(make_tx(1, 0, 100)).unwrap();
+        let selected = pool.select(100);
+        assert_eq!(selected.len(), 1);
+        // Second select on empty pool returns nothing
+        let empty = pool.select(100);
+        assert!(empty.is_empty());
+    }
 }

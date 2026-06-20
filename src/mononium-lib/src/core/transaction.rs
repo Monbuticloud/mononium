@@ -341,6 +341,49 @@ mod tests {
         };
         assert_ne!(tx_a.encode(), tx_b.encode());
     }
+
+    #[test]
+    fn test_signature_scale_decode_too_short() {
+        let result = Falcon512Signature::decode(&mut &[0u8; 4][..]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_signature_serde_invalid_hex() {
+        let result: std::result::Result<Falcon512Signature, _> =
+            serde_json::from_str("\"zz\"");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_signature_serde_wrong_length() {
+        let result: std::result::Result<Falcon512Signature, _> =
+            serde_json::from_str(&format!("\"0x{}\"", "ab".repeat(100)));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tx_scale_decode_too_short() {
+        let result = Transaction::decode(&mut &[0u8; 2][..]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tx_serde_signature_roundtrip() {
+        let tx = Transaction {
+            chain_id: 0, nonce: 0,
+            sender: Address::from([0x12u8; 32]),
+            fee: U256::from(100),
+            body: TxBody::Transfer {
+                recipient: Address::from([0x34u8; 32]),
+                amount: U256::from(200),
+            },
+            signature: dummy_signature(),
+        };
+        let json = serde_json::to_string(&tx).unwrap();
+        let decoded: Transaction = serde_json::from_str(&json).unwrap();
+        assert_eq!(tx, decoded);
+    }
 }
 
 
