@@ -177,7 +177,36 @@ mod tests {
         let mut smt = SparseMerkleTree::new();
         let expected = defaults()[DEPTH];
         assert_eq!(smt.root(), expected);
-        // Also verify it's not just all zeros
         assert_ne!(smt.root(), [0u8; 32]);
+    }
+
+    #[test]
+    fn test_insert_and_get_value() {
+        let mut smt = SparseMerkleTree::new();
+        smt.insert(b"alice", vec![1, 2, 3, 4]);
+        assert_eq!(smt.get(b"alice"), Some(&[1, 2, 3, 4][..]));
+    }
+
+    #[test]
+    fn test_get_unknown_key_returns_none() {
+        let smt = SparseMerkleTree::new();
+        assert_eq!(smt.get(b"unknown"), None);
+    }
+
+    #[test]
+    fn test_insert_overwrites_value() {
+        let mut smt = SparseMerkleTree::new();
+        smt.insert(b"key", vec![1, 2, 3]);
+        smt.insert(b"key", vec![4, 5, 6]);
+        assert_eq!(smt.get(b"key"), Some(&[4, 5, 6][..]));
+    }
+
+    #[test]
+    fn test_insert_changes_root() {
+        let mut smt = SparseMerkleTree::new();
+        let empty_root = smt.root();
+        smt.insert(b"alice", vec![1, 2, 3, 4]);
+        let after_root = smt.root();
+        assert_ne!(after_root, empty_root);
     }
 }
