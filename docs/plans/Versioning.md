@@ -15,9 +15,9 @@ docs/plans/V0.1.0/    ← next revision (if needed)
 
 No breaking/feature/patch semantics. These are just names to organize plan versions.
 
-## Development Phase (V2.x.x+ — semver)
+## Development & Feature Phases (V1.x.x+ — semver)
 
-Once development starts, real **Semantic Versioning** applies: `V[Breaking].[Feature].[Patch]`
+Once development starts, **Semantic Versioning** applies: `V[Breaking].[Feature].[Patch]`
 
 | Segment      | Meaning                                   |
 | ------------ | ----------------------------------------- |
