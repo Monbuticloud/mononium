@@ -129,7 +129,34 @@
 - [x] `mononium-cli wallet balance` queries account state via REST (Rust e2e test)
 - [x] **Mempool integrated into block production**: txs submitted via POST /tx → mempool → blocks
 - [x] **Balance handler fixed**: reads from StateMachine (populated from storage at startup)
-- [x] **Coverage**: 86.58% region / 85.62% line (lib + CLI)
+- [x] **Coverage**: 97.37% region / 97.15% lines (lib) + CLI unit tests added
+
+---
+
+## Coverage Improvement (Phase 1.11) ✅
+
+**Result:** 97.37% region / 97.15% lines across `mononium-lib` (up from 86.58% / 85.62%)
+
+| Module | Before | After | Status |
+|--------|--------|-------|--------|
+| storage/redb.rs | 63.64% | 66.36% | ⚠️ I/O error paths (disk failures) |
+| config/mod.rs | 88.26% | **99.70%** | ✅ |
+| consensus/supply.rs | 90.41% | **98.62%** | ✅ |
+| core/account.rs | 93.39% | **95.45%** | ✅ |
+| core/state.rs | 96.03% | **99.71%** | ✅ |
+| core/transaction.rs | 97.46% | **97.97%** | ✅ |
+| core/fee.rs | 97.44% | **98.19%** | ✅ |
+| crypto/falcon.rs | 97.81% | **98.38%** | ✅ |
+| crypto/trie.rs | 98.92% | **99.09%** | ✅ |
+| storage/genesis.rs | 96.83% | **99.00%** | ✅ |
+| mempool/mod.rs | 99.13% | **99.18%** | ✅ |
+| **CLI main.rs** | 55.65% | **77.90%** | ✅ (17 CLI parsing tests) |
+| **CLI wallet.rs** | 85.11% | **86.30%** | ✅ (KeyFile tests) |
+| **CLI node.rs** | 0.00% | **34.61%** | ✅ (7 pure-function tests) |
+
+CLI crate remaining gaps: `run_node()`, REST handlers, block loop, `keygen()`, `balance()`, `transfer()` run in subprocess (not instrumented by llvm-cov). Full coverage requires refactoring to lib+bin split.
+
+Total test count: **308** (279 lib + 28 CLI + 1 e2e)
 
 ---
 
