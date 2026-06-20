@@ -7,6 +7,7 @@
 ---
 
 ## Sub-phase 1.0 ✅ Foundation Types (commit `c8762e4`)
+
 - [x] `constants.rs` — chain-wide constants
 - [x] `error.rs` — LibError enum
 - [x] `core/constants.rs` — core constants (denomination, fees, supply)
@@ -16,6 +17,7 @@
 - [x] 18 tests passing, clippy clean
 
 ## Sub-phase 1.1 ✅ Cryptography (commit `e4f62a1`)
+
 - [x] `crypto/constants.rs` — key/signature size constants (48/1281/897/809)
 - [x] `crypto/signature.rs` — SignatureScheme trait
 - [x] `crypto/falcon.rs` — Falcon512 impl (generate, sign, verify, from_private_key)
@@ -25,6 +27,7 @@
 - [x] 62 total tests passing, clippy clean
 
 ## Sub-phase 1.2 ✅ Sparse Merkle Tree (commits `352c962` → `f048af6`)
+
 - [x] Test: empty SMT root equals precomputed 256-level default hash (RED)
 - [x] Impl: `root()` with lazy computation + 256-level default (GREEN)
 - [x] Test: insert → get, unknown key, overwrite (GREEN)
@@ -33,19 +36,14 @@
 - [x] Namespace helpers (NS_ACCOUNTS `0x00`, NS_VALIDATORS `0x01`, NS_META `0x02`)
 - [x] 79 total tests passing, clippy clean
 
-## Sub-phase 1.3 🔶 Transaction & Block Types + Fee
-- [ ] Test: Transaction SCALE encode/decode symmetric
-- [ ] Test: Transaction JSON serde round-trip
-- [ ] Test: Block header hash depends on all fields
-- [ ] Test: CommitVote SCALE encode/decode
-- [ ] Test: Fee calculation is deterministic
-- [ ] Test: Burn fee bypasses standard calculation
-- [ ] Impl: `core/transaction.rs` — Transaction, TxBody enum
-- [ ] Impl: `core/block.rs` — Block, BlockHeader, CommitVote
-- [ ] Impl: `core/fee.rs` — FeePolicy + HybridFee
-- [ ] Tests pass
+## Sub-phase 1.3 ✅ Transaction & Block Types + Fee (commits `9923206` → `fe4b6a4`)
+- [x] `core/transaction.rs` — Transaction, TxBody enum, BurnTarget, Falcon512Signature SCALE/JSON
+- [x] `core/block.rs` — BlockHeader, Block, BlockBody, CommitVote SCALE/JSON
+- [x] `core/fee.rs` — FeePolicy trait, HybridFee impl, burn bypass (flat 10 MOXX)
+- [x] 105 total tests passing, clippy clean
 
 ## Sub-phase 1.4 🔶 State Machine
+
 - [ ] Test: Block application order (validate → apply → distribute fees → commit)
 - [ ] Test: Failed tx still pays fee
 - [ ] Test: Fee distribution pro-rata by stake
@@ -54,6 +52,7 @@
 - [ ] Tests pass
 
 ## Sub-phase 1.5 🔶 Storage (redb)
+
 - [ ] Test: StorageEngine trait contract
 - [ ] Test: redb put/get/delete round-trip
 - [ ] Test: Genesis loading from JSON
@@ -65,6 +64,7 @@
 - [ ] Tests pass
 
 ## Sub-phase 1.6 🔶 Mempool
+
 - [ ] Test: Insert, remove, select by tip→time→nonce
 - [ ] Test: TTL eviction
 - [ ] Test: Nonce buffering
@@ -74,6 +74,7 @@
 - [ ] Tests pass
 
 ## Sub-phase 1.7 🔶 Consensus Basics
+
 - [ ] Test: Top-N election sorts by stake desc, tie by registration
 - [ ] Test: Round-robin proposer schedule
 - [ ] Test: Era boundary transitions
@@ -86,6 +87,7 @@
 - [ ] Tests pass
 
 ## Sub-phase 1.8 🔶 Config + Genesis Files
+
 - [ ] Test: Config file loading (YAML + TOML)
 - [ ] Test: CLI flag override precedence
 - [ ] Test: Genesis JSON parsing
@@ -98,6 +100,7 @@
 - [ ] Tests pass
 
 ## Sub-phase 1.9 🔶 CLI Node Daemon
+
 - [ ] Test: CLI arg parsing (clap)
 - [ ] Impl: `mononium-cli/src/main.rs` — CLI structure (node, wallet, query)
 - [ ] Impl: `mononium-cli/src/node.rs` — startup lifecycle
@@ -106,6 +109,7 @@
 - [ ] Tests pass
 
 ## Sub-phase 1.10 🔶 CLI Wallet
+
 - [ ] Test: Keygen produces valid Falcon-512 key
 - [ ] Test: Key file JSON format
 - [ ] Impl: Wallet keygen command
@@ -118,6 +122,7 @@
 ---
 
 ## Phase 1 Exit Criteria
+
 - [ ] `cargo build -p mononium-lib` passes
 - [ ] `cargo build -p mononium-cli` passes
 - [ ] `cargo nextest run -p mononium-lib` passes
