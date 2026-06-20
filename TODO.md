@@ -2,40 +2,36 @@
 
 > **Goal:** `mononium-cli node` produces blocks locally. `mononium-cli wallet transfer` sends txs.
 > **Approach:** TDD (Red → Green → Refactor per feature), dependency order, smaller sub-phases.
+> **Commit cadence:** per test, per function, even if tests fail (RED/GREEN per commit).
 
 ---
 
-## Sub-phase 1.0 ✅ Foundation Types
-- [x] Test: Account creation and field access
-- [x] Test: Address formatting and checksum round-trip
-- [x] Test: Address parse invalid/missing/too-short
-- [x] Test: U256 constant correctness
-- [x] Impl: `constants.rs` — chain-wide constants
-- [x] Impl: `error.rs` — LibError enum
-- [x] Impl: `core/constants.rs` — core constants (denomination, fees, supply)
-- [x] Impl: `core/account.rs` — Account, Address types with checksum parsing
+## Sub-phase 1.0 ✅ Foundation Types (commit `c8762e4`)
+- [x] `constants.rs` — chain-wide constants
+- [x] `error.rs` — LibError enum
+- [x] `core/constants.rs` — core constants (denomination, fees, supply)
+- [x] `core/account.rs` — Account, Address types with checksum parsing
 - [x] Rename: mononium-rust-lib → mononium-lib across workspace + docs
 - [x] Fix deps: libp2p 0.56, primitive-types 0.12 features, workspace lints
-- [x] 18 tests passing, clippy clean, committed
+- [x] 18 tests passing, clippy clean
 
-## Sub-phase 1.1 🔶 Cryptography (Falcon-512, BLAKE3, SignatureScheme)
-- [ ] Test: SignatureScheme trait round-trip (sign → verify)
-- [ ] Test: BLAKE3 wrapper produces correct 32-byte hash
-- [ ] Test: Address derivation from public key
-- [ ] Impl: `crypto/signature.rs` — SignatureScheme trait
-- [ ] Impl: `crypto/falcon.rs` — Falcon512 impl
-- [ ] Impl: `crypto/hash.rs` — BLAKE3 wrappers
-- [ ] Impl: `crypto/address.rs` — Address derivation from pubkey
-- [ ] Impl: `crypto/mod.rs` — re-exports
-- [ ] Tests pass: `cargo nextest run -p mononium-rust-lib`
+## Sub-phase 1.1 ✅ Cryptography (commit `e4f62a1`)
+- [x] `crypto/constants.rs` — key/signature size constants (48/1281/897/809)
+- [x] `crypto/signature.rs` — SignatureScheme trait
+- [x] `crypto/falcon.rs` — Falcon512 impl (generate, sign, verify, from_private_key)
+- [x] `crypto/hash.rs` — BLAKE3 utilities (hash, hash_pair, keyed_hash, derive_key, batch_hash)
+- [x] `crypto/address.rs` — Address derivation from pubkey
+- [x] `crypto/mod.rs` — module re-exports
+- [x] 62 total tests passing, clippy clean
 
-## Sub-phase 1.2 🔶 Sparse Merkle Tree
-- [ ] Test: SMT insert → get returns same value
-- [ ] Test: SMT root is deterministic for same inserts
-- [ ] Test: SMT proof round-trip (prove → verify)
-- [ ] Test: SMT empty root
-- [ ] Impl: `crypto/trie.rs` — Trie trait + SMT impl
-- [ ] Tests pass: `cargo nextest run -p mononium-rust-lib`
+## Sub-phase 1.2 ✅ Sparse Merkle Tree (commits `352c962` → `f048af6`)
+- [x] Test: empty SMT root equals precomputed 256-level default hash (RED)
+- [x] Impl: `root()` with lazy computation + 256-level default (GREEN)
+- [x] Test: insert → get, unknown key, overwrite (GREEN)
+- [x] Test: multiple keys, deterministic root, caching (GREEN)
+- [x] `Trie` trait (get, insert, root, prove as todo!)
+- [x] Namespace helpers (NS_ACCOUNTS `0x00`, NS_VALIDATORS `0x01`, NS_META `0x02`)
+- [x] 79 total tests passing, clippy clean
 
 ## Sub-phase 1.3 🔶 Transaction & Block Types + Fee
 - [ ] Test: Transaction SCALE encode/decode symmetric
@@ -122,10 +118,10 @@
 ---
 
 ## Phase 1 Exit Criteria
-- [ ] `cargo build -p mononium-rust-lib` passes
+- [ ] `cargo build -p mononium-lib` passes
 - [ ] `cargo build -p mononium-cli` passes
-- [ ] `cargo nextest run -p mononium-rust-lib` passes
-- [ ] `cargo clippy -p mononium-rust-lib -- -D warnings` passes
+- [ ] `cargo nextest run -p mononium-lib` passes
+- [ ] `cargo clippy -p mononium-lib -- -D warnings` passes
 - [ ] `mononium-cli node` starts and produces blocks on localnet
 - [ ] `mononium-cli wallet keygen` generates Falcon-512 keys
 - [ ] `mononium-cli wallet transfer` creates signed txs
