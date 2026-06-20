@@ -223,4 +223,31 @@ mod tests {
         let err = engine.exists("bad_table", b"k").unwrap_err();
         assert!(err.to_string().contains("unknown table"), "got: {err}");
     }
+
+    // -----------------------------------------------------------------------
+    // Database open error-path tests  (exercises redb error wrappers)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_open_fails_at_invalid_path() {
+        // Parent directory doesn't exist → Database::create fails → map_db_err
+        let result = RedbEngine::open(
+            &Path::new("/tmp/mononium-test-nonexistent-dir/test.redb"),
+        );
+        match result {
+            Err(err) => assert!(err.to_string().contains("redb database"), "got: {err}"),
+            Ok(_) => panic!("expected Err, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_open_fails_at_directory_path() {
+        // Path is an existing directory, not a regular file → Database::create fails
+        let dir = TempDir::with_prefix("mononium-test-").unwrap();
+        let result = RedbEngine::open(dir.path());
+        match result {
+            Err(err) => assert!(err.to_string().contains("redb database"), "got: {err}"),
+            Ok(_) => panic!("expected Err, got Ok"),
+        }
+    }
 }

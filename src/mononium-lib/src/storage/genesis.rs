@@ -416,4 +416,12 @@ mod tests {
         assert_eq!(raw[0], 0xbb);
         assert_eq!(raw[31], 0xbb);
     }
+
+    #[test]
+    fn test_load_genesis_from_directory_path() {
+        let (dir, engine) = setup_engine();
+        // A directory path is not a readable JSON file → different error path
+        let err = load_genesis(&engine, dir.path()).unwrap_err();
+        assert!(err.to_string().contains("cannot read genesis file"), "got: {err}");
+    }
 }
