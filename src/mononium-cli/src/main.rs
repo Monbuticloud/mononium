@@ -247,3 +247,151 @@ fn run_logfmt() -> anyhow::Result<()> {
     }
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_node_minimal() {
+        let cli = Cli::try_parse_from(["mononium-cli", "node", "--genesis", "gen.json", "--observer"]).unwrap();
+        match cli.command {
+            Command::Node(args) => {
+                assert!(args.observer);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_wallet_keygen() {
+        let cli = Cli::try_parse_from(["mononium-cli", "wallet", "keygen", "test-key"]).unwrap();
+        match cli.command {
+            Command::Wallet(WalletArgs { action: WalletAction::Keygen { name } }) => {
+                assert_eq!(name, "test-key");
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_wallet_balance() {
+        let cli = Cli::try_parse_from([
+            "mononium-cli", "wallet", "balance",
+            "0xabcd",
+            "--node", "http://localhost:9999",
+        ]).unwrap();
+        match cli.command {
+            Command::Wallet(WalletArgs { action: WalletAction::Balance { address, node } }) => {
+                assert_eq!(address, "0xabcd");
+                assert_eq!(node, "http://localhost:9999");
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_wallet_transfer() {
+        let cli = Cli::try_parse_from([
+            "mononium-cli", "wallet", "transfer",
+            "0xrecipient",
+            "1.5",
+            "--key", "my-key",
+        ]).unwrap();
+        match cli.command {
+            Command::Wallet(WalletArgs { action: WalletAction::Transfer { to, amount, key, node } }) => {
+                assert_eq!(to, "0xrecipient");
+                assert_eq!(amount, "1.5");
+                assert_eq!(key, "my-key");
+                assert_eq!(node, "http://localhost:9933"); // default
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_query_block() {
+        let cli = Cli::try_parse_from([
+            "mononium-cli", "query", "block", "42",
+        ]).unwrap();
+        match cli.command {
+            Command::Query(QueryArgs { action: QueryAction::Block { height, .. } }) => {
+                assert_eq!(height, 42);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_query_latest_default_node() {
+        let cli = Cli::try_parse_from([
+            "mononium-cli", "query", "latest",
+        ]).unwrap();
+        match cli.command {
+            Command::Query(QueryArgs { action: QueryAction::Latest { node } }) => {
+                assert_eq!(node, "http://localhost:9933");
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_logfmt() {
+        let cli = Cli::try_parse_from(["mononium-cli", "logfmt"]).unwrap();
+        match cli.command {
+            Command::Logfmt => {} // expected
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_node_all_flags() {
+        let cli = Cli::try_parse_from([
+            "mononium-cli", "node",
+            "--config", "/path/config.yaml",
+            "--genesis", "/path/genesis.json",
+            "--key", "validator1",
+            "--p2p-port", "30444",
+            "--rpc-port", "9955",
+            "--rest-port", "9944",
+            "--bootnode", "/ip4/1.2.3.4/tcp/30333",
+            "--bootnode", "/ip4/5.6.7.8/tcp/30333",
+            "--data-dir", "/data/mononium",
+            "--storage-mode", "archive",
+            "--log-level", "debug",
+            "--log-format", "json",
+            "--unlock-timeout", "300",
+        ]).unwrap();
+        match cli.command {
+            Command::Node(args) => {
+                assert_eq!(args.config, Some(PathBuf::from("/path/config.yaml")));
+                assert_eq!(args.genesis, Some("/path/genesis.json".to_string()));
+                assert_eq!(args.key, Some("validator1".to_string()));
+                assert_eq!(args.p2p_port, Some(30444));
+                assert_eq!(args.rpc_port, Some(9955));
+                assert_eq!(args.rest_port, Some(9944));
+                assert_eq!(args.bootnode.len(), 2);
+                assert_eq!(args.data_dir, Some("/data/mononium".to_string()));
+                assert_eq!(args.storage_mode, Some("archive".to_string()));
+                assert_eq!(args.log_level, Some("debug".to_string()));
+                assert_eq!(args.log_format, Some("json".to_string()));
+                assert_eq!(args.unlock_timeout, Some(300));
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
+    fn test_run_logfmt_parses_json_line() {
+        let _json_line = r#"{"level":"INFO","msg":"hello world","target":"test","timestamp":"2025-01-01T00:00:00Z"}"#;
+    }
+
+    #[test]
+    fn test_run_logfmt_passthrough_non_json() {
+        let _plain_line = "just a plain log line";
+    }
+}

@@ -471,3 +471,113 @@ async fn block_production_loop(state: SharedState) {
         tracing::info!(height, timestamp = now, "block produced");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mononium_lib::storage::StorageEngine;
+    use mononium_lib::storage::redb::RedbEngine;
+
+    #[test]
+    fn test_parse_raw_address_valid() {
+        let addr = [0xABu8; 32];
+        let hex = hex::encode(addr);
+        let result = parse_raw_address(&hex).unwrap();
+        assert_eq!(result, addr);
+    }
+
+    #[test]
+    fn test_parse_raw_address_with_0x() {
+        let addr = [0x42u8; 32];
+        let hex = format!("0x{}", hex::encode(addr));
+        let result = parse_raw_address(&hex).unwrap();
+        assert_eq!(result, addr);
+    }
+
+    #[test]
+    fn test_parse_raw_address_wrong_length() {
+        let err = parse_raw_address("aabb").unwrap_err();
+        assert!(err.to_string().contains("invalid address"), "got: {err}");
+    }
+
+    #[test]
+    fn test_parse_raw_address_invalid_hex() {
+        let err = parse_raw_address(&"z".repeat(64)).unwrap_err();
+        assert!(err.to_string().contains("invalid address"), "got: {err}");
+    }
+
+    /// Helper: create a temporary RedbEngine for storage tests.
+    fn setup_engine() -> RedbEngine {
+        let dir = tempfile::TempDir::with_prefix("mononium-node-test-").unwrap();
+        RedbEngine::open(&dir.path().join("test.redb")).unwrap()
+    }
+
+    #[test]
+    fn test_load_latest_height_empty_db() {
+        let engine = setup_engine();
+        let height = load_latest_height(&engine).unwrap();
+        assert_eq!(height, 0);
+    }
+
+    #[test]
+    fn test_load_latest_height_with_block() {
+        let engine = setup_engine();
+        // Store a block at height 5 (keys are big-endian u64)
+        let key = 5u64.to_be_bytes();
+        let block = Block {
+            header: BlockHeader {
+                height: 5, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: Address::from([0xAAu8; 32]), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![] },
+        };
+        engine.put(tables::BLOCKS, &key, &parity_scale_codec::Encode::encode(&block)).unwrap();
+        let height = load_latest_height(&engine).unwrap();
+        assert_eq!(height, 5);
+    }
+
+    #[test]
+    fn test_load_block_json_not_found() {
+        let engine = setup_engine();
+        let err = load_block_json(&engine, 99).unwrap_err();
+        assert!(err.to_string().contains("block not found") || err.to_string().contains("BlockNotFound"), "got: {err}");
+    }
+
+    #[test]
+    fn test_load_block_json_roundtrip() {
+        let engine = setup_engine();
+        let block = Block {
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: Address::from([0xAAu8; 32]),
+                chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![] },
+        };
+        let key = 1u64.to_be_bytes();
+        let encoded = parity_scale_codec::Encode::encode(&block);
+        engine.put(tables::BLOCKS, &key, &encoded).unwrap();
+        let json = load_block_json(&engine, 1).unwrap();
+        assert_eq!(json["header"]["height"], 1);
+    }
+
+    #[test]
+    fn test_load_state_from_storage_empty() {
+        let engine = setup_engine();
+        let mut sm = load_state_from_storage(&engine).unwrap();
+        // Empty SMT root is the precomputed default (not all zeros)
+        let root = sm.state_root();
+        assert_ne!(root, [0u8; 32]);
+        // No accounts
+        assert!(sm.get_account(&Address::from([0x01u8; 32])).is_none());
+    }
+}

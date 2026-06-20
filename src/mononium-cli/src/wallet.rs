@@ -281,8 +281,6 @@ mod tests {
     #[test]
     fn test_parse_monex_amount_decimal() {
         let val = parse_monex_amount("1.5").unwrap();
-        // 1.5 MONEX = 1.5 * 10^32 MOXX = 150000000000000000000000000000000000 MOXX
-        // = 15 * 10^31
         assert_eq!(val, primitive_types::U256::from(15u128) * primitive_types::U256::from(10u128).pow(31.into()));
     }
 
@@ -301,7 +299,6 @@ mod tests {
     #[test]
     fn test_parse_monex_amount_small() {
         let val = parse_monex_amount("0.0000000000000000001").unwrap();
-        // 0.0000000000000000001 MONEX = 10000000000000 MOXX
         assert_eq!(val, primitive_types::U256::from_dec_str("10000000000000").unwrap());
     }
 
@@ -309,5 +306,27 @@ mod tests {
     fn test_parse_monex_amount_invalid() {
         assert!(parse_monex_amount("abc").is_err());
         assert!(parse_monex_amount("1.2.3").is_err());
+    }
+
+    #[test]
+    fn test_keyfile_json_roundtrip() {
+        let kf = KeyFile {
+            public_key: "0xab".to_string(),
+            private_key: "0xcd".to_string(),
+            seed: "0xef".to_string(),
+            address: "0x1234".to_string(),
+        };
+        let json = serde_json::to_string(&kf).unwrap();
+        let decoded: KeyFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(kf.public_key, decoded.public_key);
+        assert_eq!(kf.private_key, decoded.private_key);
+        assert_eq!(kf.seed, decoded.seed);
+        assert_eq!(kf.address, decoded.address);
+    }
+
+    #[test]
+    fn test_keyfile_missing_field_fails() {
+        let err = serde_json::from_str::<KeyFile>("{}");
+        assert!(err.is_err());
     }
 }
