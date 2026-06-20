@@ -118,11 +118,14 @@
 
 ## Phase 1 Exit Criteria (on hold)
 
-- [ ] `cargo build -p mononium-lib` passes
-- [ ] `cargo build -p mononium-cli` passes
-- [ ] `cargo nextest run -p mononium-lib` passes
-- [ ] `cargo clippy -p mononium-lib -- -D warnings` passes
-- [ ] `mononium-cli node` starts and produces blocks on localnet
-- [ ] `mononium-cli wallet keygen` generates Falcon-512 keys
-- [ ] `mononium-cli wallet transfer` creates signed txs
-- [ ] `mononium-cli wallet balance` queries account state via REST
+- [x] `cargo build -p mononium-lib` passes
+- [x] `cargo build -p mononium-cli` passes
+- [x] `cargo nextest run -p mononium-lib` passes (218 tests)
+- [ ] `cargo clippy -p mononium-lib -- -D warnings` passes (~50 doc/pedantic warnings)
+- [x] `mononium-cli node` starts and produces blocks on localnet (Rust e2e test)
+- [x] `mononium-cli wallet keygen` generates Falcon-512 keys
+- [x] `mononium-cli wallet transfer` creates signed txs (Rust e2e test)
+- [x] `mononium-cli wallet balance` queries account state via REST (Rust e2e test)
+- [x] **Mempool integrated into block production**: txs submitted via POST /tx → mempool → blocks
+- [x] **Balance handler fixed**: reads from StateMachine (populated from storage at startup)
+- [x] **Coverage**: 86.58% region / 85.62% line (lib + CLI)

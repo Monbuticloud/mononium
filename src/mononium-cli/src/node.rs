@@ -11,6 +11,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::extract::State;
@@ -27,6 +28,7 @@ use mononium_lib::core::block::{Block, BlockBody, BlockHeader};
 use mononium_lib::core::state::StateMachine;
 use mononium_lib::core::transaction::Transaction;
 use mononium_lib::error::LibError;
+use mononium_lib::mempool::{Mempool, MempoolConfig};
 use mononium_lib::storage::genesis::load_genesis;
 use mononium_lib::storage::redb::RedbEngine;
 use mononium_lib::storage::tables;
@@ -41,6 +43,7 @@ use crate::NodeArgs;
 struct AppState {
     engine: RedbEngine,
     state: StateMachine,
+    mempool: Mempool,
     current_height: u64,
 }
 
@@ -96,19 +99,31 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         }
     }
 
-    // ---------- 6. Initialize state machine ----------
-    // For Phase 1, start with empty state — accounts live in DB.
-    let state = StateMachine::new([]);
-
-    // ---------- 7. Determine current height ----------
+    // ---------- 6. Determine current height ----------
     let current_height = load_latest_height(&engine)?;
     tracing::info!(height = current_height, "node starting");
 
-    // ---------- 8. Start REST API ----------
+    // ---------- 7. Initialize state machine from storage ----------
+    let state = load_state_from_storage(&engine)?;
+    tracing::info!(height = current_height, "state machine initialized");
+
+    // ---------- 8. Create mempool ----------
+    // Phase 1: accept all txs (min_fee=0). Configurable later.
+    let mempool_config = MempoolConfig {
+        max_size: 10_000,
+        ttl: Duration::from_secs(600),
+        min_fee: primitive_types::U256::zero(),
+        per_sender_cap: 50,
+    };
+    let mempool = Mempool::new(mempool_config);
+    tracing::info!("mempool ready");
+
+    // ---------- 9. Start REST API ----------
     let rest_port = config.rest_port();
     let shared = Arc::new(Mutex::new(AppState {
         engine,
         state,
+        mempool,
         current_height,
     }));
 
@@ -182,6 +197,28 @@ fn load_latest_height(engine: &RedbEngine) -> Result<u64> {
     Ok(u64::from_be_bytes(buf))
 }
 
+/// Load all accounts from storage into the in-memory state machine.
+fn load_state_from_storage(engine: &RedbEngine) -> Result<StateMachine> {
+    let account_keys = engine.list_keys(tables::ACCOUNTS)?;
+    let mut accounts: Vec<(Address, mononium_lib::core::account::Account)> = Vec::new();
+    for key in &account_keys {
+        if key.len() != 32 {
+            continue; // skip non-address keys
+        }
+        if let Ok(Some(raw)) = engine.get(tables::ACCOUNTS, key) {
+            if let Ok(acct) = parity_scale_codec::Decode::decode(&mut &raw[..]) {
+                let addr = Address::from({
+                    let mut arr = [0u8; 32];
+                    arr.copy_from_slice(key);
+                    arr
+                });
+                accounts.push((addr, acct));
+            }
+        }
+    }
+    Ok(StateMachine::new(accounts))
+}
+
 // ---------------------------------------------------------------------------
 // REST API router
 // ---------------------------------------------------------------------------
@@ -192,8 +229,8 @@ fn build_router(state: SharedState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/block/latest", get(block_latest_handler))
-        .route("/block/{height}", get(block_by_height_handler))
-        .route("/balance/{address}", get(balance_handler))
+        .route("/block/:height", get(block_by_height_handler))
+        .route("/balance/:address", get(balance_handler))
         .route("/height", get(height_handler))
         .route("/era", get(era_handler))
         .route("/tx", axum::routing::post(tx_submit_handler))
@@ -298,6 +335,11 @@ async fn balance_handler(
         .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
     let addr = Address::from(raw);
 
+    // Look up account in the in-memory state machine (always up-to-date)
+    let raw = parse_raw_address(&address_str)
+        .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
+    let addr = Address::from(raw);
+
     match guard.state.get_account(&addr) {
         Some(acct) => Ok(Json(BalanceResponse {
             address: address_str,
@@ -323,22 +365,27 @@ struct TxSubmitResponse {
 }
 
 async fn tx_submit_handler(
-    State(_state): State<SharedState>,
+    State(state): State<SharedState>,
     axum::extract::Json(tx): axum::extract::Json<Transaction>,
 ) -> Result<Json<TxSubmitResponse>, axum::response::Response> {
-    // Compute tx hash (BLAKE3 of SCALE-encoded tx)
     let encoded = parity_scale_codec::Encode::encode(&tx);
     let hash = mononium_lib::crypto::hash::blake3_hash(&encoded);
-    let tx_hash = hex::encode(&hash[..8]); // short hash for display
+    let tx_hash = hex::encode(&hash[..8]);
 
-    // For Phase 1, we just acknowledge receipt and log it.
-    // The mempool integration will come when the full tx pipeline is wired.
-    tracing::info!(tx_hash = %tx_hash, sender = ?tx.sender, "tx received");
-
-    Ok(Json(TxSubmitResponse {
-        tx_hash,
-        status: "received".to_string(),
-    }))
+    let mut guard = state.lock().await;
+    match guard.mempool.insert(tx) {
+        Ok(()) => {
+            tracing::info!(tx_hash = %tx_hash, "tx added to mempool");
+            Ok(Json(TxSubmitResponse {
+                tx_hash,
+                status: "in_mempool".to_string(),
+            }))
+        }
+        Err(e) => {
+            tracing::warn!(tx_hash = %tx_hash, error = %e, "tx rejected from mempool");
+            Err(err_response(400, format!("tx rejected: {e}")))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -388,6 +435,12 @@ async fn block_production_loop(state: SharedState) {
             .unwrap_or_default()
             .as_secs();
 
+        // Select transactions from mempool
+        let txs = guard.mempool.select(500);
+        if !txs.is_empty() {
+            tracing::info!(count = txs.len(), "including txs from mempool");
+        }
+
         let block = Block {
             header: BlockHeader {
                 height,
@@ -399,7 +452,7 @@ async fn block_production_loop(state: SharedState) {
                 chain_id: 0,
             },
             body: BlockBody {
-                transactions: Vec::new(),
+                transactions: txs,
             },
         };
 

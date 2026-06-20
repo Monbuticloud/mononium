@@ -10,7 +10,6 @@
 
 use std::path::PathBuf;
 
-use anyhow::Context;
 use clap::{Parser, Subcommand, Args};
 
 mod node;
@@ -175,8 +174,8 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Node(args) => node::run_node(args).await,
-        Command::Wallet(wallet) => run_wallet(wallet),
-        Command::Query(query) => run_query(query),
+        Command::Wallet(wallet) => run_wallet(wallet).await,
+        Command::Query(query) => run_query(query).await,
         Command::Logfmt => run_logfmt(),
     }
 }
@@ -185,12 +184,12 @@ async fn main() -> anyhow::Result<()> {
 // Wallet subcommand dispatcher
 // ---------------------------------------------------------------------------
 
-fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
+async fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
     match args.action {
         WalletAction::Keygen { name } => wallet::keygen(&name),
-        WalletAction::Balance { address, node } => wallet::balance(&address, &node),
+        WalletAction::Balance { address, node } => wallet::balance(&address, &node).await,
         WalletAction::Transfer { to, amount, key, node } => {
-            wallet::transfer(&to, &amount, &key, &node)
+            wallet::transfer(&to, &amount, &key, &node).await
         }
     }
 }
@@ -199,7 +198,7 @@ fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
 // Query subcommand dispatcher
 // ---------------------------------------------------------------------------
 
-fn run_query(args: QueryArgs) -> anyhow::Result<()> {
+async fn run_query(args: QueryArgs) -> anyhow::Result<()> {
     let base_url = match &args.action {
         QueryAction::Block { node, .. } | QueryAction::Latest { node, .. } => {
             node.trim_end_matches('/').to_string()
@@ -211,16 +210,18 @@ fn run_query(args: QueryArgs) -> anyhow::Result<()> {
         QueryAction::Latest { .. } => format!("{base_url}/block/latest"),
     };
 
-    let resp = reqwest::blocking::get(&url)
-        .with_context(|| format!("failed to query {url}"))?;
+    let resp = reqwest::get(&url)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to query {url}: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().unwrap_or_default();
+        let text = resp.text().await.unwrap_or_default();
         anyhow::bail!("RPC error ({}): {}", status, text);
     }
 
-    let json: serde_json::Value = resp.json()?;
+    let json: serde_json::Value = resp.json().await
+        .map_err(|e| anyhow::anyhow!("failed to parse response: {e}"))?;
     println!("{}", serde_json::to_string_pretty(&json).unwrap());
     Ok(())
 }

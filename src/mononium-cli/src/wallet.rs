@@ -105,18 +105,20 @@ pub fn load_key(name: &str) -> Result<KeyFile> {
 // ---------------------------------------------------------------------------
 
 /// Query an account balance from a node's REST API.
-pub fn balance(address: &str, node_url: &str) -> Result<()> {
+pub async fn balance(address: &str, node_url: &str) -> Result<()> {
     let url = format!("{}/balance/{}", node_url.trim_end_matches('/'), address);
-    let resp = reqwest::blocking::get(&url)
+    let resp = reqwest::get(&url)
+        .await
         .map_err(|e| anyhow::anyhow!("failed to query {url}: {e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
-        let text = resp.text().unwrap_or_default();
+        let text = resp.text().await.unwrap_or_default();
         anyhow::bail!("RPC error ({}): {}", status, text);
     }
 
-    let balance_data: serde_json::Value = resp.json()?;
+    let balance_data: serde_json::Value = resp.json().await
+        .map_err(|e| anyhow::anyhow!("failed to parse response: {e}"))?;
     let bal = balance_data["balance"].as_str().unwrap_or("0");
     let nonce = balance_data["nonce"].as_u64().unwrap_or(0);
 
@@ -131,7 +133,7 @@ pub fn balance(address: &str, node_url: &str) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Create, sign, and submit a transfer transaction.
-pub fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &str) -> Result<()> {
+pub async fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &str) -> Result<()> {
     // Load key
     let key_file = load_key(key_name)?;
 
@@ -141,16 +143,16 @@ pub fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &str) ->
         .strip_prefix("0x")
         .unwrap_or(&key_file.private_key);
     let sk_bytes = hex::decode(sk_hex)
-        .context("invalid private key hex in key file")?;
+        .map_err(|e| anyhow::anyhow!("invalid private key hex: {e}"))?;
 
     // Reconstruct key pair from private key
     let kp = Falcon512::from_private_key(&sk_bytes)
-        .context("failed to restore key pair from private key")?;
+        .map_err(|e| anyhow::anyhow!("failed to restore key pair: {e}"))?;
 
     // Parse recipient address (raw hex without checksum)
     let to_hex = to.strip_prefix("0x").unwrap_or(to);
     let to_bytes = hex::decode(to_hex)
-        .context("invalid recipient address hex")?;
+        .map_err(|e| anyhow::anyhow!("invalid recipient address hex: {e}"))?;
     if to_bytes.len() != 32 {
         anyhow::bail!("recipient address must be 32 bytes, got {}", to_bytes.len());
     }
@@ -165,9 +167,13 @@ pub fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &str) ->
     let base_url = node_url.trim_end_matches('/');
     let addr_hex = hex::encode(to_addr_bytes);
     let balance_url = format!("{base_url}/balance/0x{addr_hex}");
-    let bal_resp = reqwest::blocking::get(&balance_url)
-        .context("failed to query nonce from node")?;
-    let bal_data: serde_json::Value = bal_resp.json()?;
+    let bal_resp = reqwest::get(&balance_url)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to query nonce: {e}"))?;
+    let bal_data: serde_json::Value = bal_resp
+        .json()
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to parse balance response: {e}"))?;
     let nonce = bal_data["nonce"].as_u64().unwrap_or(0);
 
     // Build transaction
@@ -186,7 +192,7 @@ pub fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &str) ->
     // Serialize and sign
     let tx_encoded = parity_scale_codec::Encode::encode(&tx);
     let sig = Falcon512::sign(&kp, &tx_encoded)
-        .context("failed to sign transaction")?;
+        .map_err(|e| anyhow::anyhow!("failed to sign transaction: {e}"))?;
 
     // Build final signed tx
     let signed_tx = Transaction {
@@ -197,22 +203,27 @@ pub fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &str) ->
     // Submit to node
     let submit_url = format!("{base_url}/tx");
     let tx_json = serde_json::to_value(&signed_tx)
-        .context("failed to serialize transaction")?;
+        .map_err(|e| anyhow::anyhow!("failed to serialize transaction: {e}"))?;
 
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::Client::new();
     let resp = client
         .post(&submit_url)
         .json(&tx_json)
         .send()
-        .with_context(|| format!("failed to submit tx to {submit_url}"))?;
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to submit tx: {e}"))?;
 
     if resp.status().is_success() {
-        let result: serde_json::Value = resp.json()?;
+        let result: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to parse response: {e}"))?;
         println!("Transaction submitted!");
         println!("  Tx hash: {}", result["tx_hash"].as_str().unwrap_or("unknown"));
     } else {
         let status = resp.status();
-        let text = resp.text().unwrap_or_default();
+        let text_fut = resp.text();
+        let text = text_fut.await.unwrap_or_default();
         anyhow::bail!("submit error ({}): {}", status, text);
     }
 
