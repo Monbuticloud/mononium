@@ -10,9 +10,11 @@
 
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand, Args};
 
 mod node;
+mod wallet;
 
 /// Mononium blockchain node and wallet.
 #[derive(Parser)]
@@ -119,7 +121,7 @@ enum WalletAction {
     },
     /// Query account balance.
     Balance {
-        /// Address to query.
+        /// Address to query (hex, with or without 0x).
         address: String,
         /// Node REST endpoint.
         #[arg(long, default_value = "http://localhost:9933")]
@@ -127,7 +129,7 @@ enum WalletAction {
     },
     /// Send MONEX to another account.
     Transfer {
-        /// Recipient address.
+        /// Recipient address (hex, with or without 0x).
         to: String,
         /// Amount in MONEX (human-readable, e.g. 1.5).
         amount: String,
@@ -173,8 +175,8 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Node(args) => node::run_node(args).await,
-        Command::Wallet(wallet) => run_wallet(wallet).await,
-        Command::Query(query) => run_query(query).await,
+        Command::Wallet(wallet) => run_wallet(wallet),
+        Command::Query(query) => run_query(query),
         Command::Logfmt => run_logfmt(),
     }
 }
@@ -183,22 +185,12 @@ async fn main() -> anyhow::Result<()> {
 // Wallet subcommand dispatcher
 // ---------------------------------------------------------------------------
 
-async fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
+fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
     match args.action {
-        WalletAction::Keygen { name } => {
-            println!("Keygen for '{name}' — coming in Phase 1.10");
-            Ok(())
-        }
-        WalletAction::Balance { address, node } => {
-            println!("Balance for {address} via {node} — coming in Phase 1.10");
-            Ok(())
-        }
+        WalletAction::Keygen { name } => wallet::keygen(&name),
+        WalletAction::Balance { address, node } => wallet::balance(&address, &node),
         WalletAction::Transfer { to, amount, key, node } => {
-            println!(
-                "Transfer {amount} MONEX to {to} from key '{key}' via {node} \
-                 — coming in Phase 1.10"
-            );
-            Ok(())
+            wallet::transfer(&to, &amount, &key, &node)
         }
     }
 }
@@ -207,17 +199,30 @@ async fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
 // Query subcommand dispatcher
 // ---------------------------------------------------------------------------
 
-async fn run_query(args: QueryArgs) -> anyhow::Result<()> {
-    match args.action {
-        QueryAction::Block { height, node } => {
-            println!("Block {height} via {node} — coming in Phase 1.10");
-            Ok(())
+fn run_query(args: QueryArgs) -> anyhow::Result<()> {
+    let base_url = match &args.action {
+        QueryAction::Block { node, .. } | QueryAction::Latest { node, .. } => {
+            node.trim_end_matches('/').to_string()
         }
-        QueryAction::Latest { node } => {
-            println!("Latest block via {node} — coming in Phase 1.10");
-            Ok(())
-        }
+    };
+
+    let url = match args.action {
+        QueryAction::Block { height, .. } => format!("{base_url}/block/{height}"),
+        QueryAction::Latest { .. } => format!("{base_url}/block/latest"),
+    };
+
+    let resp = reqwest::blocking::get(&url)
+        .with_context(|| format!("failed to query {url}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let text = resp.text().unwrap_or_default();
+        anyhow::bail!("RPC error ({}): {}", status, text);
     }
+
+    let json: serde_json::Value = resp.json()?;
+    println!("{}", serde_json::to_string_pretty(&json).unwrap());
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

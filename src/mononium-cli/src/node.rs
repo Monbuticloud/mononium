@@ -25,6 +25,7 @@ use mononium_lib::consensus::era;
 use mononium_lib::core::account::Address;
 use mononium_lib::core::block::{Block, BlockBody, BlockHeader};
 use mononium_lib::core::state::StateMachine;
+use mononium_lib::core::transaction::Transaction;
 use mononium_lib::error::LibError;
 use mononium_lib::storage::genesis::load_genesis;
 use mononium_lib::storage::redb::RedbEngine;
@@ -195,6 +196,7 @@ fn build_router(state: SharedState) -> Router {
         .route("/balance/{address}", get(balance_handler))
         .route("/height", get(height_handler))
         .route("/era", get(era_handler))
+        .route("/tx", axum::routing::post(tx_submit_handler))
         .with_state(state)
 }
 
@@ -308,6 +310,35 @@ async fn balance_handler(
             nonce: 0,
         })),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Tx submit handler
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct TxSubmitResponse {
+    tx_hash: String,
+    status: String,
+}
+
+async fn tx_submit_handler(
+    State(_state): State<SharedState>,
+    axum::extract::Json(tx): axum::extract::Json<Transaction>,
+) -> Result<Json<TxSubmitResponse>, axum::response::Response> {
+    // Compute tx hash (BLAKE3 of SCALE-encoded tx)
+    let encoded = parity_scale_codec::Encode::encode(&tx);
+    let hash = mononium_lib::crypto::hash::blake3_hash(&encoded);
+    let tx_hash = hex::encode(&hash[..8]); // short hash for display
+
+    // For Phase 1, we just acknowledge receipt and log it.
+    // The mempool integration will come when the full tx pipeline is wired.
+    tracing::info!(tx_hash = %tx_hash, sender = ?tx.sender, "tx received");
+
+    Ok(Json(TxSubmitResponse {
+        tx_hash,
+        status: "received".to_string(),
+    }))
 }
 
 // ---------------------------------------------------------------------------
