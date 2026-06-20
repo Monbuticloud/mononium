@@ -94,10 +94,29 @@ impl Default for SparseMerkleTree {
 mod tests {
     use super::*;
 
+    /// Compute the 256-level default root hash.
+    ///
+    /// For an empty tree, every leaf is `[0u8; 32]` and each internal node
+    /// is `blake3(left_child || right_child)`. After 256 levels of hashing
+    /// the default up, we get the empty-tree root.
+    fn compute_empty_root() -> [u8; 32] {
+        let mut h = EMPTY_HASH;
+        for _ in 0..DEPTH {
+            let mut combined = [0u8; 64];
+            combined[..32].copy_from_slice(&h);
+            combined[32..].copy_from_slice(&h);
+            let hash = blake3::hash(&combined);
+            h = *hash.as_bytes();
+        }
+        h
+    }
+
     #[test]
-    fn test_new_smt_exists() {
+    fn test_empty_smt_has_correct_default_root() {
         let smt = SparseMerkleTree::new();
-        let _root = smt.root();
-        // Just verify it exists without panicking
+        let expected = compute_empty_root();
+        assert_eq!(smt.root(), expected);
+        // Also verify it's not just all zeros
+        assert_ne!(smt.root(), [0u8; 32]);
     }
 }
