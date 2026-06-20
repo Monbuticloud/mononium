@@ -495,6 +495,161 @@ impl StateMachine {
         self.set_validator(validator_addr, &entry);
         Ok(())
     }
+
+    // -----------------------------------------------------------------------
+    // Era boundary hooks
+    // -----------------------------------------------------------------------
+
+    /// Process unstaking cooldown for a single validator.
+    ///
+    /// If `release_era <= current_era`, the unstaking completes:
+    /// - Full unstake (amount == stake) → remove entry (Inactive)
+    /// - Partial unstake (amount < stake) → reduce stake, set status to
+    ///   `Staked` (if remaining ≥ 1 MONEX) or `Registered` (if < 1 MONEX)
+    pub fn process_unstaking_cooldown(
+        &mut self,
+        validator_addr: &Address,
+        current_era: u64,
+    ) -> Result<()> {
+        let Some(entry) = self.get_validator(validator_addr) else {
+            return Ok(()); // silently skip non-existent
+        };
+
+        let ValidatorStatus::Unstaking { release_era, amount } = entry.status else {
+            return Ok(()); // not unstaking, skip
+        };
+
+        if release_era > current_era {
+            return Ok(()); // cooldown not yet expired
+        }
+
+        let min_stake = crate::core::constants::MIN_STAKE;
+
+        if amount >= entry.stake {
+            // Full unstake — set to Registered with 0 stake (effectively Inactive)
+            let new_entry = ValidatorEntry {
+                stake: U256::zero(),
+                status: ValidatorStatus::Registered,
+                ..entry
+            };
+            self.set_validator(validator_addr, &new_entry);
+        } else {
+            // Partial unstake
+            let new_stake = entry.stake - amount;
+            let new_entry = ValidatorEntry {
+                status: if new_stake >= min_stake {
+                    ValidatorStatus::Staked { stake: new_stake }
+                } else {
+                    ValidatorStatus::Registered
+                },
+                stake: new_stake,
+                ..entry
+            };
+            self.set_validator(validator_addr, &new_entry);
+        }
+        Ok(())
+    }
+
+    /// Process thaw for a single frozen validator.
+    ///
+    /// If `frozen_until <= current_era`, the validator thaws:
+    /// - If stake ≥ 1 MONEX → status = `Thawed` (re-enters candidate pool)
+    /// - If stake < 1 MONEX → status = `Registered` (no stake)
+    pub fn process_thaw(&mut self, validator_addr: &Address, current_era: u64) -> Result<()> {
+        let Some(entry) = self.get_validator(validator_addr) else {
+            return Ok(());
+        };
+
+        let ValidatorStatus::Frozen { frozen_until } = entry.status else {
+            return Ok(());
+        };
+
+        if frozen_until > current_era {
+            return Ok(());
+        }
+
+        let min_stake = crate::core::constants::MIN_STAKE;
+        let new_status = if entry.stake >= min_stake {
+            ValidatorStatus::Thawed
+        } else {
+            ValidatorStatus::Registered
+        };
+
+        let new_entry = ValidatorEntry {
+            status: new_status,
+            ..entry
+        };
+        self.set_validator(validator_addr, &new_entry);
+        Ok(())
+    }
+
+    /// Run validator election from a list of candidates.
+    ///
+    /// `era == 0`: Open election — all non-Frozen candidates become Active,
+    /// first `max_validators` by registration order.
+    ///
+    /// `era >= 1`: Top-N election — candidates with stake ≥ 1 MONEX are
+    /// sorted by stake (desc), ties broken by earliest registration_era.
+    /// Top `max_validators` become Active. Previously Active but not elected
+    /// revert to Staked.
+    ///
+    /// Returns the addresses of the newly elected active set.
+    pub fn run_election(
+        &mut self,
+        candidates: &[Address],
+        max_validators: usize,
+        era: u64,
+    ) -> Vec<Address> {
+        let min_stake = crate::core::constants::MIN_STAKE;
+        let mut eligible: Vec<ValidatorEntry> = Vec::new();
+
+        for addr in candidates {
+            if let Some(entry) = self.get_validator(addr) {
+                // Exclude Frozen and Unstaking
+                if matches!(
+                    entry.status,
+                    ValidatorStatus::Frozen { .. } | ValidatorStatus::Unstaking { .. }
+                ) {
+                    continue;
+                }
+                eligible.push(entry);
+            }
+        }
+
+        let elected = if era == 0 {
+            // Era 0: Open — first max_validators by registration order,
+            // exclude Frozen/Unstaking (already filtered above)
+            eligible.into_iter().take(max_validators).collect::<Vec<_>>()
+        } else {
+            // Era 1+: Top-N by stake
+            eligible.sort_by(|a, b| {
+                b.stake.cmp(&a.stake)
+                    .then_with(|| a.registration_era.cmp(&b.registration_era))
+            });
+            eligible.into_iter()
+                .filter(|e| e.stake >= min_stake)
+                .take(max_validators)
+                .collect::<Vec<_>>()
+        };
+
+        let active_addrs: Vec<Address> = elected.iter().map(|e| e.address).collect();
+
+        // Set elected validators to Active
+        for entry in elected {
+            let new_status = match entry.status {
+                ValidatorStatus::Registered | ValidatorStatus::Staked { .. }
+                | ValidatorStatus::Thawed => ValidatorStatus::Active,
+                other => other, // shouldn't happen, but preserve
+            };
+            let new_entry = ValidatorEntry {
+                status: new_status,
+                ..entry
+            };
+            self.set_validator(&new_entry.address, &new_entry);
+        }
+
+        active_addrs
+    }
 }
 
 /// Convert a U256 fee to u128 (sat at max u128).
@@ -1293,15 +1448,14 @@ mod tests {
     fn make_staked_validator(
         sm: &mut StateMachine,
         addr: Address,
-        pk: [u8; 897],
-        stake_amount: u64,
+        _pk: [u8; 897],
+        stake_amount: U256,
     ) {
         // Register via RegisterAndStake atomic tx
-        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
         let tx = Transaction {
             chain_id: 0, nonce: 0, sender: addr,
             fee: U256::from(0),
-            body: TxBody::RegisterAndStake { validator: addr, amount: U256::from(stake_amount) },
+            body: TxBody::RegisterAndStake { validator: addr, amount: stake_amount },
             signature: dummy_sig(),
         };
         let block = Block {
@@ -1320,7 +1474,7 @@ mod tests {
         let accounts = vec![(alice(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
         setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
-        make_staked_validator(&mut sm, alice(), [0x42u8; 897], 500);
+        make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(500));
 
         // Alice unstakes 200 from herself
         let tx = Transaction {
@@ -1358,7 +1512,7 @@ mod tests {
         let mut sm = StateMachine::new(accounts);
         setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
         setup_bob_with_balance(&mut sm, U256::from(1000));
-        make_staked_validator(&mut sm, alice(), [0x42u8; 897], 500);
+        make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(500));
 
         // Bob (not Alice) unstakes 100 from Alice
         let tx = Transaction {
@@ -1417,7 +1571,7 @@ mod tests {
         let accounts = vec![(alice(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
         setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
-        make_staked_validator(&mut sm, alice(), [0x42u8; 897], 300);
+        make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(300));
 
         // Try to unstake 500, but stake is only 300
         let tx = Transaction {
@@ -1443,7 +1597,7 @@ mod tests {
         let accounts = vec![(alice(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
         setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
-        make_staked_validator(&mut sm, alice(), [0x42u8; 897], 300);
+        make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(300));
 
         let tx = Transaction {
             chain_id: 0, nonce: 1, sender: alice(),
@@ -1609,5 +1763,215 @@ mod tests {
         let expected = (U256::from(1000) + deposit) - U256::from(50) - deposit;
         assert_eq!(alice_post.balance, expected);
         assert_eq!(alice_post.nonce, 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // Era boundary tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_unstaking_cooldown_full() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let mut sm = StateMachine::new(vec![(alice(), make_account(0))]);
+        setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
+        make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(500));
+
+        // Unstake full amount (500)
+        let tx = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(40),
+            body: TxBody::Unstake { validator: alice(), amount: U256::from(500) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        sm.apply_block(&block).unwrap();
+
+        // Cooldown at era 167 → not yet expired
+        sm.process_unstaking_cooldown(&alice(), 167).unwrap();
+        assert!(sm.get_validator(&alice()).is_some()); // still exists
+
+        // Cooldown at era 168+ → full unstake, entry becomes Registered with 0 stake
+        sm.process_unstaking_cooldown(&alice(), 168).unwrap();
+        let entry = sm.get_validator(&alice()).unwrap();
+        assert_eq!(entry.stake, U256::zero());
+        assert_eq!(entry.status, ValidatorStatus::Registered);
+    }
+
+    #[test]
+    fn test_unstaking_cooldown_partial() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let initial = one_monex * U256::from(100) + deposit;
+        let mut sm = StateMachine::new(vec![(alice(), make_account(0))]);
+        setup_alice_with_balance(&mut sm, initial);
+        make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(50) * crate::core::constants::ONE_MONEX);
+
+        // Unstake 20 MONEX (partial)
+        let unstake_amount = U256::from(20) * one_monex;
+        let tx = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(40),
+            body: TxBody::Unstake { validator: alice(), amount: unstake_amount },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        sm.apply_block(&block).unwrap();
+
+        // Cooldown at era 168
+        sm.process_unstaking_cooldown(&alice(), 168).unwrap();
+        let entry = sm.get_validator(&alice()).unwrap();
+        // 50 - 20 = 30 MONEX remaining (>= 1 MONEX → Staked)
+        assert_eq!(entry.stake, U256::from(30) * one_monex);
+        assert_eq!(
+            entry.status,
+            ValidatorStatus::Staked { stake: U256::from(30) * one_monex }
+        );
+    }
+
+    #[test]
+    fn test_thaw_updates_status() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        // Manually insert a frozen validator with >= 1 MONEX stake
+        let entry = ValidatorEntry {
+            address: alice(),
+            public_key: [0x42u8; 897],
+            stake: one_monex * U256::from(5),
+            status: ValidatorStatus::Frozen { frozen_until: 720 },
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, alice().as_bytes());
+        sm.state.insert(&key, entry.encode());
+
+        // Thaw at era 719 → not yet
+        sm.process_thaw(&alice(), 719).unwrap();
+        let entry = sm.get_validator(&alice()).unwrap();
+        assert_eq!(
+            entry.status,
+            ValidatorStatus::Frozen { frozen_until: 720 }
+        );
+
+        // Thaw at era 720+ → thawed
+        sm.process_thaw(&alice(), 720).unwrap();
+        let entry = sm.get_validator(&alice()).unwrap();
+        assert_eq!(entry.status, ValidatorStatus::Thawed);
+    }
+
+    #[test]
+    fn test_election_era_0_open() {
+        let mut sm = StateMachine::new(vec![]);
+        // Insert 5 validators in registration order
+        for i in 0..5u8 {
+            let addr = Address::from([i; 32]);
+            let entry = ValidatorEntry {
+                address: addr,
+                public_key: [0x42u8; 897],
+                stake: U256::zero(),
+                status: ValidatorStatus::Registered,
+                registration_era: u64::from(i),
+            };
+            let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
+            sm.state.insert(&key, entry.encode());
+        }
+
+        let addrs: Vec<Address> = (0..5u8).map(|i| Address::from([i; 32])).collect();
+        let active = sm.run_election(&addrs, 3, 0);
+
+        assert_eq!(active.len(), 3);
+        assert_eq!(active[0], Address::from([0u8; 32]));
+        assert_eq!(active[1], Address::from([1u8; 32]));
+        assert_eq!(active[2], Address::from([2u8; 32]));
+
+        // Check status changed to Active
+        for addr in &active {
+            let entry = sm.get_validator(addr).unwrap();
+            assert_eq!(entry.status, ValidatorStatus::Active);
+        }
+        // 4th validator stays Registered
+        let entry = sm.get_validator(&Address::from([3u8; 32])).unwrap();
+        assert_eq!(entry.status, ValidatorStatus::Registered);
+    }
+
+    #[test]
+    fn test_election_era_1_top_n() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        // Insert 5 validators with different stakes (all >= 1 MONEX)
+        let stakes = [
+            U256::from(100) * one_monex,
+            U256::from(50) * one_monex,
+            U256::from(200) * one_monex,
+            U256::from(30) * one_monex,
+            U256::from(75) * one_monex,
+        ];
+        for (i, &stake) in stakes.iter().enumerate() {
+            let addr = Address::from([i as u8; 32]);
+            let entry = ValidatorEntry {
+                address: addr,
+                public_key: [0x42u8; 897],
+                stake,
+                status: ValidatorStatus::Staked { stake },
+                registration_era: u64::from(i as u8),
+            };
+            let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
+            sm.state.insert(&key, entry.encode());
+        }
+
+        let addrs: Vec<Address> = (0..5u8).map(|i| Address::from([i; 32])).collect();
+        let active = sm.run_election(&addrs, 3, 1);
+
+        // Top 3 by stake: 200 (idx 2), 100 (idx 0), 75 (idx 4)
+        assert_eq!(active.len(), 3);
+        assert_eq!(active[0], Address::from([2u8; 32])); // 200 * ONE_MONEX
+        assert_eq!(active[1], Address::from([0u8; 32])); // 100 * ONE_MONEX
+        assert_eq!(active[2], Address::from([4u8; 32])); // 75 * ONE_MONEX
+
+        // Non-elected validators still have their original status
+        let entry = sm.get_validator(&Address::from([1u8; 32])).unwrap();
+        assert_eq!(
+            entry.status,
+            ValidatorStatus::Staked { stake: U256::from(50) * one_monex }
+        );
+    }
+
+    #[test]
+    fn test_election_frozen_excluded() {
+        let mut sm = StateMachine::new(vec![]);
+        for i in 0..3u8 {
+            let status = if i == 1 {
+                ValidatorStatus::Frozen { frozen_until: 999 }
+            } else {
+                ValidatorStatus::Staked { stake: U256::from(100) }
+            };
+            let addr = Address::from([i; 32]);
+            let entry = ValidatorEntry {
+                address: addr,
+                public_key: [0x42u8; 897],
+                stake: U256::from(100),
+                status,
+                registration_era: u64::from(i),
+            };
+            let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
+            sm.state.insert(&key, entry.encode());
+        }
+
+        let addrs: Vec<Address> = (0..3u8).map(|i| Address::from([i; 32])).collect();
+        let active = sm.run_election(&addrs, 3, 0);
+        // Frozen validator (idx 1) excluded, so only 2 elected
+        assert_eq!(active.len(), 2);
+        assert_eq!(active[0], Address::from([0u8; 32]));
+        assert_eq!(active[1], Address::from([2u8; 32]));
     }
 }
