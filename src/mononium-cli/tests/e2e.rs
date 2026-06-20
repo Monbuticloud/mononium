@@ -106,18 +106,25 @@ fn e2e_wallet_balance_and_transfer() {
         .arg(&key_name)
         .output()
         .expect("failed to run keygen");
-    assert!(output.status.success(), "keygen failed: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "keygen failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Extract address from stdout, strip checksum for raw 32-byte hex
     let stdout = String::from_utf8_lossy(&output.stdout);
     let addr_line = stdout.lines().find(|l| l.contains("Address:")).unwrap();
-    let address_with_checksum = addr_line
-        .split("Address: ")
-        .nth(1)
-        .unwrap()
-        .trim();
-    assert!(address_with_checksum.starts_with("0x"), "address should start with 0x");
-    assert_eq!(address_with_checksum.len(), 82, "address should be 82 chars (0x + 64 + 16)");
+    let address_with_checksum = addr_line.split("Address: ").nth(1).unwrap().trim();
+    assert!(
+        address_with_checksum.starts_with("0x"),
+        "address should start with 0x"
+    );
+    assert_eq!(
+        address_with_checksum.len(),
+        82,
+        "address should be 82 chars (0x + 64 + 16)"
+    );
 
     // Raw hex address (without checksum) for genesis and balance queries
     let raw_addr_hex = &address_with_checksum[2..66]; // 64 hex chars
@@ -138,7 +145,11 @@ fn e2e_wallet_balance_and_transfer() {
         },
         "initial_validators": []
     });
-    std::fs::write(&genesis_path, serde_json::to_string_pretty(&genesis_json).unwrap()).unwrap();
+    std::fs::write(
+        &genesis_path,
+        serde_json::to_string_pretty(&genesis_json).unwrap(),
+    )
+    .unwrap();
 
     // Start node
     let data_dir = dir.join("data");
@@ -179,7 +190,7 @@ fn e2e_wallet_balance_and_transfer() {
         .arg("wallet")
         .arg("transfer")
         .arg(bob_raw) // recipient address (no 0x)
-        .arg("1.0")    // amount in MONEX
+        .arg("1.0") // amount in MONEX
         .arg("--key")
         .arg(&key_name)
         .arg("--node")
@@ -255,3 +266,4 @@ fn e2e_wallet_balance_and_transfer() {
 
     // Node is killed on drop (end of scope)
 }
+// Test of doom and despair (CI runners won't like this one)
