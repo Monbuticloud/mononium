@@ -490,7 +490,7 @@ mod tests {
         let tx = Transaction {
             chain_id: 0, nonce: 0, sender: alice(),
             fee: U256::from(50),
-            body: TxBody::RegisterValidator,
+            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
             signature: dummy_sig(),
         };
         let block = Block {

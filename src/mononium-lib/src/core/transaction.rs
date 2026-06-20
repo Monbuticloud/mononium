@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_tx_body_register_validator_scale_roundtrip() {
-        let body = TxBody::RegisterValidator;
+        let body = TxBody::RegisterValidator { public_key: [0x42u8; 897] };
         let encoded = body.encode();
         let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
         assert_eq!(body, decoded);
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_tx_body_register_validator_json() {
-        let body = TxBody::RegisterValidator;
+        let body = TxBody::RegisterValidator { public_key: [0x42u8; 897] };
         let json = serde_json::to_string(&body).unwrap();
         let decoded: TxBody = serde_json::from_str(&json).unwrap();
         assert_eq!(body, decoded);
@@ -328,7 +328,7 @@ mod tests {
             nonce: 0,
             sender: Address::from([0x99u8; 32]),
             fee: U256::zero(),
-            body: TxBody::RegisterValidator,
+            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
             signature: dummy_signature(),
         };
         let tx_b = Transaction {
@@ -336,7 +336,7 @@ mod tests {
             nonce: 0,
             sender: Address::from([0x99u8; 32]),
             fee: U256::zero(),
-            body: TxBody::RegisterValidator,
+            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
             signature: dummy_signature(),
         };
         assert_ne!(tx_a.encode(), tx_b.encode());
