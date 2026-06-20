@@ -102,16 +102,17 @@
 - [x] `mononium-cli logfmt` converts JSON logs to text
 - [x] CLI binary builds: `cargo build -p mononium-cli`
 
-## Sub-phase 1.10 🔶 CLI Wallet
+## Sub-phase 1.10 ✅ CLI Wallet
 
-- [ ] Test: Keygen produces valid Falcon-512 key
-- [ ] Test: Key file JSON format
-- [ ] Impl: Wallet keygen command
-- [ ] Impl: Wallet transfer command
-- [ ] Impl: Wallet balance command
-- [ ] `mononium-cli wallet keygen` generates keys
-- [ ] `mononium-cli wallet transfer` sends txs
-- [ ] `mononium-cli wallet balance` queries state
+- [x] `mononium-cli/src/wallet.rs` — Keygen (Falcon-512), balance (HTTP), transfer (sign + submit)
+- [x] `mononium-cli wallet keygen <name>` — generates Falcon-512 keys, saves to `~/.mononium/keys/{name}.json`
+- [x] `mononium-cli wallet balance <address>` — queries account via REST API
+- [x] `mononium-cli wallet transfer <to> <amount> --key <name>` — signs + submits tx via POST /tx
+- [x] `mononium-cli query block <height>` / `latest` — queries blocks via REST API
+- [x] `mononium-cli logfmt` — JSON log → human-readable
+- [x] POST `/tx` endpoint on node REST API
+- [x] Key file format: JSON with public_key, private_key, seed, address (hex)
+- [x] 218 total tests passing (212 lib + 6 CLI wallet tests)
 
 ---
 
