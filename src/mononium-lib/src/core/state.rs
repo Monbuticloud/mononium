@@ -11,7 +11,7 @@ use crate::core::transaction::{BurnTarget, TxBody};
 use parity_scale_codec::{Decode, Encode};
 use crate::core::validator::{ValidatorEntry, ValidatorStatus};
 use crate::crypto::trie::{SparseMerkleTree, namespace_key, NS_ACCOUNTS, NS_VALIDATORS};
-use crate::error::{LibError, Result};
+use crate::error::{HexBytes, LibError, Result};
 
 /// Receipt returned after successfully applying a block.
 #[derive(Debug, Clone)]
@@ -129,8 +129,17 @@ impl StateMachine {
                         tx.nonce,
                     )
                 }
-                TxBody::Stake { .. }
-                | TxBody::RegisterAndStake { .. }
+                TxBody::Stake { validator, amount } => {
+                    self.apply_stake(
+                        &mut sender_acct,
+                        &tx.sender,
+                        validator,
+                        *amount,
+                        tx.fee,
+                        tx.nonce,
+                    )
+                }
+                TxBody::RegisterAndStake { .. }
                 | TxBody::Unstake { .. } => {
                     // Validate nonce + deduct fee at minimum
                     self.try_deduct_fee_only(&mut sender_acct, tx.fee, tx.nonce)
@@ -265,6 +274,69 @@ impl StateMachine {
             registration_era: 0,
         };
         self.set_validator(addr, &entry);
+        Ok(())
+    }
+
+    /// Apply a Stake transaction.
+    ///
+    /// Validates the target validator exists, is not frozen or unstaking,
+    /// then deducts `amount + fee` from sender and adds `amount` to the
+    /// validator's stake. Updates status to `Staked` if currently `Registered`.
+    fn apply_stake(
+        &mut self,
+        sender: &mut Account,
+        sender_addr: &Address,
+        validator_addr: &Address,
+        amount: U256,
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        // Verify nonce
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+
+        // Look up validator
+        let Some(mut entry) = self.get_validator(validator_addr) else {
+            return Err(LibError::ValidatorNotFound(
+                HexBytes(validator_addr.into_bytes()),
+            ));
+        };
+
+        // Verify validator is not frozen or unstaking
+        match &entry.status {
+            ValidatorStatus::Frozen { .. } | ValidatorStatus::Unstaking { .. } => {
+                return Err(LibError::Consensus("validator is frozen or unstaking"));
+            }
+            _ => {}
+        }
+
+        // Verify amount > 0
+        if amount.is_zero() {
+            return Err(LibError::Consensus("stake amount must be > 0"));
+        }
+
+        // Verify sender can afford fee + amount
+        let total_debit = fee + amount;
+        if sender.balance < total_debit {
+            return Err(LibError::InsufficientBalance(sender.balance, total_debit));
+        }
+
+        // Deduct from sender
+        sender.balance -= total_debit;
+        sender.nonce += 1;
+
+        // Add to validator stake (defensive overflow check)
+        let new_stake = entry.stake.checked_add(amount)
+            .ok_or_else(|| LibError::Consensus("stake overflow"))?;
+        entry.stake = new_stake;
+
+        // Update status to Staked if currently Registered
+        if entry.status == ValidatorStatus::Registered {
+            entry.status = ValidatorStatus::Staked { stake: new_stake };
+        }
+
+        self.set_validator(validator_addr, &entry);
         Ok(())
     }
 }
@@ -583,9 +655,16 @@ mod tests {
     }
 
     #[test]
-    fn test_stake_deducts_fee_only() {
-        let accounts = vec![(alice(), make_account(1000)), (bob(), make_account(500))];
+    fn test_stake_deducts_fee_and_amount() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0)), (bob(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
+        setup_bob_with_balance(&mut sm, U256::from(1000) + deposit);
+        // Register Bob as validator
+        create_validator(&mut sm, bob(), [0x42u8; 897], 0, 0);
+
+        // Alice stakes 200 to Bob
         let tx = Transaction {
             chain_id: 0, nonce: 0, sender: alice(),
             fee: U256::from(75),
@@ -594,17 +673,23 @@ mod tests {
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
+                height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                timestamp: 1_700_000_001, proposer: bob(), chain_id: 0,
             },
             body: BlockBody { transactions: vec![tx] },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
         let alice_post = sm.get_account(&alice()).unwrap();
-        assert_eq!(alice_post.balance, U256::from(925)); // 1000 - 75 (fee)
+        // Alice never registered (only Bob did), so no deposit deducted from Alice
+        // Alice: (2000 + deposit) - 200(stake) - 75(fee) = 1725 + deposit
+        assert_eq!(alice_post.balance, U256::from(1725) + deposit);
         assert_eq!(alice_post.nonce, 1);
+
+        // Bob's validator now has 200 stake
+        let entry = sm.get_validator(&bob()).unwrap();
+        assert_eq!(entry.stake, U256::from(200));
     }
 
     // -----------------------------------------------------------------------
@@ -879,9 +964,10 @@ mod tests {
         let alice_post = sm.get_account(&alice()).unwrap();
         // Alice after register: (1000 + deposit) - 50 - deposit = 950
         // After failed stake: fee-only 50 → 900
-        assert_eq!(alice_post.balance, U256::from(900));
+        // After register: (1000 + deposit) - 0(fee) - deposit = 1000
+        // After failed stake: fee-only 50 deducted → 950
+        assert_eq!(alice_post.balance, U256::from(950));
     }
-
     #[test]
     fn test_stake_to_frozen_validator() {
         // This tests the status check — we create a frozen validator entry directly
