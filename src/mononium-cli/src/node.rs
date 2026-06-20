@@ -1,0 +1,389 @@
+//! Node daemon — startup lifecycle, REST API, block production loop.
+//!
+//! Startup order:
+//! 1. Load config file (if provided), merge CLI overrides
+//! 2. Setup tracing/logging
+//! 3. Open redb database
+//! 4. Load genesis (if fresh database)
+//! 5. Initialize state machine from stored state
+//! 6. Start REST API server
+//! 7. Start block production loop
+
+use std::path::Path;
+use std::sync::Arc;
+
+use anyhow::{Context, Result};
+use axum::extract::State;
+use axum::routing::get;
+use axum::{Json, Router};
+use tokio::sync::Mutex;
+use tracing_subscriber::EnvFilter;
+
+use mononium_lib::config::NodeConfig;
+use mononium_lib::config::CliOverrides;
+use mononium_lib::consensus::era;
+use mononium_lib::core::account::Address;
+use mononium_lib::core::block::{Block, BlockBody, BlockHeader};
+use mononium_lib::core::state::StateMachine;
+use mononium_lib::error::LibError;
+use mononium_lib::storage::genesis::load_genesis;
+use mononium_lib::storage::redb::RedbEngine;
+use mononium_lib::storage::tables;
+use mononium_lib::storage::StorageEngine;
+
+use crate::NodeArgs;
+
+// ---------------------------------------------------------------------------
+// Shared application state
+// ---------------------------------------------------------------------------
+
+struct AppState {
+    engine: RedbEngine,
+    state: StateMachine,
+    current_height: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+/// Run the node daemon with the given CLI arguments.
+pub async fn run_node(args: NodeArgs) -> Result<()> {
+    // ---------- 1. Load & merge config ----------
+    let mut config = if let Some(ref config_path) = args.config {
+        NodeConfig::load(config_path)
+            .with_context(|| format!("failed to load config from {}", config_path.display()))?
+    } else {
+        NodeConfig::default()
+    };
+
+    config.merge_cli(build_cli_overrides(&args));
+
+    // ---------- 2. Setup logging ----------
+    let log_level = args.log_level.as_deref().unwrap_or("info");
+    let filter = EnvFilter::try_new(format!("mononium={log_level}"))
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .init();
+
+    // ---------- 3. Validate ----------
+    config.validate().context("config validation failed")?;
+
+    // ---------- 4. Open database ----------
+    let data_dir = config.data_dir();
+    let db_dir = Path::new(&data_dir);
+    tokio::fs::create_dir_all(db_dir).await?;
+    let db_path = db_dir.join("chain.redb");
+    tracing::info!(path = %db_path.display(), "opening database");
+    let engine = RedbEngine::open(&db_path)
+        .context("failed to open database")?;
+
+    // ---------- 5. Load genesis ----------
+    {
+        let genesis_loaded = engine.exists(tables::META, tables::GENESIS_LOADED_KEY)?;
+        if !genesis_loaded {
+            let genesis_path = config.genesis_path()
+                .context("genesis path not configured")?;
+            tracing::info!(path = genesis_path, "loading genesis");
+            load_genesis(&engine, Path::new(genesis_path))
+                .context("failed to load genesis")?;
+        } else {
+            tracing::info!("genesis already loaded, skipping");
+        }
+    }
+
+    // ---------- 6. Initialize state machine ----------
+    // For Phase 1, start with empty state — accounts live in DB.
+    let state = StateMachine::new([]);
+
+    // ---------- 7. Determine current height ----------
+    let current_height = load_latest_height(&engine)?;
+    tracing::info!(height = current_height, "node starting");
+
+    // ---------- 8. Start REST API ----------
+    let rest_port = config.rest_port();
+    let shared = Arc::new(Mutex::new(AppState {
+        engine,
+        state,
+        current_height,
+    }));
+
+    let app = build_router(shared.clone());
+    let addr = format!("0.0.0.0:{rest_port}");
+    tracing::info!("REST API listening on {addr}");
+
+    tokio::spawn(async move {
+        if let Err(e) = serve_rest(app, &addr).await {
+            tracing::error!("REST server failed: {e}");
+        }
+    });
+
+    // ---------- 9. Block production loop ----------
+    tracing::info!("starting block production loop (5s blocks)");
+    block_production_loop(shared).await;
+
+    Ok(())
+}
+
+async fn serve_rest(app: Router, addr: &str) -> std::io::Result<()> {
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await
+}
+
+// ---------------------------------------------------------------------------
+// Build CliOverrides from CLI args
+// ---------------------------------------------------------------------------
+
+fn build_cli_overrides(args: &NodeArgs) -> CliOverrides {
+    let bootnodes = if args.bootnode.is_empty() {
+        None
+    } else {
+        Some(args.bootnode.clone())
+    };
+
+    CliOverrides {
+        genesis: args.genesis.clone(),
+        key: args.key.clone(),
+        key_file: args.key_file.clone(),
+        observer: if args.observer { Some(true) } else { None },
+        p2p_port: args.p2p_port,
+        rpc_port: args.rpc_port,
+        rest_port: args.rest_port,
+        bootnodes,
+        data_dir: args.data_dir.clone(),
+        storage_mode: args.storage_mode.clone(),
+        compact_eras: None,
+        full_node_rpc: None,
+        log_level: args.log_level.clone(),
+        log_json: args.log_format.as_ref().map(|f| f == "json"),
+        unlock_timeout: args.unlock_timeout,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Storage helpers
+// ---------------------------------------------------------------------------
+
+/// Read the latest block height from the stored blocks table.
+/// Keys are big-endian u64 so the max byte sequence is the highest height.
+fn load_latest_height(engine: &RedbEngine) -> Result<u64> {
+    let keys = engine.list_keys(tables::BLOCKS)?;
+    if keys.is_empty() {
+        return Ok(0);
+    }
+    // Find the highest key (lexicographic on BE bytes)
+    let max_key = keys.iter().max().unwrap();
+    let mut buf = [0u8; 8];
+    buf.copy_from_slice(max_key);
+    Ok(u64::from_be_bytes(buf))
+}
+
+// ---------------------------------------------------------------------------
+// REST API router
+// ---------------------------------------------------------------------------
+
+type SharedState = Arc<Mutex<AppState>>;
+
+fn build_router(state: SharedState) -> Router {
+    Router::new()
+        .route("/health", get(health_handler))
+        .route("/block/latest", get(block_latest_handler))
+        .route("/block/{height}", get(block_by_height_handler))
+        .route("/balance/{address}", get(balance_handler))
+        .route("/height", get(height_handler))
+        .route("/era", get(era_handler))
+        .with_state(state)
+}
+
+// ---------------------------------------------------------------------------
+// Response types
+// ---------------------------------------------------------------------------
+
+#[derive(serde::Serialize)]
+struct HealthResponse {
+    status: String,
+    height: u64,
+}
+
+#[derive(serde::Serialize)]
+struct HeightResponse {
+    height: u64,
+}
+
+#[derive(serde::Serialize)]
+struct EraResponse {
+    era: u64,
+}
+
+#[derive(serde::Serialize)]
+struct BalanceResponse {
+    address: String,
+    balance: String,
+    nonce: u64,
+}
+
+#[derive(serde::Serialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+fn err_response(code: u16, msg: String) -> axum::response::Response {
+    let body = serde_json::to_string(&ErrorResponse { error: msg }).unwrap();
+    axum::response::Response::builder()
+        .status(code)
+        .body(axum::body::Body::from(body))
+        .unwrap()
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+async fn health_handler(State(state): State<SharedState>) -> Json<HealthResponse> {
+    let guard = state.lock().await;
+    Json(HealthResponse {
+        status: "ok".to_string(),
+        height: guard.current_height,
+    })
+}
+
+async fn height_handler(State(state): State<SharedState>) -> Json<HeightResponse> {
+    let guard = state.lock().await;
+    Json(HeightResponse {
+        height: guard.current_height,
+    })
+}
+
+async fn era_handler(State(state): State<SharedState>) -> Json<EraResponse> {
+    let guard = state.lock().await;
+    Json(EraResponse {
+        era: era::era_at_height(guard.current_height),
+    })
+}
+
+async fn block_latest_handler(
+    State(state): State<SharedState>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    let guard = state.lock().await;
+    if guard.current_height == 0 {
+        return Err(err_response(404, "no blocks yet".to_string()));
+    }
+    let block = load_block_json(&guard.engine, guard.current_height)
+        .map_err(|e| err_response(500, format!("{e}")))?;
+    Ok(Json(block))
+}
+
+async fn block_by_height_handler(
+    State(state): State<SharedState>,
+    axum::extract::Path(height): axum::extract::Path<u64>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    let guard = state.lock().await;
+    let block = load_block_json(&guard.engine, height)
+        .map_err(|_| err_response(404, format!("block {height} not found")))?;
+    Ok(Json(block))
+}
+
+async fn balance_handler(
+    State(state): State<SharedState>,
+    axum::extract::Path(address_str): axum::extract::Path<String>,
+) -> Result<Json<BalanceResponse>, axum::response::Response> {
+    let guard = state.lock().await;
+
+    let raw = parse_raw_address(&address_str)
+        .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
+    let addr = Address::from(raw);
+
+    match guard.state.get_account(&addr) {
+        Some(acct) => Ok(Json(BalanceResponse {
+            address: address_str,
+            balance: acct.balance.to_string(),
+            nonce: acct.nonce,
+        })),
+        None => Ok(Json(BalanceResponse {
+            address: address_str,
+            balance: "0".to_string(),
+            nonce: 0,
+        })),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Parse a hex address string (with or without `0x`) into 32 raw bytes.
+fn parse_raw_address(s: &str) -> std::result::Result<[u8; 32], LibError> {
+    let s = s.strip_prefix("0x").unwrap_or(s);
+    let bytes = hex::decode(s).map_err(|_| LibError::InvalidAddress(s.to_string()))?;
+    if bytes.len() != 32 {
+        return Err(LibError::InvalidAddress(s.to_string()));
+    }
+    let mut raw = [0u8; 32];
+    raw.copy_from_slice(&bytes);
+    Ok(raw)
+}
+
+/// Load a block from storage, decode from SCALE, convert to JSON.
+fn load_block_json(engine: &RedbEngine, height: u64) -> std::result::Result<serde_json::Value, LibError> {
+    let key = height.to_be_bytes();
+    let raw = engine
+        .get(tables::BLOCKS, &key)?
+        .ok_or(LibError::BlockNotFound(height))?;
+    let block: Block = parity_scale_codec::Decode::decode(&mut &raw[..])
+        .map_err(|e| LibError::Codec(format!("block decode: {e}")))?;
+    serde_json::to_value(&block).map_err(|e| LibError::Codec(format!("block JSON: {e}")))
+}
+
+// ---------------------------------------------------------------------------
+// Block production loop
+// ---------------------------------------------------------------------------
+
+async fn block_production_loop(state: SharedState) {
+    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
+    // Ticks are immediate by default; consume the first one so we don't
+    // produce block 1 at t=0.
+    interval.tick().await;
+
+    loop {
+        interval.tick().await;
+        let mut guard = state.lock().await;
+        let height = guard.current_height + 1;
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let block = Block {
+            header: BlockHeader {
+                height,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: now,
+                proposer: Address::from([0u8; 32]),
+                chain_id: 0,
+            },
+            body: BlockBody {
+                transactions: Vec::new(),
+            },
+        };
+
+        // Apply to state machine (updates state root, validates txs)
+        let _receipt = guard.state.apply_block(&block);
+
+        // Store in DB
+        let key = height.to_be_bytes();
+        let encoded = parity_scale_codec::Encode::encode(&block);
+        if let Err(e) = guard.engine.put(tables::BLOCKS, &key, &encoded) {
+            tracing::error!(%height, error = %e, "failed to store block");
+            continue;
+        }
+
+        guard.current_height = height;
+        tracing::info!(height, timestamp = now, "block produced");
+    }
+}

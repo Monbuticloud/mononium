@@ -10,10 +10,20 @@ mononium-lib = { path = "../mononium-lib" }
 # CLI
 clap = { version = "4", features = ["derive"] }
 anyhow.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 serde.workspace = true
+serde_json.workspace = true
+hex = "0.4"
+parity-scale-codec = { workspace = true, features = ["derive"] }
+
+# HTTP/REST
+axum.workspace = true
+tower-http.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true
