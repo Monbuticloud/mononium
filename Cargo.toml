@@ -18,10 +18,10 @@ parity-scale-codec = { version = "3", features = ["derive"] }
 blake3 = "1"
 hex = "0.4"
 subtle = "2"
-primitive-types = { version = "0.12", features = ["codec", "serde"] }
+primitive-types = { version = "0.14", default-features = false, features = ["codec", "serde"] }
 
 # Database
-redb = "2"
+redb = "4"
 
 # Networking
 libp2p = { version = "0.56", default-features = false, features = [
@@ -41,11 +41,11 @@ async-trait = "0.1"
 
 # Config (YAML + TOML)
 serde_yaml = "0.9"
-toml = "0.8"
+toml = "1.1.2"
 
 # HTTP/RPC
-axum = "0.7"
-tower-http = { version = "0.5", features = ["cors"] }
+axum = "0.8.9"
+tower-http = { version = "0.7", features = ["cors"] }
 
 # Compression
 snap = "1"

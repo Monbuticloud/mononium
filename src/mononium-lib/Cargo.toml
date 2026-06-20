@@ -29,9 +29,6 @@ chacha20poly1305 = "0.10"
 serde_yaml.workspace = true
 toml.workspace = true
 
-# HTTP/RPC
-axum.workspace = true
-
 # Compression
 snap.workspace = true
 

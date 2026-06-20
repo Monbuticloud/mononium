@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 
 use crate::error::{LibError, Result};
 
@@ -122,8 +122,13 @@ impl super::StorageEngine for RedbEngine {
         let def = resolve_table(table)?;
         let txn = self.db.begin_read().map_err(|e| map_txn_err(&e))?;
         let t = txn.open_table(def).map_err(|e| map_table_err(&e))?;
-        let val = t.get(key).map_err(|e| map_store_err(&e))?;
-        Ok(val.map(|v| v.value().to_vec()))
+        match t.get(key).map_err(|e| map_store_err(&e))? {
+            Some(v) => {
+                let bytes: &[u8] = v.value();
+                Ok(Some(bytes.to_vec()))
+            }
+            None => Ok(None),
+        }
     }
 
     fn delete(&self, table: &str, key: &[u8]) -> Result<()> {
@@ -141,10 +146,11 @@ impl super::StorageEngine for RedbEngine {
         let def = resolve_table(table)?;
         let txn = self.db.begin_read().map_err(|e| map_txn_err(&e))?;
         let t = txn.open_table(def).map_err(|e| map_table_err(&e))?;
-        let mut keys = Vec::new();
+        let mut keys: Vec<Vec<u8>> = Vec::new();
         for item in t.iter().map_err(|e| map_store_err(&e))? {
-            let (key, _) = item.map_err(|e| map_store_err(&e))?;
-            keys.push(key.value().to_vec());
+            let (key_guard, _) = item.map_err(|e| map_store_err(&e))?;
+            let key_bytes: &[u8] = key_guard.value();
+            keys.push(key_bytes.to_vec());
         }
         Ok(keys)
     }

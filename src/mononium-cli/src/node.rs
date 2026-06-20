@@ -144,9 +144,10 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     Ok(())
 }
 
-async fn serve_rest(app: Router, addr: &str) -> std::io::Result<()> {
+async fn serve_rest(app: Router, addr: &str) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await
+    axum::serve(listener, app).await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -229,8 +230,8 @@ fn build_router(state: SharedState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/block/latest", get(block_latest_handler))
-        .route("/block/:height", get(block_by_height_handler))
-        .route("/balance/:address", get(balance_handler))
+        .route("/block/{height}", get(block_by_height_handler))
+        .route("/balance/{address}", get(balance_handler))
         .route("/height", get(height_handler))
         .route("/era", get(era_handler))
         .route("/tx", axum::routing::post(tx_submit_handler))
@@ -331,11 +332,6 @@ async fn balance_handler(
 ) -> Result<Json<BalanceResponse>, axum::response::Response> {
     let guard = state.lock().await;
 
-    let raw = parse_raw_address(&address_str)
-        .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
-    let addr = Address::from(raw);
-
-    // Look up account in the in-memory state machine (always up-to-date)
     let raw = parse_raw_address(&address_str)
         .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
     let addr = Address::from(raw);

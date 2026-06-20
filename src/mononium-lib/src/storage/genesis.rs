@@ -109,7 +109,7 @@ pub fn load_genesis(engine: &impl StorageEngine, genesis_path: &Path) -> Result<
         // a proper ValidatorEntry struct will replace this in sub-phase 1.7.
         let mut entry = raw_addr.to_vec();
         let mut stake_bytes = [0u8; 32];
-        stake.to_little_endian(&mut stake_bytes);
+        stake.write_as_little_endian(&mut stake_bytes);
         entry.extend_from_slice(&stake_bytes);
         engine.put(tables::VALIDATORS, &raw_addr, &entry)?;
     }
