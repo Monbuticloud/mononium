@@ -8,7 +8,8 @@ use primitive_types::U256;
 use crate::core::account::{Account, Address, scale_encode_account};
 use crate::core::block::Block;
 use crate::core::transaction::{BurnTarget, TxBody};
-use crate::crypto::trie::{SparseMerkleTree, namespace_key, NS_ACCOUNTS};
+use crate::core::validator::ValidatorEntry;
+use crate::crypto::trie::{SparseMerkleTree, namespace_key, NS_ACCOUNTS, NS_VALIDATORS};
 use crate::error::{LibError, Result};
 
 /// Receipt returned after successfully applying a block.
@@ -220,8 +221,10 @@ mod tests {
     use primitive_types::U256;
     use crate::core::block::{Block, BlockBody, BlockHeader};
     use crate::core::transaction::{Transaction, TxBody};
+    use crate::core::validator::ValidatorEntry;
     use crate::crypto::falcon::Falcon512Signature;
-    use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+    use crate::crypto::constants::{FALCON_SIGNATURE_SIZE, FALCON_PUBLIC_KEY_SIZE};
+    use crate::crypto::trie::namespace_key;
 
     fn alice() -> Address { Address::from([0xAAu8; 32]) }
     fn bob() -> Address { Address::from([0xBBu8; 32]) }
@@ -674,5 +677,52 @@ mod tests {
     fn test_fee_as_u128_saturated() {
         let huge = U256::MAX;
         assert_eq!(fee_as_u128(huge), u128::MAX);
+    }
+
+    // -----------------------------------------------------------------------
+    // RegisterValidator
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_register_validator_creates_entry() {
+        let alice_addr = alice();
+        let pk = [0x42u8; FALCON_PUBLIC_KEY_SIZE];
+        let accounts = vec![(alice_addr, make_account(1000))];
+        let mut sm = StateMachine::new(accounts);
+
+        let tx = Transaction {
+            chain_id: 0,
+            nonce: 0,
+            sender: alice_addr,
+            fee: U256::from(50),
+            body: TxBody::RegisterValidator { public_key: pk },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader {
+                height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice_addr, chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.tx_count, 1);
+
+        // ValidatorEntry should exist in state
+        let entry = sm.get_validator(&alice_addr).unwrap();
+        assert_eq!(entry.address, alice_addr);
+        assert_eq!(entry.public_key, pk);
+        assert_eq!(entry.status, ValidatorStatus::Registered);
+        assert_eq!(entry.registration_era, 0);
+        assert_eq!(entry.stake, U256::zero());
+
+        // Alice: balance decreased by fee + deposit
+        let alice_post = sm.get_account(&alice_addr).unwrap();
+        let expected = U256::from(1000) - U256::from(50) // fee
+            - crate::core::constants::ANTI_SPAM_DEPOSIT;
+        assert_eq!(alice_post.balance, expected);
+        assert_eq!(alice_post.nonce, 1);
     }
 }
