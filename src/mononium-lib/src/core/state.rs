@@ -139,8 +139,17 @@ impl StateMachine {
                         tx.nonce,
                     )
                 }
-                TxBody::RegisterAndStake { .. }
-                | TxBody::Unstake { .. } => {
+                TxBody::RegisterAndStake { validator, amount } => {
+                    self.apply_register_and_stake(
+                        &mut sender_acct,
+                        &tx.sender,
+                        validator,
+                        *amount,
+                        tx.fee,
+                        tx.nonce,
+                    )
+                }
+                TxBody::Unstake { .. } => {
                     // Validate nonce + deduct fee at minimum
                     self.try_deduct_fee_only(&mut sender_acct, tx.fee, tx.nonce)
                 }
@@ -337,6 +346,64 @@ impl StateMachine {
         }
 
         self.set_validator(validator_addr, &entry);
+        Ok(())
+    }
+
+    /// Apply a RegisterAndStake transaction.
+    ///
+    /// Atomic: register self as validator, then stake to self. Single fee,
+    /// single nonce increment, single deposit. If either step fails, the
+    /// entire tx is rejected (no partial state).
+    fn apply_register_and_stake(
+        &mut self,
+        sender: &mut Account,
+        sender_addr: &Address,
+        validator_addr: &Address,
+        amount: U256,
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        // The validator must equal the sender (self-register + self-stake)
+        if validator_addr != sender_addr {
+            return Err(LibError::Consensus(
+                "register-and-stake validator must equal sender",
+            ));
+        }
+
+        // Verify nonce
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+
+        // Verify not already registered
+        if self.get_validator(sender_addr).is_some() {
+            return Err(LibError::Consensus("already registered"));
+        }
+
+        // Verify amount > 0
+        if amount.is_zero() {
+            return Err(LibError::Consensus("stake amount must be > 0"));
+        }
+
+        // Verify sender can afford fee + deposit + amount
+        let total_debit = fee + crate::core::constants::ANTI_SPAM_DEPOSIT + amount;
+        if sender.balance < total_debit {
+            return Err(LibError::InsufficientBalance(sender.balance, total_debit));
+        }
+
+        // Deduct
+        sender.balance -= total_debit;
+        sender.nonce += 1;
+
+        // Create validator entry with stake already applied
+        let entry = ValidatorEntry {
+            address: *sender_addr,
+            public_key: [0u8; 897], // placeholder — real pubkey from tx body
+            stake: amount,
+            status: ValidatorStatus::Staked { stake: amount },
+            registration_era: 0,
+        };
+        self.set_validator(sender_addr, &entry);
         Ok(())
     }
 }
@@ -1031,19 +1098,26 @@ mod tests {
         sm.apply_block(&block).unwrap();
     }
 
+    // -----------------------------------------------------------------------
+    // RegisterAndStake tests
+    // -----------------------------------------------------------------------
+
     #[test]
-    fn test_register_and_stake_deducts_fee_only() {
-        let accounts = vec![(alice(), make_account(1000)), (bob(), make_account(500))];
+    fn test_register_and_stake_happy() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
+
+        // Alice registers and stakes to herself in one tx
         let tx = Transaction {
             chain_id: 0, nonce: 0, sender: alice(),
-            fee: U256::from(60),
-            body: TxBody::RegisterAndStake { validator: bob(), amount: U256::from(300) },
+            fee: U256::from(50),
+            body: TxBody::RegisterAndStake { validator: alice(), amount: U256::from(500) },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
             },
@@ -1051,8 +1125,75 @@ mod tests {
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
+
+        let entry = sm.get_validator(&alice()).unwrap();
+        assert_eq!(entry.stake, U256::from(500));
+        assert_eq!(entry.status, ValidatorStatus::Staked { stake: U256::from(500) });
+        assert_eq!(entry.registration_era, 0);
+
         let alice_post = sm.get_account(&alice()).unwrap();
-        assert_eq!(alice_post.balance, U256::from(940)); // 1000 - 60 (fee)
+        assert_eq!(alice_post.balance, U256::from(1450)); // 2000 + deposit - 50 - deposit - 500 = 1450
+        assert_eq!(alice_post.nonce, 1);
+    }
+
+    #[test]
+    fn test_register_and_stake_validator_must_equal_sender() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
+
+        // Alice tries to register Bob (different address) — should fail
+        let tx = Transaction {
+            chain_id: 0, nonce: 0, sender: alice(),
+            fee: U256::from(60),
+            body: TxBody::RegisterAndStake { validator: bob(), amount: U256::from(300) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // fee-only: (2000 + deposit) - 60 = 1940 + deposit
+        assert_eq!(alice_post.balance, U256::from(1940) + deposit);
+        assert_eq!(alice_post.nonce, 0);
+    }
+
+    #[test]
+    fn test_register_and_stake_already_registered() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(3000) + deposit);
+        // First register Alice
+        create_validator(&mut sm, alice(), [0x42u8; 897], 0, 0);
+
+        // Now try register-and-stake again — should fail (already registered)
+        let tx = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(50),
+            body: TxBody::RegisterAndStake { validator: alice(), amount: U256::from(100) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert_eq!(receipt.failed_count, 1);
+        let alice_post = sm.get_account(&alice()).unwrap();
+        // After register: (3000 + deposit) - 0 - deposit = 3000
+        // After failed: fee-only 50 → 2950
+        assert_eq!(alice_post.balance, U256::from(2950));
         assert_eq!(alice_post.nonce, 1);
     }
 
