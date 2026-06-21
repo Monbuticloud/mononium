@@ -32,7 +32,13 @@ impl CommitTracker {
     /// Create a new tracker with the active validator stake weights.
     #[must_use]
     pub fn new(stake_weights: HashMap<Address, U256>) -> Self {
-        todo!()
+        let total_active_stake = stake_weights.values().copied().fold(U256::zero(), |acc, w| acc.saturating_add(w));
+        Self {
+            commits: BTreeMap::new(),
+            stake_weights,
+            total_active_stake,
+            finalized: BTreeSet::new(),
+        }
     }
 
     /// Record a vote for a block.
@@ -57,14 +63,13 @@ impl CommitTracker {
     /// Whether the block at `height` has reached >⅔ finality.
     #[must_use]
     pub fn is_final(&self, height: u64) -> bool {
-        let _ = height;
-        todo!()
+        self.finalized.contains(&height)
     }
 
     /// Highest height that has been finalised.
     #[must_use]
     pub fn last_finalized_height(&self) -> u64 {
-        todo!()
+        self.finalized.last().copied().unwrap_or(0)
     }
 
     /// Ratio of participating stake to total active stake at `height`.
