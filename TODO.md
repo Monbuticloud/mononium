@@ -448,27 +448,27 @@ Blocks gossiped on `mononium/blocks/{chain_id}`. Sync via libp2p Request-Respons
 
 ### Sync protocol messages — `network/messages.rs` additions
 
-- [ ] `BlockSyncRequest { start_height: u64, max_blocks: u16 (max 500), direction: SyncDirection, known_block_hash: Option<[u8;32]> }`
-- [ ] `BlockSyncResponse { blocks: Vec<Block>, highest_height: u64, batch_hash: [u8;32] }`
-- [ ] `BlockByHashRequest { block_hashes: Vec<[u8;32]> }` (max 100)
-- [ ] `BlockByHashResponse { blocks: Vec<Block> }` — request order, missing omitted
-- [ ] `SyncDirection` enum: `Forward | Backward`
-- [ ] `compute_batch_hash(genesis_hash, &[Block]) -> [u8;32]` — rolling BLAKE3 per ADR-018
-- [ ] SCALE Encode + Decode for all 4 message types
-- [ ] Validation: max_blocks ∈ [1,500], max_hashes ∈ [1,100]
+- [x] `BlockSyncRequest { start_height: u64, max_blocks: u16 (max 500), direction: SyncDirection, known_block_hash: Option<[u8;32]> }`
+- [x] `BlockSyncResponse { blocks: Vec<Block>, highest_height: u64, batch_hash: [u8;32] }`
+- [x] `BlockByHashRequest { block_hashes: Vec<[u8;32]> }` (max 100)
+- [x] `BlockByHashResponse { blocks: Vec<Block> }` — request order, missing omitted
+- [x] `SyncDirection` enum: `Forward | Backward`
+- [x] `compute_batch_hash(genesis_hash, &[Block]) -> [u8;32]` — rolling BLAKE3 per ADR-018
+- [x] SCALE Encode + Decode for all 4 message types
+- [x] Validation: max_blocks ∈ [1,500], max_hashes ∈ [1,100]
 - [ ] Register as libp2p Request-Response protocols: `/mononium/sync/1.0`, `/mononium/hash-sync/1.0`
 
 ### SyncCursor — `network/sync.rs`
 
-- [ ] `SyncCursor { last_verified_height, last_verified_hash, target_height, pending_range: Option<HeightRange> }`
-- [ ] `HeightRange { start, end, peer_id }`
-- [ ] `new(genesis_hash)` → height 0, hash = genesis
-- [ ] `advance(to_height, to_hash)` — update cursor
-- [ ] `set_target(height)`, `set_pending(range)`, `clear_pending()`
-- [ ] `gap() -> u64`, `needs_checkpoint() -> bool`
-- [ ] Persistence: `save(path)` / `load(path)` — JSON at `{data_dir}/{chain_id}/sync_cursor.json`
-- [ ] On load failure: return `new(genesis_hash)` (full replay fallback)
-- [ ] Persist after every verified batch (100 blocks), not after every block
+- [x] `SyncCursor { last_verified_height, last_verified_hash, target_height, pending_range: Option<HeightRange> }`
+- [x] `HeightRange { start, end, peer_id }`
+- [x] `new(genesis_hash)` → height 0, hash = genesis
+- [x] `advance(to_height, to_hash)` — update cursor
+- [x] `set_target(height)`, `set_pending(range)`, `clear_pending()`
+- [x] `gap() -> u64`, `needs_checkpoint() -> bool`
+- [x] Persistence: `save(path)` / `load(path)` — JSON at `{data_dir}/{chain_id}/sync_cursor.json`
+- [x] On load failure: return `new(genesis_hash)` (full replay fallback)
+- [x] Persist after every verified batch (100 blocks), not after every block
 
 ### Sync flow
 
