@@ -3,6 +3,7 @@
 pub mod constants;
 pub mod messages;
 pub mod peer_score;
+pub mod sync;
 pub mod topics;
 
 use libp2p::gossipsub::{self, MessageAuthenticity, MessageId};
