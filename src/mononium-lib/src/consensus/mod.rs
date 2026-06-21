@@ -3,6 +3,7 @@
 
 pub mod election;
 pub mod era;
+pub mod finality;
 pub mod proposer;
 pub mod supply;
 
