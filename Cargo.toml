@@ -25,7 +25,8 @@ redb = "4"
 
 # Networking
 libp2p = { version = "0.56", default-features = false, features = [
-    "gossipsub", "kad", "identify", "mdns", "ping", "tokio"
+    "gossipsub", "kad", "identify", "mdns", "ping", "tokio",
+    "tcp", "dns", "noise", "yamux", "serde", "macros"
 ] }
 
 # Error handling
