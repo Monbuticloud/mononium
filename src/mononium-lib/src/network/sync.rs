@@ -160,4 +160,53 @@ mod tests {
         assert_eq!(cursor.last_verified_height, 10);
         assert_eq!(cursor.last_verified_hash, [0xAA; 32]);
     }
+
+    // -----------------------------------------------------------------------
+    // gap & needs_checkpoint
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_gap_new_is_zero() {
+        let cursor = SyncCursor::new([0; 32]);
+        assert_eq!(cursor.gap(), 0);
+    }
+
+    #[test]
+    fn test_gap_after_set_target() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(100);
+        assert_eq!(cursor.gap(), 100);
+    }
+
+    #[test]
+    fn test_gap_after_advance() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(200);
+        cursor.advance(50, [0xAA; 32]);
+        assert_eq!(cursor.gap(), 150);
+    }
+
+    #[test]
+    fn test_needs_checkpoint_false_for_small_gap() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(500);
+        // gap = 500, 2 × 720 = 1440, so 500 < 1440 → false
+        assert!(!cursor.needs_checkpoint(720));
+    }
+
+    #[test]
+    fn test_needs_checkpoint_true_for_large_gap() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(3000);
+        // gap = 3000, 2 × 720 = 1440, so 3000 ≥ 1440 → true
+        assert!(cursor.needs_checkpoint(720));
+    }
+
+    #[test]
+    fn test_needs_checkpoint_edge_exactly_2_era() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(1440);
+        // gap = 1440, 2 × 720 = 1440, exactly at threshold → checkpoint
+        assert!(cursor.needs_checkpoint(720));
+    }
 }
