@@ -87,6 +87,51 @@ impl Default for P2pConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Command channel
+// ---------------------------------------------------------------------------
+
+enum P2pCommand {
+    Dial(Multiaddr),
+    PublishTx(Vec<Transaction>),
+    PublishBlock(Box<Block>),
+    PublishVote(CommitVote),
+    PublishEvidence(Box<EquivocationEvidence>),
+    Shutdown,
+}
+
+// ---------------------------------------------------------------------------
+// P2pHandle
+// ---------------------------------------------------------------------------
+
+/// A handle to a running P2P service.
+pub struct P2pHandle {
+    cmd_tx: mpsc::Sender<P2pCommand>,
+    local_peer_id: PeerId,
+}
+
+impl P2pHandle {
+    #[must_use]
+    pub fn local_peer_id(&self) -> &PeerId { &self.local_peer_id }
+
+    /// Dial a remote peer at the given multiaddress.
+    pub fn dial(&self, addr: Multiaddr) -> Result<(), Box<dyn std::error::Error>> {
+        self.cmd_tx.try_send(P2pCommand::Dial(addr))?;
+        Ok(())
+    }
+
+    /// Publish transactions to the gossip network.
+    pub async fn publish_tx(&self, txs: Vec<Transaction>) -> Result<(), Box<dyn std::error::Error>> {
+        self.cmd_tx.send(P2pCommand::PublishTx(txs)).await?;
+        Ok(())
+    }
+
+    /// Signal the event loop to shut down and wait for it to finish.
+    pub async fn shutdown(self) {
+        let _ = self.cmd_tx.send(P2pCommand::Shutdown).await;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // P2pService
 // ---------------------------------------------------------------------------
 
@@ -94,6 +139,7 @@ pub struct P2pService {
     swarm: Swarm<MononiumBehaviour>,
     local_peer_id: PeerId,
     chain_id: u64,
+    p2p_port: u16,
     peer_scores: PeerScoreRepo,
 }
 
@@ -161,15 +207,14 @@ impl P2pService {
             swarm,
             local_peer_id,
             chain_id,
+            p2p_port: config.p2p_port,
             peer_scores: PeerScoreRepo::new(),
         })
     }
 
-    #[must_use]
-    pub fn local_peer_id(&self) -> &PeerId { &self.local_peer_id }
-
-    pub fn start(mut self) -> Result<(JoinHandle<()>, mpsc::Sender<()>), Box<dyn std::error::Error>> {
-        let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{}", constants::DEFAULT_P2P_PORT)
+    /// Start the P2P event loop. Consumes `self` and returns a [`P2pHandle`].
+    pub fn start(mut self) -> Result<P2pHandle, Box<dyn std::error::Error>> {
+        let listen_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{}", self.p2p_port)
             .parse()?;
         self.swarm.listen_on(listen_addr)?;
 
@@ -179,21 +224,65 @@ impl P2pService {
             info!("subscribed to: {gt}");
         }
 
-        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
-        let handle = tokio::spawn(async move {
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<P2pCommand>(64);
+        let local_peer_id = self.local_peer_id;
+        let _handle = tokio::spawn(async move {
             use libp2p::futures::StreamExt;
             loop {
                 tokio::select! {
                     event = self.swarm.select_next_some() => self.handle_event(event),
-                    _ = shutdown_rx.recv() => {
-                        info!("P2P shutting down");
-                        break;
+                    cmd = cmd_rx.recv() => match cmd {
+                        Some(P2pCommand::Dial(addr)) => {
+                            if let Err(e) = self.swarm.dial(addr) {
+                                warn!("dial failed: {e}");
+                            }
+                        }
+                        Some(P2pCommand::PublishTx(txs)) => {
+                            let data = GossipMessage::Txs(txs).encode();
+                            let topic = libp2p::gossipsub::IdentTopic::new(
+                                format!("mononium/txs/{}", self.chain_id)
+                            );
+                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                warn!("publish txs failed: {e}");
+                            }
+                        }
+                        Some(P2pCommand::PublishBlock(block)) => {
+                            let data = GossipMessage::Block(block).encode();
+                            let topic = libp2p::gossipsub::IdentTopic::new(
+                                format!("mononium/blocks/{}", self.chain_id)
+                            );
+                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                warn!("publish block failed: {e}");
+                            }
+                        }
+                        Some(P2pCommand::PublishVote(vote)) => {
+                            let data = GossipMessage::Vote(vote).encode();
+                            let topic = libp2p::gossipsub::IdentTopic::new(
+                                format!("mononium/votes/{}", self.chain_id)
+                            );
+                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                warn!("publish vote failed: {e}");
+                            }
+                        }
+                        Some(P2pCommand::PublishEvidence(evidence)) => {
+                            let data = GossipMessage::Evidence(evidence).encode();
+                            let topic = libp2p::gossipsub::IdentTopic::new(
+                                format!("mononium/evidence/{}", self.chain_id)
+                            );
+                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                warn!("publish evidence failed: {e}");
+                            }
+                        }
+                        Some(P2pCommand::Shutdown) | None => {
+                            info!("P2P shutting down");
+                            break;
+                        }
                     }
                 }
             }
         });
 
-        Ok((handle, shutdown_tx))
+        Ok(P2pHandle { cmd_tx, local_peer_id })
     }
 
     fn handle_event(&mut self, event: SwarmEvent<CombinedEvent>) {
@@ -214,44 +303,51 @@ impl P2pService {
             _ => {}
         }
     }
-
-    pub async fn publish_tx(&mut self, txs: &[Transaction]) -> Result<MessageId, Box<dyn std::error::Error>> {
-        let data = GossipMessage::Txs(txs.to_vec()).encode();
-        let topic = libp2p::gossipsub::IdentTopic::new(format!("mononium/txs/{}", self.chain_id));
-        Ok(self.swarm.behaviour_mut().gossipsub.publish(topic, data)?)
-    }
-
-    pub async fn publish_block(&mut self, block: &Block) -> Result<MessageId, Box<dyn std::error::Error>> {
-        let data = GossipMessage::Block(Box::new(block.clone())).encode();
-        let topic = libp2p::gossipsub::IdentTopic::new(format!("mononium/blocks/{}", self.chain_id));
-        Ok(self.swarm.behaviour_mut().gossipsub.publish(topic, data)?)
-    }
-
-    pub async fn publish_vote(&mut self, vote: &CommitVote) -> Result<MessageId, Box<dyn std::error::Error>> {
-        let data = GossipMessage::Vote(vote.clone()).encode();
-        let topic = libp2p::gossipsub::IdentTopic::new(format!("mononium/votes/{}", self.chain_id));
-        Ok(self.swarm.behaviour_mut().gossipsub.publish(topic, data)?)
-    }
-
-    pub async fn publish_evidence(&mut self, evidence: &EquivocationEvidence) -> Result<MessageId, Box<dyn std::error::Error>> {
-        let data = GossipMessage::Evidence(Box::new(evidence.clone())).encode();
-        let topic = libp2p::gossipsub::IdentTopic::new(format!("mononium/evidence/{}", self.chain_id));
-        Ok(self.swarm.behaviour_mut().gossipsub.publish(topic, data)?)
-    }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
 
     #[tokio::test]
     async fn test_p2p_service_start_returns_join_handle() {
         let config = P2pConfig::default();
         let service = P2pService::new(config, 0).unwrap();
-        let (handle, shutdown_tx) = service.start().unwrap();
-        assert!(!handle.is_finished());
-        drop(shutdown_tx);
-        let _ = handle.await;
+        let handle = service.start().unwrap();
+        handle.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_p2p_service_dial_connects_peers() {
+        let port1 = pick_unused_port();
+        let port2 = pick_unused_port();
+
+        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
+        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+
+        let node1 = P2pService::new(cfg1, 0).unwrap();
+        let node2 = P2pService::new(cfg2, 0).unwrap();
+
+        let handle1 = node1.start().unwrap();
+        let handle2 = node2.start().unwrap();
+
+        // Give nodes time to start listening
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // node2 dials node1
+        let addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{port1}").parse().unwrap();
+        handle2.dial(addr).unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        handle1.shutdown().await;
+        handle2.shutdown().await;
+    }
+
+    /// Find an available TCP port on localhost.
+    fn pick_unused_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
     }
 }
