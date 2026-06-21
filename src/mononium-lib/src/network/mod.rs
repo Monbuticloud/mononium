@@ -185,6 +185,24 @@ impl P2pHandle {
 }
 
 // ---------------------------------------------------------------------------
+// Utility: validate and encode outgoing gossip messages
+// ---------------------------------------------------------------------------
+
+/// Encode a [`GossipMessage`] and validate it fits within the topic's size
+/// limit. Returns the encoded bytes on success, or an error message.
+fn prepare_gossip_message(msg: &GossipMessage, topic: &TopicConfig) -> Result<Vec<u8>, String> {
+    let data = msg.encode();
+    if !topic.validate_size(data.len()) {
+        return Err(format!(
+            "gossip message too large: {} bytes exceeds {} byte limit",
+            data.len(),
+            topic.max_message_size,
+        ));
+    }
+    Ok(data)
+}
+
+// ---------------------------------------------------------------------------
 // P2pService
 // ---------------------------------------------------------------------------
 
@@ -296,39 +314,55 @@ impl P2pService {
                             }
                         }
                         Some(P2pCommand::PublishTx(txs)) => {
-                            let data = GossipMessage::Txs(txs).encode();
-                            let topic = libp2p::gossipsub::IdentTopic::new(
-                                format!("mononium/txs/{}", self.chain_id)
-                            );
-                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
-                                warn!("publish txs failed: {e}");
+                            let topics = TopicConfig::standard_topics(self.chain_id);
+                            let gossip_msg = GossipMessage::Txs(txs);
+                            match prepare_gossip_message(&gossip_msg, &topics[0]) {
+                                Ok(data) => {
+                                    let topic = libp2p::gossipsub::IdentTopic::new(topics[0].name.clone());
+                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                        warn!("publish txs failed: {e}");
+                                    }
+                                }
+                                Err(e) => warn!("{e}"),
                             }
                         }
                         Some(P2pCommand::PublishBlock(block)) => {
-                            let data = GossipMessage::Block(block).encode();
-                            let topic = libp2p::gossipsub::IdentTopic::new(
-                                format!("mononium/blocks/{}", self.chain_id)
-                            );
-                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
-                                warn!("publish block failed: {e}");
+                            let topics = TopicConfig::standard_topics(self.chain_id);
+                            let gossip_msg = GossipMessage::Block(block);
+                            match prepare_gossip_message(&gossip_msg, &topics[1]) {
+                                Ok(data) => {
+                                    let topic = libp2p::gossipsub::IdentTopic::new(topics[1].name.clone());
+                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                        warn!("publish block failed: {e}");
+                                    }
+                                }
+                                Err(e) => warn!("{e}"),
                             }
                         }
                         Some(P2pCommand::PublishVote(vote)) => {
-                            let data = GossipMessage::Vote(vote).encode();
-                            let topic = libp2p::gossipsub::IdentTopic::new(
-                                format!("mononium/votes/{}", self.chain_id)
-                            );
-                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
-                                warn!("publish vote failed: {e}");
+                            let topics = TopicConfig::standard_topics(self.chain_id);
+                            let gossip_msg = GossipMessage::Vote(vote);
+                            match prepare_gossip_message(&gossip_msg, &topics[2]) {
+                                Ok(data) => {
+                                    let topic = libp2p::gossipsub::IdentTopic::new(topics[2].name.clone());
+                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                        warn!("publish vote failed: {e}");
+                                    }
+                                }
+                                Err(e) => warn!("{e}"),
                             }
                         }
                         Some(P2pCommand::PublishEvidence(evidence)) => {
-                            let data = GossipMessage::Evidence(evidence).encode();
-                            let topic = libp2p::gossipsub::IdentTopic::new(
-                                format!("mononium/evidence/{}", self.chain_id)
-                            );
-                            if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
-                                warn!("publish evidence failed: {e}");
+                            let topics = TopicConfig::standard_topics(self.chain_id);
+                            let gossip_msg = GossipMessage::Evidence(evidence);
+                            match prepare_gossip_message(&gossip_msg, &topics[3]) {
+                                Ok(data) => {
+                                    let topic = libp2p::gossipsub::IdentTopic::new(topics[3].name.clone());
+                                    if let Err(e) = self.swarm.behaviour_mut().gossipsub.publish(topic, data) {
+                                        warn!("publish evidence failed: {e}");
+                                    }
+                                }
+                                Err(e) => warn!("{e}"),
                             }
                         }
                         Some(P2pCommand::Shutdown) | None => {
