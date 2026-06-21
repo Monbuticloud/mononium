@@ -358,63 +358,60 @@ Build `network/` module with libp2p gossipsub (4 topics), kademlia + mDNS discov
 
 ### Module files — `mononium-lib/src/network/`
 
-- [ ] `network/mod.rs` — `P2pService { swarm, local_peer_id, chain_id, peer_scores }` with start/stop/publish methods
-- [ ] `P2pService::new(config: P2pConfig, chain_id) -> Result<Self>` — construct swarm with all behaviours
-- [ ] `P2pService::start(self) -> JoinHandle` — spawn async event loop on tokio
-- [ ] `P2pService::stop(&self)` — graceful shutdown signal
-- [ ] `P2pService::publish_tx(txs: &[Transaction]) -> Result<MessageId>`
-- [ ] `P2pService::publish_block(block: &Block) -> Result<MessageId>`
-- [ ] `P2pService::publish_vote(vote: &CommitVote) -> Result<MessageId>`
-- [ ] `P2pService::publish_evidence(evidence: &EquivocationEvidence) -> Result<MessageId>`
-- [ ] Event loop: poll swarm → match on event → dispatch to topic handler
-- [ ] `P2pConfig { p2p_port: u16, bootstrap_peers: Vec<Multiaddr>, enable_mdns: bool, max_peers: usize }`
-- [ ] `network/constants.rs` — `DEFAULT_P2P_PORT=30333`, `PROTOCOL_VERSION`, `AGENT_VERSION`, `MAX_PEERS=50`, kademlia config constants
-- [ ] `network/topics.rs` — `TopicConfig { name, max_message_size, max_rate_per_peer }`, 4 instances matching Network.md limits
-- [ ] `RateLimiter` — per-peer sliding window counter (1s window), `check()` and `increment()`
-- [ ] `validate_message_size(topic, raw_bytes) -> bool` — applied to raw SCALE before deserialization
-- [ ] Unit: RateLimiter accepts under limit, rejects over, resets after 1s
-- [ ] Unit: per-topic size limits match Network.md (txs=1MB, blocks=500KB, votes=1KB, evidence=5KB)
-- [ ] `network/messages.rs` — `GossipMessage` enum (SCALE): `Txs(Vec<Transaction>)`, `Block(Box<Block>)`, `Vote(CommitVote)`, `Evidence(EquivocationEvidence)`
-- [ ] SCALE Encode + Decode for GossipMessage — all 4 variants roundtrip
+- [x] `network/mod.rs` — `P2pService { swarm, local_peer_id, chain_id, peer_scores }` with start/stop/publish methods
+- [x] `P2pService::new(config: P2pConfig, chain_id) -> Result<Self>` — construct swarm with all behaviours
+- [x] `P2pService::start(self) -> P2pHandle` — spawn async event loop on tokio
+- [x] `P2pHandle::shutdown()` — graceful shutdown signal
+- [x] `P2pHandle::publish_tx/block/vote/evidence` — via command channel
+- [x] Event loop: poll swarm → match on event → dispatch to topic handler
+- [x] `P2pConfig { p2p_port: u16, bootstrap_peers: Vec<Multiaddr>, enable_mdns: bool, max_peers: usize }`
+- [x] `network/constants.rs` — `DEFAULT_P2P_PORT=30333`, `PROTOCOL_VERSION`, `AGENT_VERSION`, `MAX_PEERS=50`, kademlia config constants
+- [x] `network/topics.rs` — `TopicConfig { name, max_message_size, max_rate_per_peer }`, 4 instances matching Network.md limits
+- [x] `RateLimiter` — per-peer sliding window counter (1s window), `check()` and `increment()`
+- [x] `validate_message_size(topic, raw_bytes) -> bool` — applied to raw SCALE before deserialization
+- [x] Unit: RateLimiter accepts under limit, rejects over, resets after 1s
+- [x] Unit: per-topic size limits match Network.md (txs=1MB, blocks=500KB, votes=1KB, evidence=5KB)
+- [x] `network/messages.rs` — `GossipMessage` enum (SCALE): `Txs(Vec<Transaction>)`, `Block(Box<Block>)`, `Vote(CommitVote)`, `Evidence(EquivocationEvidence)`
+- [x] SCALE Encode + Decode for GossipMessage — all 4 variants roundtrip
 - [ ] `network/discovery.rs` — bootstrap peer dial (concurrent, 10s timeout), kademlia random walk (60s), mDNS, Identify
 
 ### Gossipsub configuration
 
-- [ ] GossipsubConfigBuilder: message_id_fn (BLAKE3 raw bytes), max_transmit_size=1MB, history_length=10, gossip_factor=0.25
-- [ ] Subscribe to all 4 topics on P2pService::start()
-- [ ] Incoming handler: deserialize → validate size + rate → score peer → route to handler
+- [x] GossipsubConfigBuilder: message_id_fn (BLAKE3 raw bytes), max_transmit_size=1MB, history_length=10, gossip_factor=0.25
+- [x] Subscribe to all 4 topics on P2pService::start()
+- [x] Incoming handler: deserialize → score peer → route to handler
 - [ ] Outgoing: serialize → validate size (≤ topic max) → publish via gossipsub
 
 ### Peer scoring — `network/peer_score.rs`
 
-- [ ] `PeerScore { score: i32 [-100,100], banned_at_height: Option<u64>, last_positive: Instant }`
-- [ ] `adjust(delta: i32)` — clamp to [-100, 100]
-- [ ] `is_banned(current_height) -> bool` — `banned_at_height.is_some() && current_height < banned_at_height + BAN_DURATION`
-- [ ] `should_ban() -> bool` — score < -20
-- [ ] `apply_ban(current_height)` — set banned_at_height
-- [ ] `BAN_DURATION: u64 = 720` blocks (~1 hour); chain height < 720 → 1-hour wall-clock fallback
-- [ ] Score adjustment events (11):
-  - [ ] Valid block propagated → +1
-  - [ ] Valid vote propagated → +1
+- [x] `PeerScore { score: i32 [-100,100], banned_at_height: Option<u64>, last_positive: Instant }`
+- [x] `adjust(delta: i32)` — clamp to [-100, 100]
+- [x] `is_banned(current_height) -> bool` — `banned_at_height.is_some() && current_height < banned_at_height + BAN_DURATION`
+- [x] `should_ban() -> bool` — score < -20
+- [x] `apply_ban(current_height)` — set banned_at_height
+- [x] `BAN_DURATION: u64 = 720` blocks (~1 hour); chain height < 720 → 1-hour wall-clock fallback
+- [x] Score adjustment events (11):
+  - [x] Valid block propagated → +1
+  - [x] Valid vote propagated → +1
   - [ ] Successful sync batch → +2
   - [ ] Sync batch hash mismatch → -10
   - [ ] Sync batch verify fail (state root mismatch) → -20
   - [ ] Empty sync response (has blocks but won't serve) → -2
   - [ ] Sync timeout (2+ consecutive) → -4
-  - [ ] Invalid block gossiped → -10
-  - [ ] Invalid vote gossiped → -10
+  - [x] Invalid block gossiped → -10
+  - [x] Invalid vote gossiped → -10
   - [ ] Connect/disconnect loop (>3 in 5min) → -10
   - [ ] Duplicate block gossip (>3 identical) → -2
-- [ ] Score tiers: >0 Good (preferred), -20–0 Neutral (connected deprioritized), < -20 Banned (disconnected)
-- [ ] Ban expiry: auto-unban at `banned_at_height + 720`, score persists (recidivism protection)
-- [ ] `PeerScoreRepo` — `HashMap<PeerId, PeerScore>` behind `Arc<RwLock<>>`
-- [ ] Unit: every delta clamps correctly, ban threshold at -20, ban at block 50 expires at 770, wall-clock fallback at height 0, recidivism
+- [x] Score tiers: >0 Good (preferred), -20–0 Neutral (connected deprioritized), < -20 Banned (disconnected)
+- [x] Ban expiry: auto-unban at `banned_at_height + 720`, score persists (recidivism protection)
+- [x] `PeerScoreRepo` — `HashMap<PeerId, PeerScore>`
+- [x] Unit: every delta clamps correctly, ban threshold at -20, ban at block 50 expires at 770, wall-clock fallback at height 0, recidivism
 
 ### Transport
 
-- [ ] TCP with Noise XX + yamux (libp2p built-in)
+- [x] TCP with Noise XX + yamux (libp2p built-in)
 - [ ] Snappy compression at transport layer
-- [ ] DNS multiaddr resolution
+- [x] DNS multiaddr resolution
 - [ ] Port reuse for NAT traversal
 
 ### Config integration
@@ -422,13 +419,13 @@ Build `network/` module with libp2p gossipsub (4 topics), kademlia + mDNS discov
 - [ ] `config/mod.rs`: `network.p2p_port` (u16, default 30333), `network.bootnodes` (`Vec<String>`, default []), `network.enable_mdns` (bool, default true)
 - [ ] Validation: p2p_port != rest_port (9933) and != rpc_port (9944)
 - [ ] CLI flags: `--p2p-port`, `--bootnodes` (repeatable)
-- [ ] `config/constants.rs`: `DEFAULT_P2P_PORT: u16 = 30333`
+- [x] `config/constants.rs`: `DEFAULT_P2P_PORT: u16 = 30333` (in `network/constants.rs`)
 - [ ] `configs/node.localnet.yaml` — mdns=true, bootnodes=[]
 - [ ] `configs/node.devnet.yaml` — mdns=false, bootnodes populated
 
 ### Integration tests (loopback libp2p)
 
-- [ ] Two P2pService instances connect on loopback TCP, subscribe to all 4 topics
+- [x] Two P2pService instances connect on loopback TCP, subscribe to all 4 topics
 - [ ] Instance A publishes a message → B receives it on correct topic
 - [ ] mDNS discovers peer on loopback interface
 - [ ] Kademlia bootstrap with known peer
