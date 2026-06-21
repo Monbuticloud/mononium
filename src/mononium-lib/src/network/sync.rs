@@ -141,4 +141,17 @@ mod tests {
         assert_eq!(cursor.last_verified_height, 0);
         assert_eq!(cursor.last_verified_hash, genesis);
     }
+
+    // -----------------------------------------------------------------------
+    // advance
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_advance_moves_cursor_forward() {
+        let genesis = [0x01; 32];
+        let mut cursor = SyncCursor::new(genesis);
+        cursor.advance(10, [0xAA; 32]);
+        assert_eq!(cursor.last_verified_height, 10);
+        assert_eq!(cursor.last_verified_hash, [0xAA; 32]);
+    }
 }
