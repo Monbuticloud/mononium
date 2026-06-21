@@ -45,6 +45,130 @@ pub struct EquivocationEvidence {
     pub proposer: [u8; 32],
 }
 
+// ---------------------------------------------------------------------------
+// Sync protocol message types (libp2p Request-Response)
+// ---------------------------------------------------------------------------
+
+/// Direction for block sync requests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+pub enum SyncDirection {
+    /// Sync forward from `start_height` toward tip.
+    #[codec(index = 0)]
+    Forward,
+    /// Sync backward from `start_height` toward genesis.
+    #[codec(index = 1)]
+    Backward,
+}
+
+/// Request a batch of blocks via the sync protocol.
+///
+/// - `max_blocks` must be in [1, 500].
+/// - `known_block_hash` anchors the request: the responder MUST verify
+///   the anchor hash matches the block at `start_height - 1`. If it does
+///   not match, the response is empty (peer is on a different fork).
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlockSyncRequest {
+    pub start_height: u64,
+    /// Max blocks to return (capped at 500 by protocol).
+    pub max_blocks: u16,
+    pub direction: SyncDirection,
+    /// Optional anchor: BLAKE3 hash of block at `start_height - 1`.
+    pub known_block_hash: Option<[u8; 32]>,
+}
+
+/// Response to a [`BlockSyncRequest`].
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlockSyncResponse {
+    /// Blocks in order (may be empty if anchor mismatch or no blocks).
+    pub blocks: Vec<Block>,
+    /// Responder's highest known block height.
+    pub highest_height: u64,
+    /// Rolling BLAKE3 batch hash over all response blocks (per ADR-018).
+    pub batch_hash: [u8; 32],
+}
+
+/// Request specific blocks by their BLAKE3 hashes (max 100 hashes).
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlockByHashRequest {
+    pub block_hashes: Vec<[u8; 32]>,
+}
+
+/// Response to a [`BlockByHashRequest`].
+///
+/// Blocks are returned in request order. Missing blocks are omitted
+/// (caller infers absence from position).
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct BlockByHashResponse {
+    pub blocks: Vec<Block>,
+}
+
+// ---------------------------------------------------------------------------
+// Batch hash: rolling BLAKE3 over block sequence (ADR-018)
+// ---------------------------------------------------------------------------
+
+/// Compute a rolling BLAKE3 batch hash over a sequence of blocks.
+///
+/// Per ADR-018: `batch_hash = H(prev_hash || encode(block_1) || ... )`
+/// where `prev_hash` is the genesis header hash (or the anchor at the
+/// start of the range).
+///
+/// For an empty block list, returns `genesis_hash` unchanged.
+#[must_use]
+pub fn compute_batch_hash(genesis_hash: &[u8; 32], blocks: &[Block]) -> [u8; 32] {
+    if blocks.is_empty() {
+        return *genesis_hash;
+    }
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(genesis_hash);
+    for block in blocks {
+        let encoded = parity_scale_codec::Encode::encode(block);
+        hasher.update(&encoded);
+    }
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(hasher.finalize().as_bytes());
+    hash
+}
+
+// ---------------------------------------------------------------------------
+// Validation helpers
+// ---------------------------------------------------------------------------
+
+/// Maximum blocks allowed in a single sync request/response batch.
+pub const MAX_SYNC_BLOCKS: u16 = 500;
+
+/// Maximum block hashes allowed in a single `BlockByHashRequest`.
+pub const MAX_BY_HASH_BLOCKS: usize = 100;
+
+/// Validate a `BlockSyncRequest`'s limits.
+///
+/// # Errors
+///
+/// Returns an error message if `max_blocks` is 0 or exceeds 500.
+pub fn validate_sync_request(req: &BlockSyncRequest) -> Result<(), String> {
+    if req.max_blocks == 0 || req.max_blocks > MAX_SYNC_BLOCKS {
+        return Err(format!(
+            "max_blocks must be 1..={MAX_SYNC_BLOCKS}, got {}",
+            req.max_blocks,
+        ));
+    }
+    Ok(())
+}
+
+/// Validate a `BlockByHashRequest`'s limits.
+///
+/// # Errors
+///
+/// Returns an error message if `block_hashes` is empty or exceeds 100.
+pub fn validate_by_hash_request(req: &BlockByHashRequest) -> Result<(), String> {
+    if req.block_hashes.is_empty() || req.block_hashes.len() > MAX_BY_HASH_BLOCKS {
+        return Err(format!(
+            "block_hashes must be 1..={MAX_BY_HASH_BLOCKS}, got {}",
+            req.block_hashes.len(),
+        ));
+    }
+    Ok(())
+}
+
 /// Unified gossip message — one per gossipsub topic.
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub enum GossipMessage {
@@ -62,6 +186,229 @@ pub enum GossipMessage {
 mod tests {
     use super::*;
     use crate::core::block::CommitVote;
+    use crate::core::block::{BlockBody, BlockHeader};
+    use crate::core::account::Address;
+
+    fn dummy_block() -> Block {
+        Block {
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0; 32],
+                global_state_root: [0; 32],
+                tx_root: [0; 32],
+                timestamp: 1_700_000_000,
+                proposer: Address::from([0x01; 32]),
+                chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![] },
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // SyncDirection
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_sync_direction_scale_roundtrip() {
+        for dir in &[SyncDirection::Forward, SyncDirection::Backward] {
+            let encoded = dir.encode();
+            let decoded = SyncDirection::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(*dir, decoded);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // BlockSyncRequest
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_block_sync_request_scale_roundtrip() {
+        let req = BlockSyncRequest {
+            start_height: 100,
+            max_blocks: 50,
+            direction: SyncDirection::Forward,
+            known_block_hash: Some([0xAB; 32]),
+        };
+        let encoded = req.encode();
+        let decoded = BlockSyncRequest::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(req, decoded);
+    }
+
+    #[test]
+    fn test_block_sync_request_no_anchor_roundtrip() {
+        let req = BlockSyncRequest {
+            start_height: 0,
+            max_blocks: 1,
+            direction: SyncDirection::Backward,
+            known_block_hash: None,
+        };
+        let encoded = req.encode();
+        let decoded = BlockSyncRequest::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(req, decoded);
+    }
+
+    // -----------------------------------------------------------------------
+    // BlockSyncResponse
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_block_sync_response_scale_roundtrip() {
+        let resp = BlockSyncResponse {
+            blocks: vec![dummy_block()],
+            highest_height: 500,
+            batch_hash: [0xCD; 32],
+        };
+        let encoded = resp.encode();
+        let decoded = BlockSyncResponse::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(resp, decoded);
+    }
+
+    #[test]
+    fn test_block_sync_response_empty_blocks_roundtrip() {
+        let resp = BlockSyncResponse {
+            blocks: vec![],
+            highest_height: 0,
+            batch_hash: [0; 32],
+        };
+        let encoded = resp.encode();
+        let decoded = BlockSyncResponse::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(resp, decoded);
+    }
+
+    // -----------------------------------------------------------------------
+    // BlockByHashRequest / Response
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_block_by_hash_request_scale_roundtrip() {
+        let req = BlockByHashRequest {
+            block_hashes: vec![[0xAA; 32], [0xBB; 32]],
+        };
+        let encoded = req.encode();
+        let decoded = BlockByHashRequest::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(req, decoded);
+    }
+
+    #[test]
+    fn test_block_by_hash_response_scale_roundtrip() {
+        let resp = BlockByHashResponse {
+            blocks: vec![dummy_block()],
+        };
+        let encoded = resp.encode();
+        let decoded = BlockByHashResponse::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(resp, decoded);
+    }
+
+    // -----------------------------------------------------------------------
+    // Validation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_sync_request_ok() {
+        let req = BlockSyncRequest {
+            start_height: 1,
+            max_blocks: 100,
+            direction: SyncDirection::Forward,
+            known_block_hash: None,
+        };
+        assert!(validate_sync_request(&req).is_ok());
+    }
+
+    #[test]
+    fn test_validate_sync_request_zero_blocks() {
+        let req = BlockSyncRequest {
+            start_height: 1, max_blocks: 0, direction: SyncDirection::Forward, known_block_hash: None,
+        };
+        assert!(validate_sync_request(&req).is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_request_exceeds_max() {
+        let req = BlockSyncRequest {
+            start_height: 1, max_blocks: 501, direction: SyncDirection::Forward, known_block_hash: None,
+        };
+        assert!(validate_sync_request(&req).is_err());
+    }
+
+    #[test]
+    fn test_validate_sync_request_max_allowed() {
+        let req = BlockSyncRequest {
+            start_height: 1, max_blocks: 500, direction: SyncDirection::Forward, known_block_hash: None,
+        };
+        assert!(validate_sync_request(&req).is_ok());
+    }
+
+    #[test]
+    fn test_validate_by_hash_request_ok() {
+        let req = BlockByHashRequest {
+            block_hashes: vec![[0; 32]],
+        };
+        assert!(validate_by_hash_request(&req).is_ok());
+    }
+
+    #[test]
+    fn test_validate_by_hash_request_empty() {
+        let req = BlockByHashRequest { block_hashes: vec![] };
+        assert!(validate_by_hash_request(&req).is_err());
+    }
+
+    #[test]
+    fn test_validate_by_hash_request_exceeds_max() {
+        let req = BlockByHashRequest {
+            block_hashes: vec![[0; 32]; 101],
+        };
+        assert!(validate_by_hash_request(&req).is_err());
+    }
+
+    #[test]
+    fn test_validate_by_hash_request_max_allowed() {
+        let req = BlockByHashRequest {
+            block_hashes: vec![[0; 32]; 100],
+        };
+        assert!(validate_by_hash_request(&req).is_ok());
+    }
+
+    // -----------------------------------------------------------------------
+    // compute_batch_hash
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_compute_batch_hash_empty_returns_genesis() {
+        let genesis = [0xFE; 32];
+        let hash = compute_batch_hash(&genesis, &[]);
+        assert_eq!(hash, genesis);
+    }
+
+    #[test]
+    fn test_compute_batch_hash_deterministic() {
+        let genesis = [0x01; 32];
+        let block = dummy_block();
+        let hash1 = compute_batch_hash(&genesis, &[block.clone()]);
+        let hash2 = compute_batch_hash(&genesis, &[block]);
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_compute_batch_hash_different_height_different_hash() {
+        let genesis = [0x01; 32];
+        let b1 = dummy_block();
+        let mut b2 = dummy_block();
+        b2.header.height = 2;
+        let hash1 = compute_batch_hash(&genesis, &[b1]);
+        let hash2 = compute_batch_hash(&genesis, &[b2]);
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_compute_batch_hash_multi_block() {
+        let genesis = [0x01; 32];
+        let b1 = dummy_block();
+        let mut b2 = dummy_block();
+        b2.header.height = 2;
+        let hash1 = compute_batch_hash(&genesis, &[b1.clone(), b2.clone()]);
+        let hash2 = compute_batch_hash(&genesis, &[b1, b2]);
+        assert_eq!(hash1, hash2);
+    }
 
     fn dummy_tx() -> Transaction {
         Transaction {
