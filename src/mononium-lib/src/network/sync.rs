@@ -131,7 +131,7 @@ impl SyncCursor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    
 
     // -----------------------------------------------------------------------
     // construction
@@ -239,5 +239,62 @@ mod tests {
         });
         cursor.clear_pending();
         assert!(cursor.pending_range.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // persistence (save / load)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_save_then_load_roundtrip() {
+        let dir = std::env::temp_dir().join("mononium_sync_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("cursor.json");
+
+        // Write a known cursor
+        let genesis = [0xAB; 32];
+        {
+            let mut cursor = SyncCursor::new(genesis);
+            cursor.advance(50, [0xCD; 32]);
+            cursor.set_target(200);
+            cursor.set_pending(HeightRange {
+                start: 51,
+                end: 151,
+                peer_id: "PeerA".into(),
+            });
+            cursor.save(&path).unwrap();
+        }
+
+        // Load it back
+        let loaded = SyncCursor::load(&path, genesis);
+        assert_eq!(loaded.last_verified_height, 50);
+        assert_eq!(loaded.last_verified_hash, [0xCD; 32]);
+        assert_eq!(loaded.target_height, 200);
+        assert_eq!(
+            loaded.pending_range,
+            Some(HeightRange {
+                start: 51,
+                end: 151,
+                peer_id: "PeerA".into(),
+            })
+        );
+
+        // Clean up
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn test_load_nonexistent_returns_fresh_cursor() {
+        let dir = std::env::temp_dir().join("mononium_sync_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("nonexistent.json");
+
+        let genesis = [0x42; 32];
+        let cursor = SyncCursor::load(&path, genesis);
+        assert_eq!(cursor.last_verified_height, 0);
+        assert_eq!(cursor.last_verified_hash, genesis);
+
+        let _ = std::fs::remove_dir(&dir);
     }
 }
