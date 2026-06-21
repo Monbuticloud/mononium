@@ -381,6 +381,22 @@ mod tests {
     use super::*;
     use std::net::TcpListener;
 
+    #[test]
+    fn test_prepare_gossip_message_accepts_valid_size() {
+        let topics = TopicConfig::standard_topics(0);
+        let msg = GossipMessage::Txs(vec![]);
+        let result = prepare_gossip_message(&msg, &topics[0]);
+        assert!(result.is_ok(), "empty txs should fit in 1MB topic");
+    }
+
+    #[test]
+    fn test_prepare_gossip_message_rejects_oversized() {
+        let tiny_topic = TopicConfig::new("tiny", 0, 1);
+        let msg = GossipMessage::Txs(vec![]);
+        let result = prepare_gossip_message(&msg, &tiny_topic);
+        assert!(result.is_err(), "any message exceeds 0-byte limit");
+    }
+
     #[tokio::test]
     async fn test_p2p_service_start_returns_join_handle() {
         let config = P2pConfig::default();
