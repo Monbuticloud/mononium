@@ -213,6 +213,7 @@ pub struct P2pService {
     p2p_port: u16,
     peer_scores: PeerScoreRepo,
     event_tx: broadcast::Sender<P2pEvent>,
+    bootstrap_peers: Vec<Multiaddr>,
 }
 
 impl P2pService {
@@ -284,6 +285,7 @@ impl P2pService {
             p2p_port: config.p2p_port,
             peer_scores: PeerScoreRepo::new(),
             event_tx,
+            bootstrap_peers: config.bootstrap_peers,
         })
     }
 
@@ -297,6 +299,19 @@ impl P2pService {
             let gt = libp2p::gossipsub::IdentTopic::new(topic.name);
             self.swarm.behaviour_mut().gossipsub.subscribe(&gt)?;
             info!("subscribed to: {gt}");
+        }
+
+        // Dial bootstrap peers concurrently at startup
+        for peer_addr in std::mem::take(&mut self.bootstrap_peers) {
+            info!("dialing bootstrap peer: {peer_addr}");
+            if let Err(e) = self.swarm.dial(peer_addr) {
+                warn!("bootstrap dial failed: {e}");
+            }
+        }
+
+        // Start Kademlia random walk for peer discovery
+        if let Err(e) = self.swarm.behaviour_mut().kademlia.bootstrap() {
+            warn!("kademlia bootstrap failed: {e}");
         }
 
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<P2pCommand>(64);
