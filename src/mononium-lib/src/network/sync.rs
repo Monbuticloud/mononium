@@ -77,13 +77,12 @@ impl SyncCursor {
 
     /// Mark a range as currently being downloaded from a peer.
     pub fn set_pending(&mut self, range: HeightRange) {
-        let _ = range;
-        todo!()
+        self.pending_range = Some(range);
     }
 
     /// Clear any pending range (e.g. on failure or completion).
     pub fn clear_pending(&mut self) {
-        todo!()
+        self.pending_range = None;
     }
 
     // -- queries -------------------------------------------------------------
