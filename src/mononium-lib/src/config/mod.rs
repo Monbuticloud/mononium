@@ -301,7 +301,7 @@ impl NodeConfig {
     ///
     /// # Errors
     ///
-    /// Returns `LibError::Storage` if identity or genesis rules are violated.
+    /// Returns `LibError::Storage` if identity, genesis, or port rules are violated.
     pub fn validate(&self) -> Result<()> {
         match (self.key.as_ref(), self.key_file.as_ref(), self.observer) {
             (None, None, false) => {
@@ -327,6 +327,26 @@ impl NodeConfig {
                 "genesis path must be configured (use --genesis or config file)"
                     .to_string(),
             ));
+        }
+
+        // Port conflict validation
+        let p2p = self.p2p_port();
+        let rest = self.rest_port();
+        let rpc = self.rpc_port();
+        if p2p == rest {
+            return Err(LibError::Storage(format!(
+                "p2p_port ({p2p}) and rest_port ({rest}) must differ"
+            )));
+        }
+        if p2p == rpc {
+            return Err(LibError::Storage(format!(
+                "p2p_port ({p2p}) and rpc_port ({rpc}) must differ"
+            )));
+        }
+        if rest == rpc {
+            return Err(LibError::Storage(format!(
+                "rest_port ({rest}) and rpc_port ({rpc}) must differ"
+            )));
         }
 
         Ok(())
@@ -531,6 +551,39 @@ mode = "compact"
         cfg.key = Some("alice".to_string());
         let err = cfg.validate().unwrap_err();
         assert!(err.to_string().contains("genesis"), "got: {err}");
+    }
+
+    #[test]
+    fn test_validate_port_conflict_p2p_rest() {
+        let mut cfg = defaults();
+        cfg.key = Some("alice".to_string());
+        cfg.genesis = Some("genesis.json".to_string());
+        cfg.network.p2p_port = Some(9933);
+        cfg.network.rest_port = Some(9933);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("p2p_port") && err.to_string().contains("rest_port"), "got: {err}");
+    }
+
+    #[test]
+    fn test_validate_port_conflict_p2p_rpc() {
+        let mut cfg = defaults();
+        cfg.key = Some("alice".to_string());
+        cfg.genesis = Some("genesis.json".to_string());
+        cfg.network.p2p_port = Some(9944);
+        cfg.network.rpc_port = Some(9944);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("p2p_port") && err.to_string().contains("rpc_port"), "got: {err}");
+    }
+
+    #[test]
+    fn test_validate_port_conflict_rest_rpc() {
+        let mut cfg = defaults();
+        cfg.key = Some("alice".to_string());
+        cfg.genesis = Some("genesis.json".to_string());
+        cfg.network.rest_port = Some(9955);
+        cfg.network.rpc_port = Some(9955);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("rest_port") && err.to_string().contains("rpc_port"), "got: {err}");
     }
 
     #[test]
