@@ -207,4 +207,38 @@ mod tests {
         // gap = 1440, 2 × 720 = 1440, exactly at threshold → checkpoint
         assert!(cursor.needs_checkpoint(720));
     }
+
+    // -----------------------------------------------------------------------
+    // pending range
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_pending_none_after_new() {
+        let cursor = SyncCursor::new([0; 32]);
+        assert!(cursor.pending_range.is_none());
+    }
+
+    #[test]
+    fn test_set_pending_stores_range() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        let range = HeightRange {
+            start: 1,
+            end: 101,
+            peer_id: "PeerA".into(),
+        };
+        cursor.set_pending(range.clone());
+        assert_eq!(cursor.pending_range, Some(range));
+    }
+
+    #[test]
+    fn test_clear_pending_removes_range() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_pending(HeightRange {
+            start: 1,
+            end: 101,
+            peer_id: "PeerA".into(),
+        });
+        cursor.clear_pending();
+        assert!(cursor.pending_range.is_none());
+    }
 }
