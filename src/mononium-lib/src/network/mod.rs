@@ -12,9 +12,8 @@ use libp2p::mdns;
 use libp2p::ping;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{identity, Multiaddr, PeerId, Swarm};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
-use tracing::{debug, info, warn};
+use tokio::sync::{broadcast, mpsc};
+use tracing::{info, warn};
 
 use parity_scale_codec::{Decode, Encode};
 
@@ -64,6 +63,35 @@ impl From<ping::Event> for CombinedEvent {
 }
 
 // ---------------------------------------------------------------------------
+// P2pEvent — events emitted by the P2P layer to higher-level consumers
+// ---------------------------------------------------------------------------
+
+/// Events that higher layers (consensus, mempool, etc.) can subscribe to.
+#[derive(Debug, Clone)]
+pub enum P2pEvent {
+    /// A gossip message containing transactions was received.
+    TxReceived {
+        source: PeerId,
+        txs: Vec<Transaction>,
+    },
+    /// A gossip message containing a block was received.
+    BlockReceived {
+        source: PeerId,
+        block: Box<Block>,
+    },
+    /// A gossip message containing a commit vote was received.
+    VoteReceived {
+        source: PeerId,
+        vote: CommitVote,
+    },
+    /// A gossip message containing equivocation evidence was received.
+    EvidenceReceived {
+        source: PeerId,
+        evidence: Box<EquivocationEvidence>,
+    },
+}
+
+// ---------------------------------------------------------------------------
 // P2pConfig
 // ---------------------------------------------------------------------------
 
@@ -107,11 +135,18 @@ enum P2pCommand {
 pub struct P2pHandle {
     cmd_tx: mpsc::Sender<P2pCommand>,
     local_peer_id: PeerId,
+    event_tx: broadcast::Sender<P2pEvent>,
 }
 
 impl P2pHandle {
     #[must_use]
     pub fn local_peer_id(&self) -> &PeerId { &self.local_peer_id }
+
+    /// Subscribe to events emitted by this P2P node.
+    #[must_use]
+    pub fn subscribe(&self) -> broadcast::Receiver<P2pEvent> {
+        self.event_tx.subscribe()
+    }
 
     /// Dial a remote peer at the given multiaddress.
     pub fn dial(&self, addr: Multiaddr) -> Result<(), Box<dyn std::error::Error>> {
@@ -122,6 +157,24 @@ impl P2pHandle {
     /// Publish transactions to the gossip network.
     pub async fn publish_tx(&self, txs: Vec<Transaction>) -> Result<(), Box<dyn std::error::Error>> {
         self.cmd_tx.send(P2pCommand::PublishTx(txs)).await?;
+        Ok(())
+    }
+
+    /// Publish a block to the gossip network.
+    pub async fn publish_block(&self, block: Block) -> Result<(), Box<dyn std::error::Error>> {
+        self.cmd_tx.send(P2pCommand::PublishBlock(Box::new(block))).await?;
+        Ok(())
+    }
+
+    /// Publish a commit vote to the gossip network.
+    pub async fn publish_vote(&self, vote: CommitVote) -> Result<(), Box<dyn std::error::Error>> {
+        self.cmd_tx.send(P2pCommand::PublishVote(vote)).await?;
+        Ok(())
+    }
+
+    /// Publish equivocation evidence to the gossip network.
+    pub async fn publish_evidence(&self, evidence: EquivocationEvidence) -> Result<(), Box<dyn std::error::Error>> {
+        self.cmd_tx.send(P2pCommand::PublishEvidence(Box::new(evidence))).await?;
         Ok(())
     }
 
@@ -141,6 +194,7 @@ pub struct P2pService {
     chain_id: u64,
     p2p_port: u16,
     peer_scores: PeerScoreRepo,
+    event_tx: broadcast::Sender<P2pEvent>,
 }
 
 impl P2pService {
@@ -203,12 +257,15 @@ impl P2pService {
             .with_swarm_config(|c| c.with_max_negotiating_inbound_streams(config.max_peers))
             .build();
 
+        let (event_tx, _) = broadcast::channel(256);
+
         Ok(Self {
             swarm,
             local_peer_id,
             chain_id,
             p2p_port: config.p2p_port,
             peer_scores: PeerScoreRepo::new(),
+            event_tx,
         })
     }
 
@@ -226,6 +283,7 @@ impl P2pService {
 
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<P2pCommand>(64);
         let local_peer_id = self.local_peer_id;
+        let event_tx = self.event_tx.clone();
         let _handle = tokio::spawn(async move {
             use libp2p::futures::StreamExt;
             loop {
@@ -282,16 +340,29 @@ impl P2pService {
             }
         });
 
-        Ok(P2pHandle { cmd_tx, local_peer_id })
+        Ok(P2pHandle { cmd_tx, local_peer_id, event_tx })
     }
 
     fn handle_event(&mut self, event: SwarmEvent<CombinedEvent>) {
         match event {
             SwarmEvent::Behaviour(CombinedEvent::Gossipsub(e)) => {
                 if let gossipsub::Event::Message { propagation_source, message, .. } = e {
+                    let event_tx = self.event_tx.clone();
                     match GossipMessage::decode(&mut &message.data[..]) {
-                        Ok(_) => {
+                        Ok(GossipMessage::Txs(txs)) => {
                             self.peer_scores.apply_event(&propagation_source, ScoreEvent::ValidBlockPropagated);
+                            let _ = event_tx.send(P2pEvent::TxReceived { source: propagation_source, txs });
+                        }
+                        Ok(GossipMessage::Block(block)) => {
+                            self.peer_scores.apply_event(&propagation_source, ScoreEvent::ValidBlockPropagated);
+                            let _ = event_tx.send(P2pEvent::BlockReceived { source: propagation_source, block });
+                        }
+                        Ok(GossipMessage::Vote(vote)) => {
+                            self.peer_scores.apply_event(&propagation_source, ScoreEvent::ValidVotePropagated);
+                            let _ = event_tx.send(P2pEvent::VoteReceived { source: propagation_source, vote });
+                        }
+                        Ok(GossipMessage::Evidence(evidence)) => {
+                            let _ = event_tx.send(P2pEvent::EvidenceReceived { source: propagation_source, evidence });
                         }
                         Err(_) => {
                             self.peer_scores.apply_event(&propagation_source, ScoreEvent::InvalidBlockGossiped);
