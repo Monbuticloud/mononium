@@ -60,8 +60,14 @@ impl SyncCursor {
     /// This is called after a batch of blocks has been fully verified.
     /// Panics if `to_height ≤ self.last_verified_height`.
     pub fn advance(&mut self, to_height: u64, to_hash: [u8; 32]) {
-        let _ = (to_height, to_hash);
-        todo!()
+        assert!(
+            to_height > self.last_verified_height,
+            "advance requires height > current ({} ≤ {})",
+            to_height,
+            self.last_verified_height,
+        );
+        self.last_verified_height = to_height;
+        self.last_verified_hash = to_hash;
     }
 
     /// Set the target height the node is syncing toward.
