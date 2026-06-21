@@ -45,7 +45,12 @@ impl SyncCursor {
     /// Create a new cursor anchored at the genesis block.
     #[must_use]
     pub fn new(genesis_hash: [u8; 32]) -> Self {
-        todo!()
+        Self {
+            last_verified_height: 0,
+            last_verified_hash: genesis_hash,
+            target_height: 0,
+            pending_range: None,
+        }
     }
 
     // -- mutation -----------------------------------------------------------
