@@ -13,6 +13,7 @@ use libp2p::ping;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p::{identity, Multiaddr, PeerId, Swarm};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tracing::{debug, info, warn};
 
 use parity_scale_codec::{Decode, Encode};
@@ -94,8 +95,6 @@ pub struct P2pService {
     local_peer_id: PeerId,
     chain_id: u64,
     peer_scores: PeerScoreRepo,
-    shutdown_rx: Option<mpsc::Receiver<()>>,
-    shutdown_tx: mpsc::Sender<()>,
 }
 
 impl P2pService {
@@ -158,22 +157,18 @@ impl P2pService {
             .with_swarm_config(|c| c.with_max_negotiating_inbound_streams(config.max_peers))
             .build();
 
-        let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
-
         Ok(Self {
             swarm,
             local_peer_id,
             chain_id,
             peer_scores: PeerScoreRepo::new(),
-            shutdown_rx: Some(shutdown_rx),
-            shutdown_tx,
         })
     }
 
     #[must_use]
     pub fn local_peer_id(&self) -> &PeerId { &self.local_peer_id }
 
-    pub fn start(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn start(mut self) -> Result<(JoinHandle<()>, mpsc::Sender<()>), Box<dyn std::error::Error>> {
         let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{}", constants::DEFAULT_P2P_PORT)
             .parse()?;
         self.swarm.listen_on(listen_addr)?;
@@ -183,21 +178,22 @@ impl P2pService {
             self.swarm.behaviour_mut().gossipsub.subscribe(&gt)?;
             info!("subscribed to: {gt}");
         }
-        Ok(())
-    }
 
-    pub async fn run(&mut self) {
-        use libp2p::futures::StreamExt;
-        let mut shutdown_rx = self.shutdown_rx.take().unwrap();
-        loop {
-            tokio::select! {
-                event = self.swarm.select_next_some() => self.handle_event(event),
-                _ = shutdown_rx.recv() => {
-                    info!("P2P shutting down");
-                    break;
+        let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
+        let handle = tokio::spawn(async move {
+            use libp2p::futures::StreamExt;
+            loop {
+                tokio::select! {
+                    event = self.swarm.select_next_some() => self.handle_event(event),
+                    _ = shutdown_rx.recv() => {
+                        info!("P2P shutting down");
+                        break;
+                    }
                 }
             }
-        }
+        });
+
+        Ok((handle, shutdown_tx))
     }
 
     fn handle_event(&mut self, event: SwarmEvent<CombinedEvent>) {
@@ -243,7 +239,19 @@ impl P2pService {
         Ok(self.swarm.behaviour_mut().gossipsub.publish(topic, data)?)
     }
 
-    pub fn stop(&self) {
-        let _ = self.shutdown_tx.try_send(());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_p2p_service_start_returns_join_handle() {
+        let config = P2pConfig::default();
+        let service = P2pService::new(config, 0).unwrap();
+        let (handle, shutdown_tx) = service.start().unwrap();
+        assert!(!handle.is_finished());
+        drop(shutdown_tx);
+        let _ = handle.await;
     }
 }
