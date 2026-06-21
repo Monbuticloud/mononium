@@ -72,8 +72,7 @@ impl SyncCursor {
 
     /// Set the target height the node is syncing toward.
     pub fn set_target(&mut self, height: u64) {
-        let _ = height;
-        todo!()
+        self.target_height = height;
     }
 
     /// Mark a range as currently being downloaded from a peer.
@@ -92,7 +91,7 @@ impl SyncCursor {
     /// How many blocks remain between the verified frontier and the target.
     #[must_use]
     pub fn gap(&self) -> u64 {
-        todo!()
+        self.target_height.saturating_sub(self.last_verified_height)
     }
 
     /// Whether the gap is large enough that a checkpoint sync is warranted.
@@ -100,8 +99,7 @@ impl SyncCursor {
     /// `era_length` is the number of blocks per era (720 in the current spec).
     #[must_use]
     pub fn needs_checkpoint(&self, era_length: u64) -> bool {
-        let _ = era_length;
-        todo!()
+        self.gap() >= 2 * era_length
     }
 
     // -- persistence ---------------------------------------------------------
