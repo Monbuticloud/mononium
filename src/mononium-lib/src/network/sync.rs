@@ -109,8 +109,13 @@ impl SyncCursor {
     /// - I/O errors from the filesystem.
     /// - JSON serialisation errors.
     pub fn save(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-        let _ = path;
-        todo!()
+        let json = serde_json::to_string_pretty(self)?;
+        // ensure parent directory exists
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, json)?;
+        Ok(())
     }
 
     /// Load a previously persisted cursor.
@@ -119,8 +124,14 @@ impl SyncCursor {
     /// to [`SyncCursor::new`] (full replay).
     #[must_use]
     pub fn load(path: &Path, genesis_hash: [u8; 32]) -> Self {
-        let _ = (path, genesis_hash);
-        todo!()
+        let json = match std::fs::read_to_string(path) {
+            Ok(j) => j,
+            Err(_) => return Self::new(genesis_hash),
+        };
+        match serde_json::from_str(&json) {
+            Ok(cursor) => cursor,
+            Err(_) => Self::new(genesis_hash),
+        }
     }
 }
 
