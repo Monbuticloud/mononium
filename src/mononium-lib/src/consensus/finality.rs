@@ -121,4 +121,127 @@ mod tests {
         assert!(!tracker.is_final(1));
         assert_eq!(tracker.last_finalized_height(), 0);
     }
+
+    // -----------------------------------------------------------------------
+    // add_vote
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_add_vote_accepts_validator_vote() {
+        let mut tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        assert!(tracker.add_vote(vote(1, addr(0xAA))));
+    }
+
+    #[test]
+    fn test_add_vote_rejects_non_active() {
+        let mut tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        assert!(!tracker.add_vote(vote(1, addr(0xBB))));
+    }
+
+    #[test]
+    fn test_add_vote_rejects_duplicate() {
+        let mut tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        assert!(tracker.add_vote(vote(1, addr(0xAA))));
+        assert!(!tracker.add_vote(vote(1, addr(0xAA))));
+    }
+
+    #[test]
+    fn test_add_vote_different_heights_allowed() {
+        let mut tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        assert!(tracker.add_vote(vote(1, addr(0xAA))));
+        assert!(tracker.add_vote(vote(2, addr(0xAA))));
+    }
+
+    // -----------------------------------------------------------------------
+    // cumulative_weight
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_cumulative_weight_zero_for_no_votes() {
+        let tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        assert_eq!(tracker.cumulative_weight(1), U256::zero());
+    }
+
+    #[test]
+    fn test_cumulative_weight_sums_unique_validators() {
+        let mut tracker = CommitTracker::new(weights(&[
+            (addr(0xAA), 100),
+            (addr(0xBB), 200),
+        ]));
+        tracker.add_vote(vote(1, addr(0xAA)));
+        assert_eq!(tracker.cumulative_weight(1), U256::from(100));
+        tracker.add_vote(vote(1, addr(0xBB)));
+        assert_eq!(tracker.cumulative_weight(1), U256::from(300));
+    }
+
+    #[test]
+    fn test_cumulative_weight_ignores_duplicate() {
+        let mut tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        tracker.add_vote(vote(1, addr(0xAA)));
+        tracker.add_vote(vote(1, addr(0xAA))); // duplicate
+        assert_eq!(tracker.cumulative_weight(1), U256::from(100));
+    }
+
+    // -----------------------------------------------------------------------
+    // finality (>⅔ threshold)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_is_final_false_below_threshold() {
+        // 3 validators, each 100 stake → total = 300, ⅔ = 200, >⅔ = 201
+        let vals = &[(addr(0xAA), 100), (addr(0xBB), 100), (addr(0xCC), 100)];
+        let mut tracker = CommitTracker::new(weights(vals));
+        tracker.add_vote(vote(1, addr(0xAA))); // 100 / 300 → not final
+        assert!(!tracker.is_final(1));
+    }
+
+    #[test]
+    fn test_is_final_true_when_exceeds_two_thirds() {
+        // 3 validators, each 100 stake → total = 300, >⅔ = >200
+        let vals = &[(addr(0xAA), 100), (addr(0xBB), 100), (addr(0xCC), 100)];
+        let mut tracker = CommitTracker::new(weights(vals));
+        tracker.add_vote(vote(1, addr(0xAA)));
+        tracker.add_vote(vote(1, addr(0xBB)));
+        tracker.add_vote(vote(1, addr(0xCC))); // 300 > 200 → final
+        assert!(tracker.is_final(1));
+    }
+
+    #[test]
+    fn test_is_final_false_at_exactly_two_thirds() {
+        // 2 validators, 100 + 50 = 150 total, >⅔ = >100
+        // One validator with 100 votes → 100 is NOT > 100
+        let vals = &[(addr(0xAA), 100), (addr(0xBB), 50)];
+        let mut tracker = CommitTracker::new(weights(vals));
+        tracker.add_vote(vote(1, addr(0xAA))); // 100 out of 150 → 66.67% NOT final
+        assert!(!tracker.is_final(1));
+    }
+
+    #[test]
+    fn test_is_final_crosses_at_two_validators_out_of_three() {
+        // 3 validators, 50 + 30 + 20 = 100 total, >⅔ = >66
+        let vals = &[(addr(0xAA), 50), (addr(0xBB), 30), (addr(0xCC), 20)];
+        let mut tracker = CommitTracker::new(weights(vals));
+        tracker.add_vote(vote(1, addr(0xAA))); // 50 → not final
+        tracker.add_vote(vote(1, addr(0xBB))); // 80 > 66 → final
+        assert!(tracker.is_final(1));
+    }
+
+    // -----------------------------------------------------------------------
+    // finality_ratio
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_finality_ratio_zero_with_no_votes() {
+        let tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        assert!((tracker.finality_ratio(1) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_finality_ratio_reflects_weight() {
+        let vals = &[(addr(0xAA), 75), (addr(0xBB), 25)];
+        let mut tracker = CommitTracker::new(weights(vals));
+        tracker.add_vote(vote(1, addr(0xAA)));
+        let ratio = tracker.finality_ratio(1);
+        assert!((ratio - 0.75).abs() < 1e-10);
+    }
 }
