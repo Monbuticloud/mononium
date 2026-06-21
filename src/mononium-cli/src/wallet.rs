@@ -40,9 +40,8 @@ pub struct KeyFile {
 /// Saves to `~/.mononium/keys/{name}.json` and prints the address.
 pub fn keygen(name: &str) -> Result<()> {
     // Generate random 48-byte seed
-    use rand::RngCore;
     let mut seed = [0u8; FALCON_SEED_SIZE];
-    rand::thread_rng().fill_bytes(&mut seed);
+    rand::fill(&mut seed[..]);
 
     // Generate key pair
     let kp = Falcon512::generate(&seed)
