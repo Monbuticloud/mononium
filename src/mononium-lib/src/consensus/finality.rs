@@ -49,15 +49,43 @@ impl CommitTracker {
     /// - The validator already voted for this height.
     /// - The height is already final.
     pub fn add_vote(&mut self, vote: CommitVote) -> bool {
-        let _ = vote;
-        todo!()
+        let height = vote.height;
+        // Reject if height already final
+        if self.finalized.contains(&height) {
+            return false;
+        }
+        // Reject if validator not in active set
+        if !self.stake_weights.contains_key(&vote.validator) {
+            return false;
+        }
+        // Reject duplicate vote at same height
+        let votes = self.commits.entry(height).or_default();
+        if votes.iter().any(|v| v.validator == vote.validator) {
+            return false;
+        }
+        votes.push(vote);
+
+        // Check if threshold is crossed (cumulative * 3 > total * 2)
+        let cumul = self.cumulative_weight(height);
+        if cumul.checked_mul(U256::from(3)).map_or(false, |c3| {
+            self.total_active_stake.checked_mul(U256::from(2)).map_or(true, |t2| c3 > t2)
+        }) {
+            self.finalized.insert(height);
+        }
+        true
     }
 
     /// Sum of unique validator stake that has voted at `height`.
     #[must_use]
     pub fn cumulative_weight(&self, height: u64) -> U256 {
-        let _ = height;
-        todo!()
+        let Some(votes) = self.commits.get(&height) else {
+            return U256::zero();
+        };
+        votes
+            .iter()
+            .filter_map(|v| self.stake_weights.get(&v.validator))
+            .copied()
+            .fold(U256::zero(), |acc, w| acc.saturating_add(w))
     }
 
     /// Whether the block at `height` has reached >⅔ finality.
@@ -75,8 +103,19 @@ impl CommitTracker {
     /// Ratio of participating stake to total active stake at `height`.
     #[must_use]
     pub fn finality_ratio(&self, height: u64) -> f64 {
-        let _ = height;
-        todo!()
+        let total = self.total_active_stake;
+        if total.is_zero() {
+            return 0.0;
+        }
+        let weight = self.cumulative_weight(height);
+        // Exact conversion for values ≤ 2¹²⁸; lossy but acceptable for diagnostics.
+        let weight_f = weight.low_u128() as f64;
+        let total_f = total.low_u128() as f64;
+        if total_f == 0.0 {
+            0.0
+        } else {
+            weight_f / total_f
+        }
     }
 }
 
