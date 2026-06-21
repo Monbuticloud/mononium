@@ -345,6 +345,65 @@ mod tests {
         handle2.shutdown().await;
     }
 
+    #[tokio::test]
+    async fn test_p2p_event_channel_delivers_gossip() {
+        let port1 = pick_unused_port();
+        let port2 = pick_unused_port();
+
+        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
+        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+
+        let node1 = P2pService::new(cfg1, 0).unwrap();
+        let node2 = P2pService::new(cfg2, 0).unwrap();
+
+        let handle1 = node1.start().unwrap();
+        let handle2 = node2.start().unwrap();
+
+        let mut events = handle2.subscribe();
+
+        // Connect node2 → node1
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{port1}").parse().unwrap();
+        handle2.dial(addr).unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        // Publish a transaction from node1
+        use crate::core::account::Address;
+        use crate::core::transaction::Transaction;
+        use crate::crypto::falcon::Falcon512Signature;
+        use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        use primitive_types::U256;
+
+        let tx = Transaction {
+            chain_id: 0,
+            nonce: 0,
+            sender: Address::from([0x11u8; 32]),
+            fee: U256::zero(),
+            body: crate::core::transaction::TxBody::Transfer {
+                recipient: Address::from([0x22u8; 32]),
+                amount: U256::from(100),
+            },
+            signature: Falcon512Signature::from_bytes(&[0u8; FALCON_SIGNATURE_SIZE]).unwrap(),
+        };
+        handle1.publish_tx(vec![tx]).await.unwrap();
+
+        // Wait for gossip propagation
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        // Verify event received on node2
+        match events.try_recv() {
+            Ok(P2pEvent::TxReceived { .. }) => {} // success
+            Ok(other) => panic!("expected TxReceived, got {other:?}"),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                panic!("no event received within timeout");
+            }
+            Err(e) => panic!("channel error: {e}"),
+        }
+
+        handle1.shutdown().await;
+        handle2.shutdown().await;
+    }
+
     /// Find an available TCP port on localhost.
     fn pick_unused_port() -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
