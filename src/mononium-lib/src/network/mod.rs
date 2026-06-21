@@ -243,7 +243,8 @@ impl P2pService {
             MemoryStore::new(local_peer_id),
         );
 
-        // mDNS
+        // mDNS (always enabled; `enable_mdns` config flag is accepted but
+        // unconditional in libp2p 0.56 — harmless when no responders exist)
         let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
 
         // Identify
@@ -588,6 +589,106 @@ mod tests {
             Ok(other) => panic!("expected TxReceived from bootnode dial, got {other:?}"),
             Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
                 panic!("no event received — bootstrap dial likely failed");
+            }
+            Err(e) => panic!("channel error: {e}"),
+        }
+
+        handle1.shutdown().await;
+        handle2.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_p2p_publish_block_delivers_block_received_event() {
+        use crate::core::block::{BlockHeader, BlockBody};
+
+        let port1 = pick_unused_port();
+        let port2 = pick_unused_port();
+
+        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
+        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+
+        let node1 = P2pService::new(cfg1, 0).unwrap();
+        let node2 = P2pService::new(cfg2, 0).unwrap();
+
+        let handle1 = node1.start().unwrap();
+        let handle2 = node2.start().unwrap();
+        let mut events1 = handle1.subscribe();
+
+        // Connect and wait for mesh
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{port1}").parse().unwrap();
+        handle2.dial(addr).unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        // Node2 publishes a block
+        let block = Block {
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0xAAu8; 32],
+                global_state_root: [0xBBu8; 32],
+                tx_root: [0xCCu8; 32],
+                timestamp: 1_700_000_000,
+                proposer: crate::core::account::Address::from([0xDDu8; 32]),
+                chain_id: 0,
+            },
+            body: BlockBody { transactions: vec![] },
+        };
+        handle2.publish_block(block).await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        // Node1 should receive BlockReceived event
+        match events1.try_recv() {
+            Ok(P2pEvent::BlockReceived { .. }) => {} // success
+            Ok(other) => panic!("expected BlockReceived, got {other:?}"),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                panic!("no BlockReceived event within timeout");
+            }
+            Err(e) => panic!("channel error: {e}"),
+        }
+
+        handle1.shutdown().await;
+        handle2.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_p2p_publish_vote_delivers_vote_event() {
+        let port1 = pick_unused_port();
+        let port2 = pick_unused_port();
+
+        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
+        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+
+        let node1 = P2pService::new(cfg1, 0).unwrap();
+        let node2 = P2pService::new(cfg2, 0).unwrap();
+
+        let handle1 = node1.start().unwrap();
+        let handle2 = node2.start().unwrap();
+        let mut events1 = handle1.subscribe();
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{port1}").parse().unwrap();
+        handle2.dial(addr).unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        // Node2 publishes a vote
+        use crate::crypto::falcon::Falcon512Signature;
+        use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        let vote = CommitVote {
+            height: 1,
+            block_hash: [0xEEu8; 32],
+            validator: crate::core::account::Address::from([0xFFu8; 32]),
+            signature: Falcon512Signature::from_bytes(&[0xAAu8; FALCON_SIGNATURE_SIZE]).unwrap(),
+        };
+        handle2.publish_vote(vote).await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        match events1.try_recv() {
+            Ok(P2pEvent::VoteReceived { .. }) => {} // success
+            Ok(other) => panic!("expected VoteReceived, got {other:?}"),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                panic!("no VoteReceived event within timeout");
             }
             Err(e) => panic!("channel error: {e}"),
         }
