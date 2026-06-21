@@ -7,7 +7,8 @@ use parity_scale_codec::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::core::block::BlockHeader;
-use crate::crypto::falcon::Falcon512Signature;
+use crate::crypto::falcon::{Falcon512, Falcon512PublicKey, Falcon512Signature};
+use crate::crypto::signature::SignatureScheme;
 use crate::error::LibError;
 
 // ---------------------------------------------------------------------------
@@ -40,8 +41,38 @@ pub fn verify_equivocation(
     evidence: &EquivocationEvidence,
     public_key: &[u8; 897],
 ) -> std::result::Result<(), LibError> {
-    let _ = (evidence, public_key);
-    todo!()
+    let a = &evidence.header_a;
+    let b = &evidence.header_b;
+
+    // 1. Same height
+    if a.height != b.height {
+        return Err(LibError::EquivocationHeightMismatch(a.height, b.height));
+    }
+
+    // 2. Same parent hash
+    if a.parent_hash != b.parent_hash {
+        return Err(LibError::EquivocationParentMismatch);
+    }
+
+    // 3. Different blocks (hash comparison)
+    let hash_a = blake3::hash(&a.encode());
+    let hash_b = blake3::hash(&b.encode());
+    if hash_a == hash_b {
+        return Err(LibError::EquivocationIdenticalBlocks);
+    }
+
+    // 4. Signature A valid
+    let pk = Falcon512PublicKey(*public_key);
+    if !Falcon512::verify(&pk, &a.encode(), &evidence.signature_a) {
+        return Err(LibError::EquivocationSigAInvalid);
+    }
+
+    // 5. Signature B valid
+    if !Falcon512::verify(&pk, &b.encode(), &evidence.signature_b) {
+        return Err(LibError::EquivocationSigBInvalid);
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
