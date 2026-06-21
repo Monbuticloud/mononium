@@ -76,6 +76,21 @@ pub enum LibError {
     #[error("invalid address: {0}")]
     InvalidAddress(String),
 
+    #[error("equivocation: header height mismatch (a={0}, b={1})")]
+    EquivocationHeightMismatch(u64, u64),
+
+    #[error("equivocation: parent hash mismatch")]
+    EquivocationParentMismatch,
+
+    #[error("equivocation: headers are identical")]
+    EquivocationIdenticalBlocks,
+
+    #[error("equivocation: signature A is invalid")]
+    EquivocationSigAInvalid,
+
+    #[error("equivocation: signature B is invalid")]
+    EquivocationSigBInvalid,
+
     #[error("address checksum mismatch: expected {0}, computed {1}")]
     ChecksumMismatch(String, String),
 }
@@ -149,6 +164,26 @@ mod tests {
         assert_eq!(
             LibError::ChecksumMismatch("abc".to_string(), "def".to_string()).to_string(),
             "address checksum mismatch: expected abc, computed def"
+        );
+        assert_eq!(
+            LibError::EquivocationHeightMismatch(1, 2).to_string(),
+            "equivocation: header height mismatch (a=1, b=2)"
+        );
+        assert_eq!(
+            LibError::EquivocationParentMismatch.to_string(),
+            "equivocation: parent hash mismatch"
+        );
+        assert_eq!(
+            LibError::EquivocationIdenticalBlocks.to_string(),
+            "equivocation: headers are identical"
+        );
+        assert_eq!(
+            LibError::EquivocationSigAInvalid.to_string(),
+            "equivocation: signature A is invalid"
+        );
+        assert_eq!(
+            LibError::EquivocationSigBInvalid.to_string(),
+            "equivocation: signature B is invalid"
         );
     }
 }

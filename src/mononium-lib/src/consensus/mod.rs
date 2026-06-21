@@ -5,6 +5,7 @@ pub mod election;
 pub mod era;
 pub mod finality;
 pub mod proposer;
+pub mod slashing;
 pub mod supply;
 
 use std::time::Duration;
