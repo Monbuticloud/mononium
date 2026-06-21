@@ -525,6 +525,62 @@ mod tests {
         handle2.shutdown().await;
     }
 
+    #[tokio::test]
+    async fn test_p2p_bootstrap_dial_connects_automatically() {
+        let port1 = pick_unused_port();
+        let port2 = pick_unused_port();
+        let addr1: Multiaddr = format!("/ip4/127.0.0.1/tcp/{port1}").parse().unwrap();
+
+        let cfg1 = P2pConfig { p2p_port: port1, bootstrap_peers: vec![], ..Default::default() };
+        let cfg2 = P2pConfig { p2p_port: port2, bootstrap_peers: vec![addr1], ..Default::default() };
+
+        let node1 = P2pService::new(cfg1, 0).unwrap();
+        let node2 = P2pService::new(cfg2, 0).unwrap();
+
+        let handle1 = node1.start().unwrap();
+        let handle2 = node2.start().unwrap();
+
+        let mut events1 = handle1.subscribe();
+
+        // Node2 should automatically dial node1 via bootstrap_peers.
+        // Wait for connection + gossipsub mesh formation.
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        // Verify: node2 publishes a tx → node1 receives it via event channel
+        use crate::core::account::Address;
+        use crate::core::transaction::Transaction;
+        use crate::crypto::falcon::Falcon512Signature;
+        use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        use primitive_types::U256;
+
+        let tx = Transaction {
+            chain_id: 0,
+            nonce: 0,
+            sender: Address::from([0x33u8; 32]),
+            fee: U256::zero(),
+            body: crate::core::transaction::TxBody::Transfer {
+                recipient: Address::from([0x44u8; 32]),
+                amount: U256::from(200),
+            },
+            signature: Falcon512Signature::from_bytes(&[0u8; FALCON_SIGNATURE_SIZE]).unwrap(),
+        };
+        handle2.publish_tx(vec![tx]).await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        match events1.try_recv() {
+            Ok(P2pEvent::TxReceived { .. }) => {} // success
+            Ok(other) => panic!("expected TxReceived from bootnode dial, got {other:?}"),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                panic!("no event received — bootstrap dial likely failed");
+            }
+            Err(e) => panic!("channel error: {e}"),
+        }
+
+        handle1.shutdown().await;
+        handle2.shutdown().await;
+    }
+
     /// Find an available TCP port on localhost.
     fn pick_unused_port() -> u16 {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
