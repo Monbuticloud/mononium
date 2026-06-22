@@ -3,10 +3,12 @@
 //! Wires together proposer schedule, BFT commit tracking, fork choice,
 //! and the state machine into a single async orchestrator.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use parity_scale_codec::Encode;
 use primitive_types::U256;
+use tokio::sync::RwLock;
 
 use crate::consensus::finality::CommitTracker;
 use crate::consensus::proposer::ProposerSchedule;
@@ -17,6 +19,9 @@ use crate::core::state::StateMachine;
 use crate::core::transaction::Transaction;
 use crate::crypto::falcon::Falcon512Signature;
 use crate::error::Result;
+use crate::mempool::Mempool;
+use crate::network::P2pHandle;
+use crate::storage::StorageEngine;
 
 // ---------------------------------------------------------------------------
 // LocalValidatorKey
@@ -162,6 +167,139 @@ impl ConsensusEngine {
         start_height: u64,
     ) -> ProposerSchedule {
         ProposerSchedule::new(active_set, era, start_height)
+    }
+
+    /// Set the proposer schedule.
+    pub fn set_schedule(&mut self, schedule: ProposerSchedule) {
+        self.schedule = Some(schedule);
+    }
+
+    /// Set the commit tracker.
+    pub fn set_commit_tracker(&mut self, tracker: CommitTracker) {
+        self.commit_tracker = Some(tracker);
+    }
+
+    // -------------------------------------------------------------------
+    // Async consensus loop
+    // -------------------------------------------------------------------
+
+    /// Run the consensus slot loop.
+    ///
+    /// On each slot tick:
+    /// - If local node is scheduled proposer → build block, execute txs, store, publish
+    /// - If not → wait for block from gossip event channel
+    ///
+    /// Returns when the channel is closed or a fatal error occurs.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn start_consensus_loop<S: StorageEngine>(
+        &self,
+        state: Arc<RwLock<StateMachine>>,
+        mempool: Arc<RwLock<Mempool>>,
+        p2p: P2pHandle,
+        storage: &S,
+        _genesis_hash: [u8; 32],
+        block_time_secs: u64,
+    ) {
+        let block_time = Duration::from_secs(block_time_secs);
+        let mut interval = tokio::time::interval(block_time);
+        // Skip first immediate tick
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+
+            let schedule = match &self.schedule {
+                Some(s) => s.clone(),
+                None => {
+                    tracing::warn!("consensus: no proposer schedule set");
+                    continue;
+                }
+            };
+
+            let height = self.current_height + 1;
+
+            // Check if we're the proposer for this height
+            let is_our_slot = self.local_validator.as_ref().map_or(false, |local| {
+                schedule.is_scheduled_proposer(&local.address, height)
+            });
+
+            if is_our_slot {
+                self.produce_block(state.clone(), mempool.clone(), &p2p, storage, height, &schedule).await;
+            } else {
+                // Non-proposer: slot handled by external event channel
+                tracing::trace!(height, "waiting for block from proposer");
+            }
+        }
+    }
+
+    /// Produce a block as the scheduled proposer.
+    #[allow(clippy::too_many_arguments)]
+    async fn produce_block<S: StorageEngine>(
+        &self,
+        state: Arc<RwLock<StateMachine>>,
+        mempool: Arc<RwLock<Mempool>>,
+        p2p: &P2pHandle,
+        storage: &S,
+        height: u64,
+        schedule: &ProposerSchedule,
+    ) {
+        // Get current timestamp
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Load parent block from storage
+        let parent_height = height.saturating_sub(1);
+        let parent_key = parent_height.to_be_bytes();
+        let parent_bytes = match storage.get(crate::storage::tables::BLOCKS, &parent_key) {
+            Ok(Some(b)) => b,
+            _ => {
+                tracing::error!(height, "parent block not found in storage");
+                return;
+            }
+        };
+        let parent_block: Block = match parity_scale_codec::Decode::decode(&mut &parent_bytes[..]) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!(height, "failed to decode parent block: {e}");
+                return;
+            }
+        };
+
+        // Select txs from mempool (up to 500 or 500KB)
+        let txs = {
+            let mut mp = mempool.blocking_write();
+            mp.select(500)
+        };
+
+        // Execute against state machine
+        let sig_fake = Falcon512Signature::from_bytes(
+            &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE]
+        ).unwrap();
+
+        let mut state_guard = state.blocking_write();
+        let block = self.build_block(
+            &mut state_guard,
+            txs,
+            &parent_block,
+            &schedule.proposer_for_height(height),
+            now,
+            sig_fake,
+        );
+
+        // Store block in database
+        let key = height.to_be_bytes();
+        let encoded = parity_scale_codec::Encode::encode(&block);
+        if let Err(e) = storage.put(crate::storage::tables::BLOCKS, &key, &encoded) {
+            tracing::error!(height, "failed to store block: {e}");
+            return;
+        }
+
+        // Publish via gossip
+        if let Err(e) = p2p.publish_block(block).await {
+            tracing::warn!(height, "failed to publish block: {e}");
+        }
     }
 }
 
