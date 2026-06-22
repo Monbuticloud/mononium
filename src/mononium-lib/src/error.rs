@@ -93,6 +93,9 @@ pub enum LibError {
 
     #[error("address checksum mismatch: expected {0}, computed {1}")]
     ChecksumMismatch(String, String),
+
+    #[error("validator is already frozen")]
+    AlreadyFrozen,
 }
 
 #[cfg(test)]

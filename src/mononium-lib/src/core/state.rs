@@ -26,6 +26,19 @@ pub struct BlockReceipt {
     pub state_root: [u8; 32],
 }
 
+/// Result of applying a slashing (Phase 2.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlashResult {
+    /// Total amount slashed (90% of pre-slash stake).
+    pub slashed_amount: U256,
+    /// Amount permanently burned (90% of slashed).
+    pub burn_amount: U256,
+    /// Bounty awarded to the reporter (10% of slashed).
+    pub bounty_amount: U256,
+    /// Stake remaining after slashing (10% of original).
+    pub remaining_stake: U256,
+}
+
 /// The Mononium state machine.
 ///
 /// Owns a [`SparseMerkleTree`] that stores all on-chain state:
@@ -658,6 +671,74 @@ impl StateMachine {
         }
 
         active_addrs
+    }
+
+    // -- Slashing ---------------------------------------------------------
+
+    /// Apply an equivocation slashing.
+    ///
+    /// Slashes 90% of the validator's stake: 90% of slashed → burned,
+    /// 10% → reporter bounty. Sets validator status to Frozen for 72 eras.
+    ///
+    /// Returns `LibError::AlreadyFrozen` if the validator is already frozen.
+    #[allow(unused_variables)]
+    pub fn apply_slash(
+        &mut self,
+        proposer_addr: &[u8; 32],
+        reporter_addr: &Address,
+        current_era: u64,
+    ) -> Result<SlashResult> {
+        let addr = Address::from(*proposer_addr);
+        let Some(mut entry) = self.get_validator(&addr) else {
+            return Err(LibError::ValidatorNotFound(HexBytes(*proposer_addr)));
+        };
+
+        // Already frozen → ignore secondary evidence
+        if matches!(entry.status, ValidatorStatus::Frozen { .. }) {
+            return Err(LibError::AlreadyFrozen);
+        }
+
+        // Compute slash amounts: 90% of total stake
+        let slashed = entry.stake * U256::from(90) / U256::from(100);
+        let burn_amount = slashed * U256::from(90) / U256::from(100); // 81% of original
+        let bounty = slashed * U256::from(10) / U256::from(100);      // 9% of original
+        let remaining = entry.stake - slashed;                         // 10% of original
+
+        // Burn to 0x00..00 (permanent destruction)
+        let burn_addr = crate::core::account::burn_address();
+        if let Some(mut burn_acct) = self.get_account(&burn_addr) {
+            burn_acct.balance = burn_acct.balance.saturating_add(burn_amount);
+            self.set_account(&burn_addr, &burn_acct);
+        } else {
+            // Create burn account if it doesn't exist
+            let mut acct = Account::new(U256::zero());
+            acct.balance = burn_amount;
+            self.set_account(&burn_addr, &acct);
+        }
+
+        // Credit reporter bounty
+        if let Some(mut reporter_acct) = self.get_account(reporter_addr) {
+            reporter_acct.balance = reporter_acct.balance.saturating_add(bounty);
+            self.set_account(reporter_addr, &reporter_acct);
+        } else {
+            let mut acct = Account::new(U256::zero());
+            acct.balance = bounty;
+            self.set_account(reporter_addr, &acct);
+        }
+
+        // Update validator: partial stake + frozen status
+        entry.stake = remaining;
+        entry.status = ValidatorStatus::Frozen {
+            frozen_until: current_era + 72,
+        };
+        self.set_validator(&addr, &entry);
+
+        Ok(SlashResult {
+            slashed_amount: slashed,
+            burn_amount,
+            bounty_amount: bounty,
+            remaining_stake: remaining,
+        })
     }
 
     // -- Governance stubs (Phase 2.5 — GovernanceEngine will replace) -----
@@ -2087,5 +2168,151 @@ mod tests {
         assert_eq!(active.len(), 2);
         assert_eq!(active[0], Address::from([0u8; 32]));
         assert_eq!(active[1], Address::from([2u8; 32]));
+    }
+
+    // -----------------------------------------------------------------------
+    // apply_slash tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_apply_slash_1000_monex() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let val_addr = alice();
+        // Manually insert a staked validator with 1000 MONEX
+        let entry = ValidatorEntry {
+            address: val_addr,
+            public_key: [0x42u8; 897],
+            stake: U256::from(1000) * one_monex,
+            status: ValidatorStatus::Active,
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, val_addr.as_bytes());
+        sm.state.insert(&key, entry.encode());
+
+        let proposer_hash = *val_addr.as_bytes();
+        let result = sm.apply_slash(&proposer_hash, &bob(), 0).unwrap();
+
+        // 1000 slashed → 900 slashed, 810 burned, 90 bounty, 100 remaining
+        assert_eq!(result.slashed_amount, U256::from(900) * one_monex);
+        assert_eq!(result.burn_amount, U256::from(810) * one_monex);
+        assert_eq!(result.bounty_amount, U256::from(90) * one_monex);
+        assert_eq!(result.remaining_stake, U256::from(100) * one_monex);
+
+        // Validator entry updated
+        let entry = sm.get_validator(&val_addr).unwrap();
+        assert_eq!(entry.stake, U256::from(100) * one_monex);
+        assert_eq!(entry.status, ValidatorStatus::Frozen { frozen_until: 72 });
+    }
+
+    #[test]
+    #[test]
+    fn test_apply_slash_10_monex() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let val_addr = alice();
+        let entry = ValidatorEntry {
+            address: val_addr,
+            public_key: [0x42u8; 897],
+            stake: U256::from(10) * one_monex,
+            status: ValidatorStatus::Active,
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, val_addr.as_bytes());
+        sm.state.insert(&key, entry.encode());
+
+        let proposer_hash = *val_addr.as_bytes();
+        let result = sm.apply_slash(&proposer_hash, &bob(), 5).unwrap();
+
+        // 10 MONEX → 9 slashed, 8.1 burned, 0.9 bounty, 1 remaining
+        assert_eq!(result.slashed_amount, U256::from(9) * one_monex);
+        assert_eq!(result.burn_amount, U256::from(9) * one_monex * U256::from(90) / U256::from(100));
+        assert_eq!(result.bounty_amount, U256::from(9) * one_monex * U256::from(10) / U256::from(100));
+        assert_eq!(result.remaining_stake, one_monex);
+
+        // frozen_until = current_era(5) + 72 = 77
+        let entry = sm.get_validator(&val_addr).unwrap();
+        assert_eq!(entry.status, ValidatorStatus::Frozen { frozen_until: 77 });
+    }
+
+    #[test]
+    fn test_apply_slash_already_frozen_rejected() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let val_addr = alice();
+        let entry = ValidatorEntry {
+            address: val_addr,
+            public_key: [0x42u8; 897],
+            stake: U256::from(500) * one_monex,
+            status: ValidatorStatus::Frozen { frozen_until: 72 },
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, val_addr.as_bytes());
+        sm.state.insert(&key, entry.encode());
+
+        let proposer_hash = *val_addr.as_bytes();
+        let err = sm.apply_slash(&proposer_hash, &bob(), 0).unwrap_err();
+        assert_eq!(err, LibError::AlreadyFrozen);
+    }
+
+    #[test]
+    fn test_apply_slash_nonexistent_validator() {
+        let mut sm = StateMachine::new(vec![]);
+        let proposer_hash = [0xFFu8; 32];
+        let err = sm.apply_slash(&proposer_hash, &bob(), 0).unwrap_err();
+        assert!(matches!(err, LibError::ValidatorNotFound(_)));
+    }
+
+    #[test]
+    fn test_apply_slash_credits_reporter_account() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let val_addr = alice();
+        let reporter_addr = bob();
+        // Give reporter some initial balance to verify it's credited correctly
+        let mut reporter_acct = Account::new(U256::from(100) * one_monex);
+        let reporter_key = namespace_key(NS_ACCOUNTS, reporter_addr.as_bytes());
+        sm.state.insert(&reporter_key, scale_encode_account(&reporter_acct));
+
+        let entry = ValidatorEntry {
+            address: val_addr,
+            public_key: [0x42u8; 897],
+            stake: U256::from(1000) * one_monex,
+            status: ValidatorStatus::Active,
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, val_addr.as_bytes());
+        sm.state.insert(&key, entry.encode());
+
+        let proposer_hash = *val_addr.as_bytes();
+        sm.apply_slash(&proposer_hash, &reporter_addr, 0).unwrap();
+
+        // Reporter should have 100 + 90 = 190 MONEX
+        let reporter_post = sm.get_account(&reporter_addr).unwrap();
+        assert_eq!(reporter_post.balance, U256::from(190) * one_monex);
+    }
+
+    #[test]
+    fn test_apply_slash_burns_to_permanent() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let val_addr = alice();
+        let entry = ValidatorEntry {
+            address: val_addr,
+            public_key: [0x42u8; 897],
+            stake: U256::from(1000) * one_monex,
+            status: ValidatorStatus::Active,
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, val_addr.as_bytes());
+        sm.state.insert(&key, entry.encode());
+
+        let proposer_hash = *val_addr.as_bytes();
+        sm.apply_slash(&proposer_hash, &bob(), 0).unwrap();
+
+        // Burn address should have 810 MONEX
+        let burn_addr = crate::core::account::burn_address();
+        let burn_acct = sm.get_account(&burn_addr).unwrap();
+        assert_eq!(burn_acct.balance, U256::from(810) * one_monex);
     }
 }
