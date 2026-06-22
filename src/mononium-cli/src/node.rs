@@ -162,7 +162,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
             bootstrap_peers: config.bootnodes().iter()
                 .filter_map(|s| s.parse::<libp2p::Multiaddr>().ok())
                 .collect(),
-            enable_mdns: true,
+            enable_mdns: config.enable_mdns(),
             max_peers: 50,
         };
         match mononium_lib::network::P2pService::new(p2p_config, chain_id) {

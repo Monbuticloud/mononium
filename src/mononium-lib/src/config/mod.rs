@@ -78,7 +78,12 @@ pub struct NetworkSection {
     pub rpc_port: Option<u16>,
     pub rest_port: Option<u16>,
     pub bootnodes: Option<Vec<String>>,
+    /// Enable mDNS peer discovery (default: true for localnet).
+    #[serde(default = "default_mdns")]
+    pub enable_mdns: bool,
 }
+
+const fn default_mdns() -> bool { true }
 
 impl Default for NetworkSection {
     fn default() -> Self {
@@ -87,6 +92,7 @@ impl Default for NetworkSection {
             rpc_port: None,
             rest_port: None,
             bootnodes: None,
+            enable_mdns: true,
         }
     }
 }
@@ -265,6 +271,10 @@ impl NodeConfig {
         self.network.bootnodes.as_deref().unwrap_or(&[])
     }
 
+    pub fn enable_mdns(&self) -> bool {
+        self.network.enable_mdns
+    }
+
     pub fn storage_mode(&self) -> &str {
         self.storage.mode.as_deref().unwrap_or(constants::DEFAULT_STORAGE_MODE)
     }
@@ -397,6 +407,23 @@ mod tests {
     #[test]
     fn test_default_unlock_timeout() {
         assert_eq!(defaults().unlock_timeout(), 20);
+    }
+
+    #[test]
+    fn test_default_enable_mdns() {
+        assert!(defaults().enable_mdns());
+    }
+
+    #[test]
+    fn test_enable_mdns_from_yaml() {
+        let yaml = r#"
+observer: true
+genesis: "genesis.json"
+network:
+  enable_mdns: false
+"#;
+        let cfg = serde_yaml::from_str::<NodeConfig>(yaml).unwrap();
+        assert!(!cfg.enable_mdns());
     }
 
     // -----------------------------------------------------------------------

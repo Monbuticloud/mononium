@@ -1,0 +1,26 @@
+observer: true
+genesis: "configs/genesis.localnet.json"
+
+node:
+  data_dir: "~/.mononium/data"
+  unlock_timeout: 0
+
+network:
+  p2p_port: 30333
+  rpc_port: 9944
+  rest_port: 9933
+  bootnodes:
+    - /ip4/127.0.0.1/tcp/30332/p2p/12D3KooW...
+  enable_mdns: false
+
+storage:
+  mode: full
+  compact_eras: 2
+  full_node_rpc: []
+
+mempool:
+  max_tx_per_account: 50
+
+log:
+  level: info
+  json: true

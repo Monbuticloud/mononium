@@ -1,0 +1,25 @@
+key: "validator"
+genesis: "configs/genesis.localnet.json"
+
+node:
+  data_dir: "~/.mononium/data/localnet"
+  unlock_timeout: 20
+
+network:
+  p2p_port: 30333
+  rpc_port: 9944
+  rest_port: 9933
+  bootnodes: []
+  enable_mdns: true
+
+storage:
+  mode: full
+  compact_eras: 2
+  full_node_rpc: []
+
+mempool:
+  max_tx_per_account: 50
+
+log:
+  level: info
+  json: true
