@@ -45,6 +45,11 @@ pub const GENESIS_LOADED_KEY: &[u8] = b"genesis_loaded";
 /// Meta key for the chain identifier.
 pub const CHAIN_ID_KEY: &[u8] = b"chain_id";
 
+/// Meta key for the 32-byte BLAKE3 hash of the genesis JSON file.
+/// All nodes that load the same genesis produce the same hash,
+/// used as the anchor for `compute_batch_hash` in the sync protocol.
+pub const GENESIS_HASH_KEY: &[u8] = b"genesis_hash";
+
 #[cfg(test)]
 mod tests {
     use super::*;

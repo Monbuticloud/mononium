@@ -114,6 +114,10 @@ pub fn load_genesis(engine: &impl StorageEngine, genesis_path: &Path) -> Result<
         engine.put(tables::VALIDATORS, &raw_addr, &entry)?;
     }
 
+    // ---------- store genesis hash (BLAKE3 of raw JSON) ----------
+    let genesis_hash = blake3::hash(json_str.as_bytes());
+    engine.put(tables::META, tables::GENESIS_HASH_KEY, genesis_hash.as_bytes())?;
+
     // ---------- mark genesis loaded ----------
     engine.put(tables::META, tables::GENESIS_LOADED_KEY, b"1")?;
 
