@@ -34,6 +34,7 @@ pub async fn start_rpc_server(
     register_tx_methods(&mut module)?;
     register_network_methods(&mut module)?;
     register_governance_methods(&mut module)?;
+    register_subscription_methods(&mut module)?;
 
     let handle = server.start(module);
     Ok(handle)
@@ -298,6 +299,95 @@ fn register_governance_methods(
     Ok(())
 }
 
+// ── Subscription methods ─────────────────────────────────────────
+
+fn register_subscription_methods(
+    module: &mut RpcModule<Arc<AppState>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    module.register_subscription(
+        "subscribe_blocks",
+        "blocks",
+        "unsubscribe_blocks",
+        |_params, pending: jsonrpsee::server::PendingSubscriptionSink, app: Arc<Arc<AppState>>, _ext: jsonrpsee::server::Extensions| async move {
+            if let Ok(sink) = pending.accept().await {
+                let mut rx = app.block_events.subscribe();
+                loop {
+                    match rx.recv().await {
+                        Ok(header) => {
+                            let val = serde_json::to_value(&header).unwrap_or_default();
+                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val) {
+                                if sink.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("block subscription lagged by {n} messages");
+                        }
+                    }
+                }
+            }
+        },
+    )?;
+
+    module.register_subscription(
+        "subscribe_finality",
+        "finality",
+        "unsubscribe_finality",
+        |_params, pending: jsonrpsee::server::PendingSubscriptionSink, app: Arc<Arc<AppState>>, _ext: jsonrpsee::server::Extensions| async move {
+            if let Ok(sink) = pending.accept().await {
+                let mut rx = app.finality_events.subscribe();
+                loop {
+                    match rx.recv().await {
+                        Ok(height) => {
+                            let val = serde_json::json!({"height": height});
+                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val) {
+                                if sink.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("finality subscription lagged by {n} messages");
+                        }
+                    }
+                }
+            }
+        },
+    )?;
+
+    module.register_subscription(
+        "subscribe_votes",
+        "votes",
+        "unsubscribe_votes",
+        |_params, pending: jsonrpsee::server::PendingSubscriptionSink, app: Arc<Arc<AppState>>, _ext: jsonrpsee::server::Extensions| async move {
+            if let Ok(sink) = pending.accept().await {
+                let mut rx = app.vote_events.subscribe();
+                loop {
+                    match rx.recv().await {
+                        Ok(vote) => {
+                            let val = serde_json::to_value(&vote).unwrap_or_default();
+                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val) {
+                                if sink.send(msg).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("vote subscription lagged by {n} messages");
+                        }
+                    }
+                }
+            }
+        },
+    )?;
+
+    Ok(())
+}
+
 // ── Tests ────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -334,15 +424,15 @@ mod tests {
             event_tx,
         });
 
-        Arc::new(AppState {
+        Arc::new(AppState::new(
             storage,
             state_machine,
             mempool,
             p2p,
             consensus,
-            chain_id: 0,
-            genesis_hash: [0u8; 32],
-        })
+            0,
+            [0u8; 32],
+        ))
     }
 
     async fn build_server(state: &Arc<AppState>) -> (jsonrpsee::server::ServerHandle, std::net::SocketAddr) {
