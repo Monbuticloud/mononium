@@ -270,10 +270,43 @@ impl StateMachine {
     }
 
     /// Write a validator entry to state.
-    fn set_validator(&mut self, addr: &Address, entry: &ValidatorEntry) {
+    pub(crate) fn set_validator(&mut self, addr: &Address, entry: &ValidatorEntry) {
         let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
         let value = entry.encode();
         self.state.insert(&key, value);
+    }
+
+    // -- Generic SMT access (used by governance, future modules) ----------
+
+    /// Insert a raw value into the governance namespace (`0x03 ++ sub_key`).
+    pub(crate) fn governance_insert(&mut self, sub_key: &[u8], value: Vec<u8>) {
+        let key = namespace_key(crate::crypto::trie::NS_GOVERNANCE, sub_key);
+        self.state.insert(&key, value);
+    }
+
+    /// Retrieve a raw value from the governance namespace.
+    pub(crate) fn governance_get(&self, sub_key: &[u8]) -> Option<Vec<u8>> {
+        let key = namespace_key(crate::crypto::trie::NS_GOVERNANCE, sub_key);
+        self.state.get(&key).map(|s| s.to_vec())
+    }
+
+    /// Total active stake: sum of stake for all `Active` validators.
+    pub(crate) fn total_active_stake(&self) -> U256 {
+        // Iterate all validators via list_keys in NS_VALIDATORS
+        // For now, return zero (iteration not yet implemented in SMT)
+        // TODO: implement iteration or cache
+        U256::zero()
+    }
+
+    /// Sum of stake for a set of addresses.
+    pub(crate) fn sum_stake(&self, addresses: &[Address]) -> U256 {
+        let mut total = U256::zero();
+        for addr in addresses {
+            if let Some(entry) = self.get_validator(addr) {
+                total = total.saturating_add(entry.stake);
+            }
+        }
+        total
     }
 
     /// Apply a RegisterValidator transaction.
