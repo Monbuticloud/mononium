@@ -110,7 +110,23 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     // ---------- 7. Wrap engine in Arc for sharing ----------
     let engine: Arc<dyn StorageEngine> = Arc::new(engine);
 
-    // ---------- 8. Initialize state machine from storage ----------
+    // ---------- 8. Load genesis hash from storage ----------
+    let genesis_hash_raw = engine
+        .get(tables::META, tables::GENESIS_HASH_KEY)?
+        .unwrap_or_else(|| vec![0u8; 32]);
+    let mut genesis_hash = [0u8; 32];
+    genesis_hash.copy_from_slice(&genesis_hash_raw);
+    let chain_id = engine
+        .get(tables::META, tables::CHAIN_ID_KEY)
+        .ok()
+        .flatten()
+        .and_then(|v| {
+            let arr: [u8; 8] = v.try_into().ok()?;
+            Some(u64::from_le_bytes(arr))
+        })
+        .unwrap_or(0);
+
+    // ---------- 9. Initialize state machine from storage ----------
     let state = load_state_from_storage(&*engine)?;
     tracing::info!(height = current_height, "state machine initialized");
 
@@ -135,7 +151,6 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
             enable_mdns: true,
             max_peers: 50,
         };
-        let chain_id = 0; // TODO: from genesis
         match mononium_lib::network::P2pService::new(p2p_config, chain_id) {
             Ok(service) => {
                 match service.start() {
@@ -162,12 +177,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     if p2p_port > 0 {
         let sync_p2p = p2p_handle.clone();
         let sync_engine = engine.clone();
-        let genesis_hash_raw = engine
-            .get(tables::META, tables::GENESIS_HASH_KEY)?
-            .unwrap_or_else(|| vec![0u8; 32]);
-        let mut genesis_hash = [0u8; 32];
-        genesis_hash.copy_from_slice(&genesis_hash_raw);
-        let cursor_dir = Path::new(&data_dir).join("0"); // chain_id = 0 for now
+        let cursor_dir = Path::new(&data_dir).join(chain_id.to_string());
         let cursor_path = cursor_dir.to_string_lossy().to_string();
         let era_len = mononium_lib::consensus::era::ERA_LENGTH;
         tokio::spawn(async move {
@@ -224,8 +234,8 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
             Arc::new(std::sync::RwLock::new(Mempool::new(mempool_config))),
             p2p_handle.clone(),
             rpc_consensus,
-            0,
-            [0u8; 32],
+            chain_id,
+            genesis_hash,
         ));
 
         let rpc_addr = format!("0.0.0.0:{rpc_port}");
@@ -238,7 +248,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         });
     }
 
-    // ---------- 12. Start REST API ----------
+    // ---------- 13. Start REST API ----------
     let rest_port = config.rest_port();
     let shared = Arc::new(Mutex::new(AppState {
         engine,
