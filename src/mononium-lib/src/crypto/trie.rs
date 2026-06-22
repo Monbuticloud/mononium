@@ -213,6 +213,9 @@ pub const NS_VALIDATORS: u8 = 0x01;
 /// Namespace prefix for meta keys.
 pub const NS_META: u8 = 0x02;
 
+/// Governance namespace (proposals, votes, params).
+pub const NS_GOVERNANCE: u8 = 0x03;
+
 /// Build a namespaced key by prepending the namespace prefix byte.
 ///
 /// # Examples

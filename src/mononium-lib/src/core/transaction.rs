@@ -9,6 +9,7 @@ use parity_scale_codec::{Decode, Encode};
 
 use crate::core::account::Address;
 use crate::crypto::falcon::Falcon512Signature;
+use crate::governance::types::GovernanceAction;
 
 // ---------------------------------------------------------------------------
 // Serde helper for large fixed-size byte arrays (e.g. Falcon-512 public key)
@@ -88,6 +89,29 @@ pub enum TxBody {
     Burn {
         target: BurnTarget,
         amount: U256,
+    },
+    /// Submit a governance proposal.
+    #[codec(index = 6)]
+    Propose {
+        /// BLAKE3(proposer || nonce || title).
+        proposal_id: [u8; 32],
+        /// Short title (max 256 bytes).
+        title: Vec<u8>,
+        /// Longer description (max 4 096 bytes).
+        description: Vec<u8>,
+        /// One or more actions to execute if approved.
+        actions: Vec<GovernanceAction>,
+    },
+    /// Cast or change a vote on an active proposal.
+    #[codec(index = 7)]
+    Vote {
+        proposal_id: [u8; 32],
+        approve: bool,
+    },
+    /// Cancel a proposal (proposer only, before any votes).
+    #[codec(index = 8)]
+    CancelProposal {
+        proposal_id: [u8; 32],
     },
 }
 

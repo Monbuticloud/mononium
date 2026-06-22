@@ -442,9 +442,9 @@ Blocks gossiped on `mononium/blocks/{chain_id}`. Sync via libp2p Request-Respons
 
 ### Block gossip
 
-- [ ] `P2pService::publish_block(block)` — serialize SCALE, validate ≤ 500KB, publish via gossipsub
-- [ ] Incoming block handler: deserialize → validate size ≤ 500KB → verify proposer Falcon sig → verify parent_hash exists → verify timestamp ±2s → verify chain_id → deduplicate (hash in blocks table) → queue for state machine → re-gossip
-- [ ] Invalid block: log warning, score proposer peer -10, do NOT re-gossip
+- [x] `P2pService::publish_block(block)` — serialize SCALE, validate ≤ 500KB, publish via gossipsub
+- [x] Incoming block handler: deserialize → validate size ≤ 500KB → verify proposer Falcon sig → verify parent_hash exists → verify timestamp ±2s → verify chain_id → deduplicate (hash in blocks table) → queue for state machine → re-gossip
+- [x] Invalid block: log warning, score proposer peer -10, do NOT re-gossip
 
 ### Sync protocol messages — `network/messages.rs` additions
 
@@ -535,21 +535,21 @@ BFT commit tracking, proposer schedule with real block production, verification 
 
 ### BFT commit tracking — `consensus/finality.rs`
 
-- [ ] `CommitTracker { commits: BTreeMap<u64, Vec<CommitVote>>, stake_weights: HashMap<[u8;32], U256>, total_active_stake: U256, finalized: BTreeSet<u64> }`
-- [ ] `new(stake_weights)` — load active validator stakes at era boundary
-- [ ] `add_vote(vote) -> bool` — verify: active validator, valid Falcon sig over `SCALE(height || block_hash)`, not duplicate; if `cumulative_weight > 2/3 * total_active_stake` → mark finalized
-- [ ] `cumulative_weight(height) -> U256` — sum unique validators' stake weights
-- [ ] `is_final(height) -> bool`, `last_finalized_height() -> u64`, `finality_ratio(height) -> f64`
-- [ ] Strict threshold: `> 2/3` (NOT ≥ 2/3 — exactly 2/3 is not final)
-- [ ] Votes received on `mononium/votes/{chain_id}` → add_vote → if new, re-gossip
-- [ ] Unit: add votes → finality at >2/3, not at 2/3; duplicate rejected; non-active rejected; bad sig rejected
+- [x] `CommitTracker { commits: BTreeMap<u64, Vec<CommitVote>>, stake_weights: HashMap<[u8;32], U256>, total_active_stake: U256, finalized: BTreeSet<u64> }`
+- [x] `new(stake_weights)` — load active validator stakes at era boundary
+- [x] `add_vote(vote) -> bool` — verify: active validator, valid Falcon sig over `SCALE(height || block_hash)`, not duplicate; if `cumulative_weight > 2/3 * total_active_stake` → mark finalized
+- [x] `cumulative_weight(height) -> U256` — sum unique validators' stake weights
+- [x] `is_final(height) -> bool`, `last_finalized_height() -> u64`, `finality_ratio(height) -> f64`
+- [x] Strict threshold: `> 2/3` (NOT ≥ 2/3 — exactly 2/3 is not final)
+- [x] Votes received on `mononium/votes/{chain_id}` → add_vote → if new, re-gossip
+- [x] Unit: add votes → finality at >2/3, not at 2/3; duplicate rejected; non-active rejected; bad sig rejected
 
 ### Proposer schedule — `consensus/proposer.rs`
 
-- [ ] `ProposerSchedule { active_set: Vec<[u8;32]>, era, start_height }`
-- [ ] `proposer_for_height(height)` → `active_set[height % len]`
-- [ ] `is_scheduled_proposer(proposer, height) -> bool`
-- [ ] Unit: 3 validators cycle correctly, single validator all slots, empty set panics (guarded)
+- [x] `ProposerSchedule { active_set: Vec<[u8;32]>, era, start_height }`
+- [x] `proposer_for_height(height)` → `active_set[height % len]`
+- [x] `is_scheduled_proposer(proposer, height) -> bool`
+- [x] Unit: 3 validators cycle correctly, single validator all slots, empty set panics (guarded)
 
 ### ConsensusEngine — `consensus/mod.rs`
 
@@ -578,24 +578,24 @@ BFT commit tracking, proposer schedule with real block production, verification 
 
 **BlockHeader update:**
 
-- [ ] Add `proposer_signature: [u8;666]` field to BlockHeader
-- [ ] SCALE + JSON roundtrip for updated header
-- [ ] Backward compat: Phase 1 single-node blocks lack this field — dev-only, acceptable break
+- [x] Add `proposer_signature: [u8;666]` field to BlockHeader
+- [x] SCALE + JSON roundtrip for updated header
+- [x] Backward compat: Phase 1 single-node blocks lack this field — dev-only, acceptable break
 
 ### Fork-choice — `ForkChoice::select_canonical`
 
-- [ ] `total_stake_backing(chain, stake_weights)` — sum unique proposers' stake weights
-- [ ] Heavier chain wins; equal weight → no switch (keep existing canonical)
-- [ ] Used in sync when peers disagree on blocks at same height
+- [x] `total_stake_backing(chain, stake_weights)` — sum unique proposers' stake weights
+- [x] Heavier chain wins; equal weight → no switch (keep existing canonical)
+- [x] Used in sync when peers disagree on blocks at same height
 
 ### Missed slot penalty — `consensus/era.rs`
 
-- [ ] `MISSED_SLOT_PENALTY: U256 = 8 * 10^30` MOXX (0.08 MONEX)
+- [x] `MISSED_SLOT_PENALTY: U256 = 8 * 10^30` MOXX (0.08 MONEX)
 - [ ] At era boundary: for each active validator, `missed = ERA_LENGTH - blocks_proposed`, `penalty = missed * MISSED_SLOT_PENALTY`
 - [ ] Penalty sent to Cap-Refill (`0x00..01`)
 - [ ] If penalty > validator.stake → fully de-staked, ejected from active set (no debt)
 - [ ] No mid-era slashing for missed slots — reconciled at era boundary
-- [ ] Unit: 10 missed → 0.8 MONEX; 720 missed → full de-stake if stake < 57.6 MONEX
+- [x] Unit: 10 missed → 0.8 MONEX; 720 missed → full de-stake if stake < 57.6 MONEX
 
 ### Fee distribution (end of each block)
 
@@ -628,16 +628,16 @@ Equivocation evidence type + 5-check verification. State machine: 90% stake slas
 
 ### Evidence type — `consensus/slashing.rs`
 
-- [ ] `EquivocationEvidence { header_a: BlockHeader, signature_a: [u8;666], header_b: BlockHeader, signature_b: [u8;666], proposer: [u8;32] }`
-- [ ] SCALE + JSON derives, roundtrip tests
-- [ ] `verify_equivocation(evidence, public_key) -> Result<()>`:
+- [x] `EquivocationEvidence { header_a: BlockHeader, signature_a: [u8;666], header_b: BlockHeader, signature_b: [u8;666], proposer: [u8;32] }`
+- [x] SCALE + JSON derives, roundtrip tests
+- [x] `verify_equivocation(evidence, public_key) -> Result<()>`:
   1. `header_a.height == header_b.height`
   2. `header_a.parent_hash == header_b.parent_hash`
   3. `header_a != header_b` (hash differs)
   4. `falcon_verify(pk, SCALE(header_a), sig_a)`
   5. `falcon_verify(pk, SCALE(header_b), sig_b)`
-- [ ] 5 distinct LibError variants: `EquivocationHeightMismatch`, `EquivocationParentMismatch`, `EquivocationIdenticalBlocks`, `EquivocationSigAInvalid`, `EquivocationSigBInvalid`
-- [ ] Unit: all 5 checks — valid accepted, each violation independently rejected, identical blocks rejected, one good + one bad sig rejected
+- [x] 5 distinct LibError variants: `EquivocationHeightMismatch`, `EquivocationParentMismatch`, `EquivocationIdenticalBlocks`, `EquivocationSigAInvalid`, `EquivocationSigBInvalid`
+- [x] Unit: all 5 checks — valid accepted, each violation independently rejected, identical blocks rejected, one good + one bad sig rejected
 
 ### Evidence gossip
 
@@ -684,26 +684,26 @@ On-chain stake-weighted governance. Proposal submission, 7-era voting window, er
 
 ### Module structure — `governance/`
 
-- [ ] `governance/types.rs`:
-  - [ ] `Proposal { proposal_id: [u8;32], proposer, title: Vec<u8> (max 256B), description: Vec<u8> (max 4096B), actions: Vec<GovernanceAction>, deposit: U256, submission_era: u64, status: ProposalStatus }`
-  - [ ] `ProposalStatus { Active, Approved, Rejected, Expired, Cancelled }`
-  - [ ] `Vote { proposal_id, voter, approve: bool, weight: U256 (snapshotted), block_height: u64 }`
-  - [ ] `GovernanceAction::UpdateParam { param: GovernanceParam, new_value: U256 }`
-  - [ ] `GovernanceAction::IncreaseShards { new_count: u16, effective_era: u64 }`
-  - [ ] `GovernanceParam` enum (10 variants): MaxValidators, EraLength, BlockSizeCapBytes, BlockTxCap, FlatFee, PerByteRate, AntiSpamDeposit, MissedSlotPenalty, SupplyCeilingRate, SupplyHeadroomRate
-  - [ ] SCALE + JSON derives for all types, roundtrip tests
-- [ ] `governance/constants.rs`:
-  - [ ] `PROPOSAL_DEPOSIT = 100 * ONE_MONEX`
-  - [ ] `VOTING_WINDOW_ERAS = 7`
-  - [ ] `MAX_ACTIVE_PROPOSALS_PER_PROPOSER = 5`
-  - [ ] `MAX_PROPOSALS_PER_ERA = 50`
-  - [ ] Quorum: ≥ 2/3 of total active stake (≥, not >)
-  - [ ] Threshold: > 50% of participating stake
-  - [ ] Title max 256 bytes, desc max 4096 bytes
-- [ ] `PARAM_BOUNDS: HashMap<GovernanceParam, (U256, U256)>`:
-  - [ ] MaxValidators: [1, 1000]; EraLength: [100, 10000]; BlockSizeCapBytes: [1024, 2097152]
-  - [ ] BlockTxCap: [1, 10000]; FlatFee: [0, 100 MONEX]; PerByteRate: [0, 1 MONEX]
-  - [ ] AntiSpamDeposit: [0, 100 MONEX]; SupplyCeilingRate: [0, 20]; SupplyHeadroomRate: [0, 20]
+- [x] `governance/types.rs`:
+  - [x] `Proposal { proposal_id: [u8;32], proposer, title: Vec<u8> (max 256B), description: Vec<u8> (max 4096B), actions: Vec<GovernanceAction>, deposit: U256, submission_era: u64, status: ProposalStatus }`
+  - [x] `ProposalStatus { Active, Approved, Rejected, Expired, Cancelled }`
+  - [x] `Vote { proposal_id, voter, approve: bool, weight: U256 (snapshotted), block_height: u64 }`
+  - [x] `GovernanceAction::UpdateParam { param: GovernanceParam, new_value: U256 }`
+  - [x] `GovernanceAction::IncreaseShards { new_count: u16, effective_era: u64 }`
+  - [x] `GovernanceParam` enum (10 variants): MaxValidators, EraLength, BlockSizeCapBytes, BlockTxCap, FlatFee, PerByteRate, AntiSpamDeposit, MissedSlotPenalty, SupplyCeilingRate, SupplyHeadroomRate
+  - [x] SCALE + JSON derives for all types, roundtrip tests
+- [x] `governance/constants.rs`:
+  - [x] `PROPOSAL_DEPOSIT = 100 * ONE_MONEX`
+  - [x] `VOTING_WINDOW_ERAS = 7`
+  - [x] `MAX_ACTIVE_PROPOSALS_PER_PROPOSER = 5`
+  - [x] `MAX_PROPOSALS_PER_ERA = 50`
+  - [x] Quorum: ≥ 2/3 of total active stake (≥, not >)
+  - [x] Threshold: > 50% of participating stake
+  - [x] Title max 256 bytes, desc max 4096 bytes
+- [x] `PARAM_BOUNDS: HashMap<GovernanceParam, (U256, U256)>`:
+  - [x] MaxValidators: [1, 1000]; EraLength: [100, 10000]; BlockSizeCapBytes: [1024, 2097152]
+  - [x] BlockTxCap: [1, 10000]; FlatFee: [0, 100 MONEX]; PerByteRate: [0, 1 MONEX]
+  - [x] AntiSpamDeposit: [0, 100 MONEX]; SupplyCeilingRate: [0, 20]; SupplyHeadroomRate: [0, 20]
 
 ### GovernanceEngine — `governance/mod.rs`
 
@@ -786,8 +786,8 @@ Add jsonrpsee WebSocket server (16 methods + 3 subscriptions). Expand REST with 
 
 ### jsonrpsee server — `rpc/jsonrpc.rs`
 
-- [ ] `RpcServer { config: RpcConfig, state: Arc<AppState> }`
-- [ ] `RpcConfig { rpc_port: u16 (default 9944), rest_port: u16 (default 9933), max_connections: u32 }`
+- [x] `RpcServer { config: RpcConfig, state: Arc<AppState> }`
+- [x] `RpcConfig { rpc_port: u16 (default 9944), rest_port: u16 (default 9933), max_connections: u32 }`
 - [ ] `start()` — spawn jsonrpsee (WebSocket) + axum (REST) on separate ports
 - [ ] Graceful shutdown: SIGINT/SIGTERM → drain → stop both servers
 - [ ] CORS: allow all origins (devnet), configurable for production
@@ -820,9 +820,9 @@ Add jsonrpsee WebSocket server (16 methods + 3 subscriptions). Expand REST with 
 
 ### Error codes (consistent across REST + JSON-RPC)
 
-- [ ] 0 = Success, -1 = Internal, -2 = Invalid params, -3 = Tx validation, -4 = Block not found, -5 = Tx not found, -6 = Address not found, -7 = Rate limited
-- [ ] REST: `{ \"error\": { \"code\": int, \"message\": string } }` with HTTP 400/404/500
-- [ ] JSON-RPC: standard `{ \"jsonrpc\": \"2.0\", \"error\": { \"code\", \"message\" }, \"id\" }`
+- [x] 0 = Success, -1 = Internal, -2 = Invalid params, -3 = Tx validation, -4 = Block not found, -5 = Tx not found, -6 = Address not found, -7 = Rate limited
+- [x] REST: `{ \"error\": { \"code\": int, \"message\": string } }` with HTTP 400/404/500
+- [x] JSON-RPC: standard `{ \"jsonrpc\": \"2.0\", \"error\": { \"code\", \"message\" }, \"id\" }`
 
 ### REST expansion — `rpc/rest.rs`
 
@@ -835,9 +835,9 @@ Add jsonrpsee WebSocket server (16 methods + 3 subscriptions). Expand REST with 
 
 ### Config integration
 
-- [ ] `config/mod.rs`: `network.rpc_port` (u16, default 9944)
-- [ ] Validation: rpc_port != p2p_port (30333) and != rest_port (9933)
-- [ ] CLI flags: `--rpc-port` (default 9944), `--rest-port` (default 9933)
+- [x] `config/mod.rs`: `network.rpc_port` (u16, default 9944)
+- [x] Validation: rpc_port != p2p_port (30333) and != rest_port (9933)
+- [x] CLI flags: `--rpc-port` (default 9944), `--rest-port` (default 9933)
 
 ### Tests
 

@@ -160,6 +160,15 @@ impl StateMachine {
                         0, // current_era = 0 for now
                     )
                 }
+                TxBody::Propose { proposal_id, title, description, actions } => {
+                    self.apply_propose(&mut sender_acct, &tx.sender, proposal_id, title, description, actions, tx.fee, tx.nonce)
+                }
+                TxBody::Vote { proposal_id, approve } => {
+                    self.apply_gov_vote(&mut sender_acct, &tx.sender, proposal_id, *approve, tx.fee, tx.nonce)
+                }
+                TxBody::CancelProposal { proposal_id } => {
+                    self.apply_cancel_proposal(&mut sender_acct, &tx.sender, proposal_id, tx.fee, tx.nonce)
+                }
             };
 
             if executed.is_ok() {
@@ -649,6 +658,78 @@ impl StateMachine {
         }
 
         active_addrs
+    }
+
+    // -- Governance stubs (Phase 2.5 — GovernanceEngine will replace) -----
+
+    /// Submit a governance proposal.
+    #[allow(unused_variables)]
+    fn apply_propose(
+        &mut self,
+        sender: &mut Account,
+        sender_addr: &Address,
+        proposal_id: &[u8; 32],
+        title: &[u8],
+        description: &[u8],
+        actions: &[crate::governance::types::GovernanceAction],
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        // TODO: GovernanceEngine integration
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+        if sender.balance < fee {
+            return Err(LibError::InsufficientBalance(sender.balance, fee));
+        }
+        sender.balance = sender.balance.saturating_sub(fee);
+        sender.nonce += 1;
+        Ok(())
+    }
+
+    /// Cast a vote on a governance proposal.
+    #[allow(unused_variables)]
+    fn apply_gov_vote(
+        &mut self,
+        sender: &mut Account,
+        sender_addr: &Address,
+        proposal_id: &[u8; 32],
+        approve: bool,
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        // TODO: GovernanceEngine integration
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+        if sender.balance < fee {
+            return Err(LibError::InsufficientBalance(sender.balance, fee));
+        }
+        sender.balance = sender.balance.saturating_sub(fee);
+        sender.nonce += 1;
+        Ok(())
+    }
+
+    /// Cancel a governance proposal.
+    #[allow(unused_variables)]
+    fn apply_cancel_proposal(
+        &mut self,
+        sender: &mut Account,
+        sender_addr: &Address,
+        proposal_id: &[u8; 32],
+        fee: U256,
+        nonce: u64,
+    ) -> Result<()> {
+        // TODO: GovernanceEngine integration
+        if sender.nonce != nonce {
+            return Err(LibError::InvalidNonce(sender.nonce, nonce));
+        }
+        if sender.balance < fee {
+            return Err(LibError::InsufficientBalance(sender.balance, fee));
+        }
+        sender.balance = sender.balance.saturating_sub(fee);
+        sender.nonce += 1;
+        Ok(())
     }
 }
 
