@@ -54,6 +54,9 @@ jsonrpsee-types = "0.24"
 # Compression
 snap = "1"
 
+# Benchmarks
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+
 [profile.dev]
 overflow-checks = true
 incremental = true
