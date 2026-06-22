@@ -206,7 +206,7 @@ All 12 sub-phases (1.0 through 1.11) are complete. Every sub-phase is tagged in 
 > **Dependency order:** Staking txs (2.0) → P2P core (2.1) → block propagation (2.2) → consensus engine (2.3) → slashing (2.4) → governance (2.5) → RPC (2.6) → multi-validator CLI (2.7) → stake CLI (2.8) → crash recovery (2.9) → benchmarks (2.10) → docs (2.11).
 > **Source docs:** All items below are extracted from `docs/plans/V1.0.0/` — see individual doc references per section.
 >
-> **Current test count:** 539 lib + 28 CLI = 567 total (up from 327 Phase 1 exit)
+> **Current test count:** 540 lib + 28 CLI = 568 total (up from 327 Phase 1 exit)
 
 ### Phase 2 status
 
@@ -535,6 +535,12 @@ Blocks gossiped on `mononium/blocks/{chain_id}`. Sync via libp2p Request-Respons
 - [ ] Conditions: `last_verified_height >= target_height` AND last block timestamp within 10s of local clock AND ≥ 1 peer AND no pending verification
 - [ ] Emit event to consensus engine → begin consensus participation
 
+**Sync loop wired into node startup:**
+
+- [x] `run_sync_loop` spawned as background tokio task in node startup (after P2P, before RPC)
+- [x] Retry loop: on "no connected peers" → wait 5s → retry (handles single-validator gracefully)
+- [x] Genesis hash read from META table (stored during genesis load as BLAKE3 of genesis JSON)
+
 ### Tests
 
 - [x] Unit: `compute_batch_hash` — 0 blocks = genesis_hash, N blocks deterministic, any change = different hash
@@ -801,7 +807,7 @@ On-chain stake-weighted governance. Proposal submission, 7-era voting window, er
 
 ---
 
-## Sub-phase 2.6 ✅ RPC (jsonrpsee + REST Expansion) — Complete
+## Sub-phase 2.6 ✅ RPC (jsonrpsee + REST Expansion + Node Wiring) — Complete
 
 **From:** Architecture.md §RPC Interface (methods table, subscriptions, error codes), NodeConfig.md §network.rpc_port
 
@@ -892,12 +898,13 @@ Full node startup lifecycle with P2P, consensus, bootstrap phase. Observer mode.
 - [x] Step 1-6 (Phase 1): CLI args → config → merge → key load → passphrase → key derivation. Phase 2 flags added (--rpc-port, --rest-port, --p2p-port, --bootnodes).
 - [ ] **Step 7 — Startup preview (NEW):** Display network, role, address, data dir, genesis, P2P/REST/RPC ports, boot peer count, storage mode. [y/N] prompt. Observer mode: \"Role: Observer (no signing)\".
 - [x] Step 8-10 (Phase 1): Open DB → genesis → load state. Verify.
-- [ ] **Step 11:** Start libp2p host — `P2pService::new()` + `::start()` with merged config *(P2pService exists but not wired into node startup)*
-- [ ] **Step 12:** Connect bootnodes → kademlia → ≥1 peer (30s timeout)
-- [ ] **Step 13:** Init consensus — load active set, generate proposer schedule
-- [ ] **Step 14:** Start slot timer — begin block production/voting (enter sync mode first if behind)
-- [ ] **Step 15:** Start RPC — axum (REST) + jsonrpsee (WebSocket) on separate ports *(axum REST exists, jsonrpsee not started)*
-- [ ] **Step 16:** Signal handlers — SIGINT/SIGTERM → graceful shutdown (10s timeout)
+- [x] **Step 11:** Start libp2p host — `P2pService::new()` + `::start()` with merged config (P2pConfig built from NodeConfig, conditional on `p2p_port > 0`)
+- [x] **Step 12:** Spawn sync loop (background task) — calls `run_sync_loop` in retry loop, waits for peers
+- [ ] **Step 13:** Connect bootnodes → kademlia → ≥1 peer (30s timeout) *(partially done via P2pService::start)*
+- [ ] **Step 14:** Init consensus — load active set, generate proposer schedule
+- [ ] **Step 15:** Start slot timer — begin block production/voting (enter sync mode first if behind)
+- [x] **Step 16:** Start RPC — axum (REST) + jsonrpsee (WebSocket) on separate ports
+- [ ] **Step 17:** Signal handlers — SIGINT/SIGTERM → graceful shutdown (10s timeout)
 
 ### Bootstrap phase
 
@@ -914,8 +921,8 @@ Full node startup lifecycle with P2P, consensus, bootstrap phase. Observer mode.
 
 ### Observer mode
 
-- [ ] `observer: true` config or `--observer` CLI flag
-- [ ] No key loaded, no passphrase prompt, no consensus participation
+- [x] `observer: true` config or `--observer` CLI flag (parsed, merged, validated — conflicts with `key`/`key_file`)
+- [ ] No key loaded, no passphrase prompt, no consensus participation *(config validated, not yet used to skip key loading in startup)*
 - [ ] Full block validation (same as non-proposer), no votes, no proposals
 - [ ] Sync-only: follows canonical chain, serves RPC
 - [ ] P2P fully functional (receives all gossip)
