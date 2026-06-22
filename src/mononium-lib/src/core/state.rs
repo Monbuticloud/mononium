@@ -610,17 +610,21 @@ impl StateMachine {
     /// If `frozen_until <= current_era`, the validator thaws:
     /// - If stake ≥ 1 MONEX → status = `Thawed` (re-enters candidate pool)
     /// - If stake < 1 MONEX → status = `Registered` (no stake)
-    pub fn process_thaw(&mut self, validator_addr: &Address, current_era: u64) -> Result<()> {
+    /// Process a single frozen validator at era boundary.
+    ///
+    /// Returns `Ok(true)` if the validator was actually thawed,
+    /// `Ok(false)` if nothing changed (not frozen, frozen_until > era, or absent).
+    pub fn process_thaw(&mut self, validator_addr: &Address, current_era: u64) -> Result<bool> {
         let Some(entry) = self.get_validator(validator_addr) else {
-            return Ok(());
+            return Ok(false);
         };
 
         let ValidatorStatus::Frozen { frozen_until } = entry.status else {
-            return Ok(());
+            return Ok(false);
         };
 
         if frozen_until > current_era {
-            return Ok(());
+            return Ok(false);
         }
 
         let min_stake = crate::core::constants::MIN_STAKE;
@@ -635,7 +639,21 @@ impl StateMachine {
             ..entry
         };
         self.set_validator(validator_addr, &new_entry);
-        Ok(())
+        Ok(true)
+    }
+
+    /// Bulk-thaw all frozen validators whose freeze period has expired.
+    ///
+    /// At era boundary, the caller passes all known validator addresses.
+    /// Returns the number of validators that were actually thawed.
+    pub fn thaw_all(&mut self, addrs: &[Address], current_era: u64) -> usize {
+        let mut count = 0;
+        for addr in addrs {
+            if self.process_thaw(addr, current_era).unwrap_or(false) {
+                count += 1;
+            }
+        }
+        count
     }
 
     /// Run validator election from a list of candidates.
@@ -1685,6 +1703,35 @@ mod tests {
         sm.apply_block(&block).unwrap();
     }
 
+    fn insert_frozen(sm: &mut StateMachine, addr: Address, stake: U256, frozen_until: u64) {
+        let entry = ValidatorEntry {
+            address: addr,
+            public_key: [0x42u8; 897],
+            stake,
+            status: ValidatorStatus::Frozen { frozen_until },
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
+        sm.state.insert(&key, entry.encode());
+    }
+
+    fn insert_test_validator(
+        sm: &mut StateMachine,
+        addr: Address,
+        stake: U256,
+        status: ValidatorStatus,
+    ) {
+        let entry = ValidatorEntry {
+            address: addr,
+            public_key: [0x42u8; 897],
+            stake,
+            status,
+            registration_era: 0,
+        };
+        let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
+        sm.state.insert(&key, entry.encode());
+    }
+
     #[test]
     fn test_unstake_sets_release_era() {
         let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
@@ -2095,6 +2142,53 @@ mod tests {
         sm.process_thaw(&alice(), 720).unwrap();
         let entry = sm.get_validator(&alice()).unwrap();
         assert_eq!(entry.status, ValidatorStatus::Thawed);
+    }
+
+    #[test]
+    fn test_thaw_all_bulk() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let al = alice();
+        let bob = bob();
+        let charlie = Address::from([2u8; 32]);
+
+        // al: Frozen, due at 700, stake >= 1 MONEX → Thawed
+        insert_frozen(&mut sm, al, one_monex * 5, 700);
+        // bob: Frozen, due at 720, stake < 1 MONEX → Registered
+        insert_frozen(&mut sm, bob, one_monex / 2, 700);
+        // charlie: Active (not frozen) → unchanged
+        insert_test_validator(&mut sm, charlie, one_monex * 10, ValidatorStatus::Active);
+
+        let count = sm.thaw_all(&[al, bob, charlie], 700);
+        assert_eq!(count, 2, "alice + bob thawed, charlie unfrozen");
+
+        assert_eq!(sm.get_validator(&al).unwrap().status, ValidatorStatus::Thawed);
+        assert_eq!(sm.get_validator(&bob).unwrap().status, ValidatorStatus::Registered);
+        assert_eq!(
+            sm.get_validator(&charlie).unwrap().status,
+            ValidatorStatus::Active,
+        );
+    }
+
+    #[test]
+    fn test_thaw_all_empty() {
+        let mut sm = StateMachine::new(vec![]);
+        assert_eq!(sm.thaw_all(&[], 999), 0);
+    }
+
+    #[test]
+    fn test_thaw_all_not_due() {
+        let mut sm = StateMachine::new(vec![]);
+        let al = alice();
+        insert_frozen(&mut sm, al, crate::core::constants::ONE_MONEX * 5, 720);
+
+        let count = sm.thaw_all(&[al], 700);
+        assert_eq!(count, 0, "not due yet");
+        // Still frozen
+        assert!(matches!(
+            sm.get_validator(&al).unwrap().status,
+            ValidatorStatus::Frozen { .. },
+        ));
     }
 
     #[test]
