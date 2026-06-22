@@ -67,14 +67,132 @@ pub enum SyncResponse {
 // Request serving — pure functions backed by a StorageEngine
 // ---------------------------------------------------------------------------
 
-// (implementation will be added in the GREEN commit)
+/// Serve an incoming sync request by looking up blocks from storage.
+///
+/// Returns `None` if the request cannot be validated; the caller should
+/// then drop the request channel (causing the requesting peer to time out).
+///
+/// `highest_known_height` is the responder's current chain tip — used
+/// to populate `BlockSyncResponse.highest_height`.
 pub fn serve_sync_request(
-    _request: &SyncRequest,
-    _storage: &dyn StorageEngine,
-    _genesis_hash: &[u8; 32],
-    _highest_known_height: u64,
+    request: &SyncRequest,
+    storage: &dyn StorageEngine,
+    genesis_hash: &[u8; 32],
+    highest_known_height: u64,
 ) -> Option<SyncResponse> {
-    todo!("serve_sync_request — GREEN commit");
+    match request {
+        SyncRequest::BlockSync(req) => serve_block_sync(req, storage, genesis_hash, highest_known_height),
+        SyncRequest::BlockByHash(req) => serve_block_by_hash(req, storage),
+    }
+}
+
+fn serve_block_sync(
+    req: &BlockSyncRequest,
+    storage: &dyn StorageEngine,
+    genesis_hash: &[u8; 32],
+    highest_known_height: u64,
+) -> Option<SyncResponse> {
+    if let Err(e) = validate_sync_request(req) {
+        tracing::warn!("invalid block-sync request: {e}");
+        return None;
+    }
+
+    // known_block_hash anchor check (fork detection)
+    if let Some(anchor_hash) = req.known_block_hash {
+        let anchor_height = req.start_height.saturating_sub(1);
+        let anchor_key = anchor_height.to_be_bytes();
+        if let Ok(Some(block_bytes)) = storage.get(tables::BLOCKS, &anchor_key) {
+            if let Ok(block) = Block::decode(&mut &block_bytes[..]) {
+                let actual_hash: [u8; 32] = blake3::hash(&block.header.encode()).into();
+                if actual_hash != anchor_hash {
+                    // Fork mismatch — return empty batch
+                    return Some(SyncResponse::BlockSync(BlockSyncResponse {
+                        blocks: vec![],
+                        highest_height: highest_known_height,
+                        batch_hash: *genesis_hash,
+                    }));
+                }
+            }
+        }
+    }
+
+    // Collect blocks
+    let mut blocks: Vec<Block> = Vec::new();
+    let max = req.max_blocks.min(MAX_SYNC_BLOCKS);
+    match req.direction {
+        SyncDirection::Forward => {
+            for offset in 0..max {
+                let height_key = (req.start_height + u64::from(offset)).to_be_bytes();
+                match storage.get(tables::BLOCKS, &height_key) {
+                    Ok(Some(block_bytes)) => {
+                        if let Ok(block) = Block::decode(&mut &block_bytes[..]) {
+                            blocks.push(block);
+                        } else {
+                            break;
+                        }
+                    }
+                    _ => break,
+                }
+            }
+        }
+        SyncDirection::Backward => {
+            for offset in 0..max {
+                let height = req.start_height.saturating_sub(1 + u64::from(offset));
+                if height == 0 {
+                    break;
+                }
+                let height_key = height.to_be_bytes();
+                match storage.get(tables::BLOCKS, &height_key) {
+                    Ok(Some(block_bytes)) => {
+                        if let Ok(block) = Block::decode(&mut &block_bytes[..]) {
+                            blocks.push(block);
+                        } else {
+                            break;
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            // Backward: reverse so blocks are in ascending height order
+            blocks.reverse();
+        }
+    }
+
+    let batch_hash = compute_batch_hash(genesis_hash, &blocks);
+    Some(SyncResponse::BlockSync(BlockSyncResponse {
+        blocks,
+        highest_height: highest_known_height,
+        batch_hash,
+    }))
+}
+
+fn serve_block_by_hash(
+    req: &BlockByHashRequest,
+    storage: &dyn StorageEngine,
+) -> Option<SyncResponse> {
+    if let Err(e) = validate_by_hash_request(req) {
+        tracing::warn!("invalid block-by-hash request: {e}");
+        return None;
+    }
+
+    let mut blocks: Vec<Block> = Vec::new();
+    for hash in &req.block_hashes {
+        if let Ok(Some(height_bytes)) = storage.get(tables::BLOCK_HASHES, hash) {
+            if height_bytes.len() == 8 {
+                let height_key: [u8; 8] = match height_bytes.as_slice().try_into() {
+                    Ok(h) => h,
+                    Err(_) => continue,
+                };
+                if let Ok(Some(block_bytes)) = storage.get(tables::BLOCKS, &height_key) {
+                    if let Ok(block) = Block::decode(&mut &block_bytes[..]) {
+                        blocks.push(block);
+                    }
+                }
+            }
+        }
+    }
+
+    Some(SyncResponse::BlockByHash(BlockByHashResponse { blocks }))
 }
 
 #[cfg(test)]
