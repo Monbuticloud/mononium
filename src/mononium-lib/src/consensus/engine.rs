@@ -17,7 +17,8 @@ use crate::core::account::Address;
 use crate::core::block::{Block, BlockBody, BlockHeader};
 use crate::core::state::StateMachine;
 use crate::core::transaction::Transaction;
-use crate::crypto::falcon::Falcon512Signature;
+use crate::crypto::falcon::{Falcon512, Falcon512PublicKey, Falcon512Signature};
+use crate::crypto::signature::SignatureScheme;
 use crate::error::Result;
 use crate::mempool::Mempool;
 use crate::network::P2pHandle;
@@ -127,7 +128,12 @@ impl ConsensusEngine {
     /// Validate a received block.
     ///
     /// Checks: proposer is scheduled, timestamps within ±2s, parent hash
-    /// matches current tip, signature is valid.
+    /// matches current tip, proposer signature is valid.
+    ///
+    /// `proposer_public_key` — if `Some`, the proposer's Falcon-512 public
+    /// key is used to verify the `proposer_signature`.  Pass `None` when
+    /// the public key is not available (e.g. before the validator is fully
+    /// registered), in which case the signature check is skipped.
     #[must_use]
     pub fn validate_block(
         &self,
@@ -135,6 +141,7 @@ impl ConsensusEngine {
         current_tip: &Block,
         schedule: &ProposerSchedule,
         _timestamp_tolerance: Duration,
+        proposer_public_key: Option<&Falcon512PublicKey>,
     ) -> bool {
         // Must build on current tip
         let expected_parent: [u8; 32] = *blake3::hash(&current_tip.header.encode()).as_bytes();
@@ -150,6 +157,14 @@ impl ConsensusEngine {
         // Height must be next
         if block.header.height != current_tip.header.height + 1 {
             return false;
+        }
+
+        // Verify proposer signature if the public key is available
+        if let Some(pk) = proposer_public_key {
+            let unsigned_payload = block_header_unsigned_payload(&block.header);
+            if !Falcon512::verify(pk, &unsigned_payload, &block.header.proposer_signature) {
+                return false;
+            }
         }
 
         true
@@ -352,6 +367,20 @@ pub const fn is_timestamp_monotonic(block_time: u64, parent_time: u64) -> bool {
     block_time >= parent_time
 }
 
+/// Return the SCALE-encoded payload that the proposer should have signed.
+///
+/// The proposer signs the header with `proposer_signature` zeroed (since
+/// the signature cannot cover its own field).
+#[must_use]
+pub fn block_header_unsigned_payload(header: &crate::core::block::BlockHeader) -> Vec<u8> {
+    let mut unsigned = header.clone();
+    unsigned.proposer_signature = Falcon512Signature::from_bytes(
+        &[0u8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+    )
+    .expect("zero-filled signature is valid");
+    parity_scale_codec::Encode::encode(&unsigned)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -458,6 +487,7 @@ mod tests {
             &tip,
             &schedule,
             Duration::from_secs(5),
+            None,
         ));
     }
 
@@ -477,6 +507,7 @@ mod tests {
             &tip,
             &schedule,
             Duration::from_secs(5),
+            None,
         ));
     }
 
@@ -503,6 +534,136 @@ mod tests {
             &tip,
             &schedule,
             Duration::from_secs(5),
+            None,
+        ));
+    }
+
+    // -------------------------------------------------------------------
+    // Proposer signature validation
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn test_validate_block_valid_signature_passes() {
+        let seed = [0xABu8; 48];
+        let kp = Falcon512::generate(&seed).unwrap();
+        let pk = Falcon512::public_key(&kp);
+        let proposer_addr = Address::from(crate::crypto::address::derive_address(&pk.0));
+        let schedule = ProposerSchedule::new(vec![proposer_addr], 1, 0);
+        let tip = dummy_block(0, addr(0));
+
+        // Build a header with a zeroed signature, then sign it
+        let unsigned_header = crate::core::block::BlockHeader {
+            height: 1,
+            parent_hash: *blake3::hash(&tip.header.encode()).as_bytes(),
+            global_state_root: [0; 32],
+            tx_root: [0; 32],
+            timestamp: 1_700_000_001,
+            proposer: proposer_addr,
+            chain_id: 0,
+            proposer_signature: Falcon512Signature::from_bytes(
+                &[0u8; FALCON_SIGNATURE_SIZE],
+            )
+            .unwrap(),
+        };
+        let payload = parity_scale_codec::Encode::encode(&unsigned_header);
+        let sig = Falcon512::sign(&kp, &payload).unwrap();
+        let mut header = unsigned_header;
+        header.proposer_signature = sig;
+
+        let block = Block {
+            header,
+            body: BlockBody { transactions: vec![] },
+        };
+
+        let cfg = ConsensusConfig::default();
+        let engine = ConsensusEngine::new(cfg);
+
+        assert!(engine.validate_block(
+            &block,
+            &tip,
+            &schedule,
+            Duration::from_secs(5),
+            Some(&pk),
+        ));
+    }
+
+    #[test]
+    fn test_validate_block_invalid_signature_rejected() {
+        let seed_a = [0xABu8; 48];
+        let kp = Falcon512::generate(&seed_a).unwrap();
+        let pk = Falcon512::public_key(&kp);
+
+        let seed_b = [0xCDu8; 48];
+        let kp2 = Falcon512::generate(&seed_b).unwrap();
+        let pk2 = Falcon512::public_key(&kp2);
+
+        let proposer_addr = Address::from(crate::crypto::address::derive_address(&pk.0));
+        let schedule = ProposerSchedule::new(vec![proposer_addr], 1, 0);
+        let tip = dummy_block(0, addr(0));
+
+        // Sign with kp, but verify with pk2 (wrong key)
+        let unsigned_header = crate::core::block::BlockHeader {
+            height: 1,
+            parent_hash: *blake3::hash(&tip.header.encode()).as_bytes(),
+            global_state_root: [0; 32],
+            tx_root: [0; 32],
+            timestamp: 1_700_000_001,
+            proposer: proposer_addr,
+            chain_id: 0,
+            proposer_signature: Falcon512Signature::from_bytes(
+                &[0u8; FALCON_SIGNATURE_SIZE],
+            )
+            .unwrap(),
+        };
+        let payload = parity_scale_codec::Encode::encode(&unsigned_header);
+        let sig = Falcon512::sign(&kp, &payload).unwrap();
+        let mut header = unsigned_header;
+        header.proposer_signature = sig;
+
+        let block = Block {
+            header,
+            body: BlockBody { transactions: vec![] },
+        };
+
+        let cfg = ConsensusConfig::default();
+        let engine = ConsensusEngine::new(cfg);
+
+        // Verify with pk2 — should fail
+        assert!(!engine.validate_block(
+            &block,
+            &tip,
+            &schedule,
+            Duration::from_secs(5),
+            Some(&pk2),
+        ));
+    }
+
+    #[test]
+    fn test_validate_block_no_pk_skips_signature_check() {
+        let proposer_addr = addr(1);
+        let schedule = ProposerSchedule::new(vec![proposer_addr], 1, 0);
+        let tip = dummy_block(0, addr(0));
+        let cfg = ConsensusConfig::default();
+        let engine = ConsensusEngine::new(cfg);
+
+        // Build a block with the correct parent_hash but garbage signature
+        let mut state = StateMachine::new(vec![]);
+        let block = engine.build_block(
+            &mut state,
+            vec![],
+            &tip,
+            &proposer_addr,
+            1_700_000_001,
+            dummy_sig(),
+        );
+
+        // None pk should skip signature check entirely
+        assert!(engine.validate_block(
+            &block,
+            &tip,
+            &schedule,
+            Duration::from_secs(5),
+            None,
         ));
     }
 
