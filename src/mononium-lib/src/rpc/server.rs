@@ -415,14 +415,7 @@ mod tests {
             crate::consensus::ConsensusConfig::default(),
         ));
 
-        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::channel(64);
-        let (event_tx, _) = tokio::sync::broadcast::channel(64);
-        let local_peer_id = libp2p::PeerId::random();
-        let p2p = Arc::new(crate::network::P2pHandle {
-            cmd_tx,
-            local_peer_id,
-            event_tx,
-        });
+        let p2p = Arc::new(crate::network::dummy_p2p_handle());
 
         Arc::new(AppState::new(
             storage,

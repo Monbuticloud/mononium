@@ -29,6 +29,9 @@ use mononium_lib::core::state::StateMachine;
 use mononium_lib::core::transaction::Transaction;
 use mononium_lib::error::LibError;
 use mononium_lib::mempool::{Mempool, MempoolConfig};
+use mononium_lib::rpc;
+use mononium_lib::rpc::server::start_rpc_server;
+use mononium_lib::rpc::state::AppState as RpcAppState;
 use mononium_lib::storage::genesis::load_genesis;
 use mononium_lib::storage::redb::RedbEngine;
 use mononium_lib::storage::tables;
@@ -41,7 +44,7 @@ use crate::NodeArgs;
 // ---------------------------------------------------------------------------
 
 struct AppState {
-    engine: RedbEngine,
+    engine: Arc<dyn StorageEngine>,
     state: StateMachine,
     mempool: Mempool,
     current_height: u64,
@@ -103,25 +106,59 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     let current_height = load_latest_height(&engine)?;
     tracing::info!(height = current_height, "node starting");
 
-    // ---------- 7. Initialize state machine from storage ----------
-    let state = load_state_from_storage(&engine)?;
+    // ---------- 7. Wrap engine in Arc for sharing ----------
+    let engine: Arc<dyn StorageEngine> = Arc::new(engine);
+
+    // ---------- 8. Initialize state machine from storage ----------
+    let state = load_state_from_storage(&*engine)?;
     tracing::info!(height = current_height, "state machine initialized");
 
-    // ---------- 8. Create mempool ----------
-    // Phase 1: accept all txs (min_fee=0). Configurable later.
+    // ---------- 9. Create mempool ----------
     let mempool_config = MempoolConfig {
         max_size: 10_000,
         ttl: Duration::from_secs(600),
         min_fee: primitive_types::U256::zero(),
         per_sender_cap: 50,
     };
-    let mempool = Mempool::new(mempool_config);
+    let mempool = Mempool::new(mempool_config.clone());
     tracing::info!("mempool ready");
 
-    // ---------- 9. Start REST API ----------
+    // ---------- 10. Start JSON-RPC WebSocket server ----------
+    let rpc_port = config.rpc_port();
+    if rpc_port > 0 {
+        let rpc_mempool = Arc::new(std::sync::RwLock::new(Mempool::new(mempool_config)));
+        let mut consensus = mononium_lib::consensus::engine::ConsensusEngine::new(
+            mononium_lib::consensus::ConsensusConfig::default(),
+        );
+        consensus.set_current_height(current_height);
+        let rpc_consensus = Arc::new(consensus);
+
+        let rpc_state = Arc::new(RpcAppState::new(
+            engine.clone(), // share the same storage engine
+            Arc::new(std::sync::RwLock::new(
+                mononium_lib::core::state::StateMachine::new(Vec::<(Address, _)>::new()),
+            )),
+            rpc_mempool,
+            Arc::new(mononium_lib::network::dummy_p2p_handle()),
+            rpc_consensus,
+            0,
+            [0u8; 32],
+        ));
+
+        let rpc_addr = format!("0.0.0.0:{rpc_port}");
+        tracing::info!("RPC WebSocket server listening on {rpc_addr}");
+
+        tokio::spawn(async move {
+            if let Err(e) = start_rpc_server(&rpc_addr, rpc_state).await {
+                tracing::error!("RPC server failed: {e}");
+            }
+        });
+    }
+
+    // ---------- 11. Start REST API ----------
     let rest_port = config.rest_port();
     let shared = Arc::new(Mutex::new(AppState {
-        engine,
+        engine, // moved into shared
         state,
         mempool,
         current_height,
@@ -137,7 +174,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         }
     });
 
-    // ---------- 9. Block production loop ----------
+    // ---------- 12. Block production loop ----------
     tracing::info!("starting block production loop (5s blocks)");
     block_production_loop(shared).await;
 
@@ -186,7 +223,7 @@ fn build_cli_overrides(args: &NodeArgs) -> CliOverrides {
 
 /// Read the latest block height from the stored blocks table.
 /// Keys are big-endian u64 so the max byte sequence is the highest height.
-fn load_latest_height(engine: &RedbEngine) -> Result<u64> {
+fn load_latest_height(engine: &dyn StorageEngine) -> Result<u64> {
     let keys = engine.list_keys(tables::BLOCKS)?;
     if keys.is_empty() {
         return Ok(0);
@@ -199,7 +236,7 @@ fn load_latest_height(engine: &RedbEngine) -> Result<u64> {
 }
 
 /// Load all accounts from storage into the in-memory state machine.
-fn load_state_from_storage(engine: &RedbEngine) -> Result<StateMachine> {
+fn load_state_from_storage(engine: &dyn StorageEngine) -> Result<StateMachine> {
     let account_keys = engine.list_keys(tables::ACCOUNTS)?;
     let mut accounts: Vec<(Address, mononium_lib::core::account::Account)> = Vec::new();
     for key in &account_keys {
@@ -326,7 +363,7 @@ async fn block_latest_handler(
     if guard.current_height == 0 {
         return Err(err_response(404, "no blocks yet".to_string()));
     }
-    let block = load_block_json(&guard.engine, guard.current_height)
+    let block = load_block_json(&*guard.engine, guard.current_height)
         .map_err(|e| err_response(500, format!("{e}")))?;
     Ok(Json(block))
 }
@@ -336,7 +373,7 @@ async fn block_by_height_handler(
     axum::extract::Path(height): axum::extract::Path<u64>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     let guard = state.lock().await;
-    let block = load_block_json(&guard.engine, height)
+    let block = load_block_json(&*guard.engine, height)
         .map_err(|_| err_response(404, format!("block {height} not found")))?;
     Ok(Json(block))
 }
@@ -452,7 +489,7 @@ fn parse_raw_address(s: &str) -> std::result::Result<[u8; 32], LibError> {
 }
 
 /// Load a block from storage, decode from SCALE, convert to JSON.
-fn load_block_json(engine: &RedbEngine, height: u64) -> std::result::Result<serde_json::Value, LibError> {
+fn load_block_json(engine: &dyn StorageEngine, height: u64) -> std::result::Result<serde_json::Value, LibError> {
     let key = height.to_be_bytes();
     let raw = engine
         .get(tables::BLOCKS, &key)?

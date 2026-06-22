@@ -77,6 +77,11 @@ impl ConsensusEngine {
         self.local_validator = Some(key);
     }
 
+    /// Set the current block height.
+    pub fn set_current_height(&mut self, height: u64) {
+        self.current_height = height;
+    }
+
     // -------------------------------------------------------------------
     // Block building (proposer behavior)
     // -------------------------------------------------------------------

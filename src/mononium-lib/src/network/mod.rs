@@ -162,6 +162,14 @@ pub struct P2pHandle {
     pub(crate) event_tx: broadcast::Sender<P2pEvent>,
 }
 
+/// Create a minimal P2pHandle for RPC/non-networked use (no actual P2P).
+#[must_use]
+pub fn dummy_p2p_handle() -> P2pHandle {
+    let (cmd_tx, _) = mpsc::channel(64);
+    let (event_tx, _) = broadcast::channel(64);
+    P2pHandle { cmd_tx, local_peer_id: PeerId::random(), event_tx }
+}
+
 impl P2pHandle {
     #[must_use]
     pub fn local_peer_id(&self) -> &PeerId { &self.local_peer_id }
