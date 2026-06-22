@@ -212,7 +212,7 @@ impl ConsensusEngine {
     /// Returns when the channel is closed or a fatal error occurs.
     #[allow(clippy::too_many_arguments)]
     pub async fn start_consensus_loop<S: StorageEngine>(
-        &self,
+        &mut self,
         state: Arc<RwLock<StateMachine>>,
         mempool: Arc<RwLock<Mempool>>,
         p2p: P2pHandle,
@@ -228,6 +228,36 @@ impl ConsensusEngine {
         loop {
             interval.tick().await;
 
+            let height = self.current_height + 1;
+
+            // ── Era boundary processing ──────────────────────────────
+            if crate::consensus::era::is_era_boundary(height) {
+                let current_era = crate::consensus::era::era_at_height(height);
+                tracing::info!(era = current_era, height, "era boundary processing");
+
+                let addrs: Vec<crate::core::account::Address> = {
+                    let mut sm = state.blocking_write();
+                    sm.thaw_all(&[] /* TODO: validator list from SMT */, current_era);
+                    let active = sm.run_election(
+                        &[] /* TODO: candidate list from SMT */,
+                        crate::core::constants::MAX_VALIDATORS,
+                        current_era,
+                    );
+                    sm.set_active_set(active.clone());
+                    active
+                };
+
+                // Build new proposer schedule for this era
+                if !addrs.is_empty() {
+                    let new_schedule = crate::consensus::proposer::ProposerSchedule::new(
+                        addrs,
+                        current_era,
+                        height,
+                    );
+                    self.set_schedule(new_schedule);
+                }
+            }
+
             let schedule = match &self.schedule {
                 Some(s) => s.clone(),
                 None => {
@@ -235,8 +265,6 @@ impl ConsensusEngine {
                     continue;
                 }
             };
-
-            let height = self.current_height + 1;
 
             // Check if we're the proposer for this height
             let is_our_slot = self.local_validator.as_ref().map_or(false, |local| {
