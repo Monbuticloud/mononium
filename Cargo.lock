@@ -2480,6 +2480,7 @@ dependencies = [
  "blake3",
  "clap",
  "hex",
+ "libp2p",
  "mononium-lib",
  "parity-scale-codec",
  "primitive-types",

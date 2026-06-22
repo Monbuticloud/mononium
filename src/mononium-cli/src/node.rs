@@ -124,23 +124,58 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     let mempool = Mempool::new(mempool_config.clone());
     tracing::info!("mempool ready");
 
-    // ---------- 10. Start JSON-RPC WebSocket server ----------
+    // ---------- 10. Start P2P networking (if enabled) ----------
+    let p2p_port = config.p2p_port();
+    let p2p_handle: Arc<mononium_lib::network::P2pHandle> = if p2p_port > 0 {
+        let p2p_config = mononium_lib::network::P2pConfig {
+            p2p_port,
+            bootstrap_peers: config.bootnodes().iter()
+                .filter_map(|s| s.parse::<libp2p::Multiaddr>().ok())
+                .collect(),
+            enable_mdns: true,
+            max_peers: 50,
+        };
+        let chain_id = 0; // TODO: from genesis
+        match mononium_lib::network::P2pService::new(p2p_config, chain_id) {
+            Ok(service) => {
+                match service.start() {
+                    Ok(handle) => {
+                        tracing::info!("P2P networking started on port {p2p_port}");
+                        Arc::new(handle)
+                    }
+                    Err(e) => {
+                        tracing::error!("P2P start failed: {e}");
+                        Arc::new(mononium_lib::network::dummy_p2p_handle())
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("P2P service creation failed: {e}");
+                Arc::new(mononium_lib::network::dummy_p2p_handle())
+            }
+        }
+    } else {
+        Arc::new(mononium_lib::network::dummy_p2p_handle())
+    };
+
+    // ---------- 11. Start JSON-RPC WebSocket server ----------
     let rpc_port = config.rpc_port();
     if rpc_port > 0 {
-        let rpc_mempool = Arc::new(std::sync::RwLock::new(Mempool::new(mempool_config)));
-        let mut consensus = mononium_lib::consensus::engine::ConsensusEngine::new(
-            mononium_lib::consensus::ConsensusConfig::default(),
-        );
-        consensus.set_current_height(current_height);
-        let rpc_consensus = Arc::new(consensus);
+        let rpc_consensus = Arc::new({
+            let mut c = mononium_lib::consensus::engine::ConsensusEngine::new(
+                mononium_lib::consensus::ConsensusConfig::default(),
+            );
+            c.set_current_height(current_height);
+            c
+        });
 
         let rpc_state = Arc::new(RpcAppState::new(
-            engine.clone(), // share the same storage engine
+            engine.clone(),
             Arc::new(std::sync::RwLock::new(
                 mononium_lib::core::state::StateMachine::new(Vec::<(Address, _)>::new()),
             )),
-            rpc_mempool,
-            Arc::new(mononium_lib::network::dummy_p2p_handle()),
+            Arc::new(std::sync::RwLock::new(Mempool::new(mempool_config))),
+            p2p_handle.clone(),
             rpc_consensus,
             0,
             [0u8; 32],
@@ -156,10 +191,10 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         });
     }
 
-    // ---------- 11. Start REST API ----------
+    // ---------- 12. Start REST API ----------
     let rest_port = config.rest_port();
     let shared = Arc::new(Mutex::new(AppState {
-        engine, // moved into shared
+        engine,
         state,
         mempool,
         current_height,
@@ -175,7 +210,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         }
     });
 
-    // ---------- 12. Block production loop ----------
+    // ---------- 13. Block production loop ----------
     tracing::info!("starting block production loop (5s blocks)");
     block_production_loop(shared).await;
 
