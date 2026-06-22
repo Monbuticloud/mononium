@@ -158,7 +158,54 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         Arc::new(mononium_lib::network::dummy_p2p_handle())
     };
 
-    // ---------- 11. Start JSON-RPC WebSocket server ----------
+    // ---------- 11. Spawn sync loop (background task) ----------
+    if p2p_port > 0 {
+        let sync_p2p = p2p_handle.clone();
+        let sync_engine = engine.clone();
+        let genesis_hash_raw = engine
+            .get(tables::META, tables::GENESIS_HASH_KEY)?
+            .unwrap_or_else(|| vec![0u8; 32]);
+        let mut genesis_hash = [0u8; 32];
+        genesis_hash.copy_from_slice(&genesis_hash_raw);
+        let cursor_dir = Path::new(&data_dir).join("0"); // chain_id = 0 for now
+        let cursor_path = cursor_dir.to_string_lossy().to_string();
+        let era_len = mononium_lib::consensus::era::ERA_LENGTH;
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(2)).await; // wait for P2P to stabilize
+            loop {
+                let should_wait = {
+                    match mononium_lib::network::sync::run_sync_loop(
+                        &*sync_p2p,
+                        &*sync_engine,
+                        genesis_hash,
+                        std::path::Path::new(&cursor_path),
+                        era_len,
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            tracing::info!("sync loop completed: node is synced to tip");
+                            false
+                        }
+                        Err(e) => {
+                            let msg = e.to_string();
+                            if msg.contains("no connected peers") {
+                                tracing::debug!("sync: waiting for peers...");
+                            } else {
+                                tracing::warn!("sync loop exited: {msg}");
+                            }
+                            true
+                        }
+                    }
+                };
+                if should_wait {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                }
+            }
+        });
+    }
+
+    // ---------- 12. Start JSON-RPC WebSocket server ----------
     let rpc_port = config.rpc_port();
     if rpc_port > 0 {
         let rpc_consensus = Arc::new({
