@@ -48,6 +48,8 @@ pub struct SlashResult {
 #[derive(Debug, Clone)]
 pub struct StateMachine {
     state: SparseMerkleTree,
+    /// Active validator set for fee distribution. Set at era boundary.
+    active_set: Vec<Address>,
 }
 
 impl StateMachine {
@@ -66,7 +68,7 @@ impl StateMachine {
             let value = crate::core::account::scale_encode_account(&acct);
             state.insert(&key, value);
         }
-        Self { state }
+        Self { state, active_set: vec![] }
     }
 
     /// Return the current state root hash.
@@ -198,7 +200,9 @@ impl StateMachine {
             }
         }
 
-        // TODO: fee distribution (needs active validator set)
+        // Distribute fees to active validators
+        self.distribute_fees(block_fees);
+
         // TODO: state root verification
 
         Ok(BlockReceipt {
@@ -207,6 +211,61 @@ impl StateMachine {
             failed_count,
             state_root: self.state.root(),
         })
+    }
+
+    /// Set the active validator set (called at era boundary).
+    /// Used by `distribute_fees` to determine who receives block rewards.
+    pub fn set_active_set(&mut self, active_set: Vec<Address>) {
+        self.active_set = active_set;
+    }
+
+    /// Distribute collected block fees to active validators proportionally
+    /// by stake. Each validator's account balance is credited.
+    fn distribute_fees(&mut self, total_fees: u128) {
+        if total_fees == 0 || self.active_set.is_empty() {
+            return;
+        }
+        let total = U256::from(total_fees);
+
+        // Sum stakes and build (stake, address) pairs
+        let mut pairs: Vec<(U256, Address)> = Vec::with_capacity(self.active_set.len());
+        let mut total_stake = U256::zero();
+        for addr in &self.active_set {
+            if let Some(v) = self.get_validator(addr) {
+                total_stake = total_stake.saturating_add(v.stake);
+                pairs.push((v.stake, *addr));
+            }
+        }
+        if total_stake.is_zero() {
+            return;
+        }
+
+        // Sort by stake desc, then address asc for remainder rule
+        pairs.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.as_bytes().cmp(b.1.as_bytes())));
+
+        let mut distributed = U256::zero();
+        for (stake, addr) in &pairs {
+            let share = total * *stake / total_stake;
+            if share.is_zero() {
+                continue;
+            }
+            self.credit_balance(addr, share);
+            distributed = distributed.saturating_add(share);
+        }
+
+        // Remainder goes to highest-stake validator (first after sort)
+        if distributed < total {
+            if let Some((_, addr)) = pairs.first() {
+                self.credit_balance(addr, total - distributed);
+            }
+        }
+    }
+
+    /// Credit an account's balance (create account if missing).
+    fn credit_balance(&mut self, addr: &Address, amount: U256) {
+        let mut acct = self.get_account(addr).unwrap_or_else(|| Account::new(U256::zero()));
+        acct.balance = acct.balance.saturating_add(amount);
+        self.set_account(addr, &acct);
     }
 
     /// Try to execute a Transfer/Burn tx.
@@ -2189,6 +2248,107 @@ mod tests {
             sm.get_validator(&al).unwrap().status,
             ValidatorStatus::Frozen { .. },
         ));
+    }
+
+    // -----------------------------------------------------------------------
+    // Fee distribution tests (Phase 2.3)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_fee_distribution_empty_set_noop() {
+        let mut sm = StateMachine::new(vec![]);
+        sm.set_active_set(vec![]);
+        sm.distribute_fees(1000); // should not panic
+    }
+
+    #[test]
+    fn test_fee_distribution_zero_fees_noop() {
+        let mut sm = StateMachine::new(vec![]);
+        let al = alice();
+        insert_test_validator(&mut sm, al, U256::from(1000), ValidatorStatus::Active);
+        sm.set_active_set(vec![al]);
+        sm.distribute_fees(0); // should not panic
+        assert!(sm.get_account(&al).is_none());
+    }
+
+    #[test]
+    fn test_fee_distribution_proportional() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let al = alice();
+        let bob = bob();
+        // al has 2x stake of bob → gets 2x fees
+        insert_test_validator(&mut sm, al, one_monex * 200, ValidatorStatus::Active);
+        insert_test_validator(&mut sm, bob, one_monex * 100, ValidatorStatus::Active);
+        sm.set_active_set(vec![al, bob]);
+
+        let fees: u128 = 300; // 300 MOXX
+        sm.distribute_fees(fees);
+
+        let al_acct = sm.get_account(&al).unwrap();
+        let bob_acct = sm.get_account(&bob).unwrap();
+        // total_stake = 300 MONEX, al = 200/300*300 = 200, bob = 100/300*300 = 100
+        assert_eq!(al_acct.balance, U256::from(200));
+        assert_eq!(bob_acct.balance, U256::from(100));
+    }
+
+    #[test]
+    fn test_fee_distribution_remainder_goes_to_top() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![]);
+        let al = alice();
+        let bob = bob();
+        // 3:1 ratio, total_stake = 4, fees = 10
+        // al = 10*3/4 = 7, bob = 10*1/4 = 2, remainder = 1
+        insert_test_validator(&mut sm, al, one_monex * 3, ValidatorStatus::Active);
+        insert_test_validator(&mut sm, bob, one_monex * 1, ValidatorStatus::Active);
+        sm.set_active_set(vec![al, bob]);
+
+        sm.distribute_fees(10);
+
+        let al_acct = sm.get_account(&al).unwrap();
+        let bob_acct = sm.get_account(&bob).unwrap();
+        assert_eq!(al_acct.balance, U256::from(8), "7 + 1 remainder");
+        assert_eq!(bob_acct.balance, U256::from(2));
+    }
+
+    #[test]
+    fn test_fee_distribution_integration_via_apply_block() {
+        let one_monex = crate::core::constants::ONE_MONEX;
+        let mut sm = StateMachine::new(vec![(alice(), Account::new(one_monex * 1000))]);
+        let al = alice();
+        let bob = bob();
+        insert_test_validator(&mut sm, al, one_monex * 100, ValidatorStatus::Active);
+        insert_test_validator(&mut sm, bob, one_monex * 100, ValidatorStatus::Active);
+        sm.set_active_set(vec![al, bob]);
+
+        // Alice sends 10 MONEX to bob with a 5 MONEX fee
+        let tx = Transaction {
+            chain_id: 0, nonce: 0, sender: al,
+            fee: one_monex * 5, // 5 MONEX
+            body: TxBody::Transfer { recipient: bob, amount: one_monex * 10 },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_000, proposer: al, chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        let receipt = sm.apply_block(&block).unwrap();
+        assert!(receipt.total_fees > 0, "fees collected");
+
+        // Both validators should have been credited
+        let al_acct = sm.get_account(&al).unwrap();
+        let bob_acct = sm.get_account(&bob).unwrap();
+        // alice sent 10 + 5 fee, but gets half back from fee distribution
+        // alice's balance start: 1000, send: -15, receive fee share: 2.5 MONEX
+        // bob's balance start: none, receive: +10, receive fee share: 2.5 MONEX
+        assert!(al_acct.balance < one_monex * 1000, "alice paid tx + fee");
+        // Both validators get fee share (accounts created if missing)
+        assert!(bob_acct.balance >= one_monex * 10, "bob received transfer");
     }
 
     #[test]

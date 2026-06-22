@@ -314,6 +314,7 @@ All staking TxBody variants, validator types, state machine logic, and era bound
 ### Test coverage
 
 **Happy path:**
+
 - [x] RegisterValidator creates ValidatorEntry with correct fields
 - [x] Stake increases validator.stake, decreases sender balance
 - [x] RegisterAndStake (era 0): atomic register + stake in single tx
@@ -324,6 +325,7 @@ All staking TxBody variants, validator types, state machine logic, and era bound
 - [x] Self-stake (sender == validator) allowed
 
 **Error path (each → fee-only deduction):**
+
 - [x] Register when already registered
 - [x] Register with insufficient balance
 - [x] Register with invalid nonce
@@ -340,6 +342,7 @@ All staking TxBody variants, validator types, state machine logic, and era bound
 - [ ] RegisterAndStake validator != sender → rejected
 
 **Era boundary:**
+
 - [x] Era 0: 5 validators, max=3 → first 3 active
 - [x] Era 1+: Top-N by stake
 - [x] Frozen validator excluded from election
@@ -930,7 +933,7 @@ Add CLI staking commands. REST integration for submission + queries.
 - [ ] `mononium-cli query validator <address>` — validator info via GET /validator/{address}
 - [ ] `mononium-cli query validators` — list all via GET /validators
 - [ ] `mononium-cli query nonce <address>` — nonce via GET /nonce/{address}
-- [ ] All: `--node <url>` flag to override REST endpoint (default http://localhost:9933)
+- [ ] All: `--node <url>` flag to override REST endpoint (default <http://localhost:9933>)
 - [ ] All staking: `--wait` flag to poll POST /tx until finalized (max 30s)
 
 ### Amount parsing
