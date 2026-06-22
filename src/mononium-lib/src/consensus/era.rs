@@ -3,6 +3,8 @@
 //! Per ADR-014: era length is 720 blocks. Era 0 (bootstrap) uses `Open`
 //! election mode — no stake required. Era 1+ uses standard `TopN` election.
 
+use primitive_types::U256;
+
 use crate::consensus::election::ElectionMode;
 use crate::core::constants::MAX_VALIDATORS;
 
@@ -12,6 +14,9 @@ use crate::core::constants::MAX_VALIDATORS;
 
 /// Number of blocks in one era.
 pub const ERA_LENGTH: u64 = 720;
+
+/// Penalty per missed slot (0.08 MONEX = 8 × 10^30 MOXX).
+pub const MISSED_SLOT_PENALTY: U256 = U256([3722066015023005696, 433680868994, 0, 0]);
 
 // ---------------------------------------------------------------------------
 // Era calculation
@@ -63,6 +68,15 @@ pub fn era_start_height(target: u64) -> u64 {
 #[must_use]
 pub fn era_end_height(target: u64) -> u64 {
     (target + 1) * ERA_LENGTH - 1
+}
+
+/// Compute the total penalty for `missed` slots at the standard rate.
+///
+/// Each missed slot costs `MISSED_SLOT_PENALTY` MOXX (0.08 MONEX).
+/// The penalty is applied at era boundaries (never mid-era).
+#[must_use]
+pub fn compute_missed_slot_penalty(missed: u64) -> U256 {
+    MISSED_SLOT_PENALTY * U256::from(missed)
 }
 
 #[cfg(test)]
@@ -134,5 +148,38 @@ mod tests {
         let era = era_at_height(100_000_000);
         assert_eq!(era, 100_000_000 / 720);
         assert!(is_era_boundary(720 * 100_000));
+    }
+
+    // -- missed slot penalty ---------------------------------------------
+
+    #[test]
+    fn test_missed_slot_penalty_constant() {
+        // 0.08 MONEX = 8 * 10^30 MOXX
+        let expected = U256([3722066015023005696, 433680868994, 0, 0]);
+        assert_eq!(MISSED_SLOT_PENALTY, expected);
+    }
+
+    #[test]
+    fn test_compute_penalty_zero_missed() {
+        assert_eq!(compute_missed_slot_penalty(0), U256::zero());
+    }
+
+    #[test]
+    fn test_compute_penalty_one_missed() {
+        assert_eq!(compute_missed_slot_penalty(1), MISSED_SLOT_PENALTY);
+    }
+
+    #[test]
+    fn test_compute_penalty_ten_missed() {
+        // 10 missed * 0.08 MONEX = 0.8 MONEX = 8 * 10^29 MOXX
+        let expected = MISSED_SLOT_PENALTY * U256::from(10);
+        assert_eq!(compute_missed_slot_penalty(10), expected);
+    }
+
+    #[test]
+    fn test_compute_penalty_full_era_missed() {
+        // 720 missed * 0.08 MONEX = 57.6 MONEX
+        let expected = MISSED_SLOT_PENALTY * U256::from(720);
+        assert_eq!(compute_missed_slot_penalty(720), expected);
     }
 }
