@@ -139,6 +139,52 @@ enum WalletAction {
         #[arg(long, default_value = "http://localhost:9933")]
         node: String,
     },
+    /// Register as a validator.
+    Register {
+        /// Signing key name.
+        #[arg(long)]
+        key: String,
+        /// Node REST endpoint.
+        #[arg(long, default_value = "http://localhost:9933")]
+        node: String,
+    },
+    /// Stake MONEX to a validator.
+    Stake {
+        /// Validator address.
+        validator: String,
+        /// Amount in MONEX.
+        amount: String,
+        /// Signing key name.
+        #[arg(long)]
+        key: String,
+        /// Node REST endpoint.
+        #[arg(long, default_value = "http://localhost:9933")]
+        node: String,
+    },
+    /// Atomic register as validator + self-stake.
+    RegisterAndStake {
+        /// Self-stake amount in MONEX.
+        amount: String,
+        /// Signing key name.
+        #[arg(long)]
+        key: String,
+        /// Node REST endpoint.
+        #[arg(long, default_value = "http://localhost:9933")]
+        node: String,
+    },
+    /// Unstake MONEX from a validator.
+    Unstake {
+        /// Validator address.
+        validator: String,
+        /// Amount in MONEX.
+        amount: String,
+        /// Signing key name.
+        #[arg(long)]
+        key: String,
+        /// Node REST endpoint.
+        #[arg(long, default_value = "http://localhost:9933")]
+        node: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +207,18 @@ enum QueryAction {
     },
     /// Get latest block.
     Latest {
+        #[arg(long, default_value = "http://localhost:9933")]
+        node: String,
+    },
+    /// Get nonce for an address.
+    Nonce {
+        address: String,
+        #[arg(long, default_value = "http://localhost:9933")]
+        node: String,
+    },
+    /// Get validator info.
+    Validator {
+        address: String,
         #[arg(long, default_value = "http://localhost:9933")]
         node: String,
     },
@@ -191,6 +249,18 @@ async fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
         WalletAction::Transfer { to, amount, key, node } => {
             wallet::transfer(&to, &amount, &key, &node).await
         }
+        WalletAction::Register { key, node } => {
+            wallet::register_validator(&key, &node).await
+        }
+        WalletAction::Stake { validator, amount, key, node } => {
+            wallet::stake(&validator, &amount, &key, &node).await
+        }
+        WalletAction::RegisterAndStake { amount, key, node } => {
+            wallet::register_and_stake(&amount, &key, &node).await
+        }
+        WalletAction::Unstake { validator, amount, key, node } => {
+            wallet::unstake(&validator, &amount, &key, &node).await
+        }
     }
 }
 
@@ -199,15 +269,46 @@ async fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 
 async fn run_query(args: QueryArgs) -> anyhow::Result<()> {
+    match &args.action {
+        QueryAction::Nonce { address, node } => {
+            let base_url = node.trim_end_matches('/');
+            let url = format!("{base_url}/nonce/{address}");
+            let resp = reqwest::get(&url).await?;
+            if !resp.status().is_success() {
+                anyhow::bail!("RPC error ({}): {}", resp.status(), resp.text().await.unwrap_or_default());
+            }
+            let data: serde_json::Value = resp.json().await?;
+            println!("Nonce: {}", data["nonce"]);
+            return Ok(());
+        }
+        QueryAction::Validator { address, node } => {
+            let base_url = node.trim_end_matches('/');
+            let url = format!("{base_url}/validator/{address}");
+            let resp = reqwest::get(&url).await?;
+            if !resp.status().is_success() {
+                anyhow::bail!("RPC error ({}): {}", resp.status(), resp.text().await.unwrap_or_default());
+            }
+            let data: serde_json::Value = resp.json().await?;
+            println!("Validator: {address}");
+            println!("  Exists: {}", data["exists"]);
+            println!("  Status: {}", data["status"].as_str().unwrap_or("?"));
+            println!("  Stake:  {}", data["stake"].as_str().unwrap_or("0"));
+            return Ok(());
+        }
+        _ => {}
+    }
+
     let base_url = match &args.action {
         QueryAction::Block { node, .. } | QueryAction::Latest { node, .. } => {
             node.trim_end_matches('/').to_string()
         }
+        _ => unreachable!(),
     };
 
     let url = match args.action {
         QueryAction::Block { height, .. } => format!("{base_url}/block/{height}"),
         QueryAction::Latest { .. } => format!("{base_url}/block/latest"),
+        _ => unreachable!(),
     };
 
     let resp = reqwest::get(&url)

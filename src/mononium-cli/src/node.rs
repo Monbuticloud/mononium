@@ -234,6 +234,8 @@ fn build_router(state: SharedState) -> Router {
         .route("/balance/{address}", get(balance_handler))
         .route("/height", get(height_handler))
         .route("/era", get(era_handler))
+        .route("/nonce/{address}", get(nonce_handler))
+        .route("/validator/{address}", get(validator_handler))
         .route("/tx", axum::routing::post(tx_submit_handler))
         .with_state(state)
 }
@@ -263,6 +265,19 @@ struct BalanceResponse {
     address: String,
     balance: String,
     nonce: u64,
+}
+
+#[derive(serde::Serialize)]
+struct NonceResponse {
+    nonce: u64,
+}
+
+#[derive(serde::Serialize)]
+struct ValidatorResponse {
+    address: String,
+    exists: bool,
+    status: String,
+    stake: String,
 }
 
 #[derive(serde::Serialize)]
@@ -346,6 +361,42 @@ async fn balance_handler(
             address: address_str,
             balance: "0".to_string(),
             nonce: 0,
+        })),
+    }
+}
+
+async fn nonce_handler(
+    State(state): State<SharedState>,
+    axum::extract::Path(address_str): axum::extract::Path<String>,
+) -> Result<Json<NonceResponse>, axum::response::Response> {
+    let guard = state.lock().await;
+    let raw = parse_raw_address(&address_str)
+        .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
+    let addr = Address::from(raw);
+    let nonce = guard.state.get_account(&addr).map(|a| a.nonce).unwrap_or(0);
+    Ok(Json(NonceResponse { nonce }))
+}
+
+async fn validator_handler(
+    State(state): State<SharedState>,
+    axum::extract::Path(address_str): axum::extract::Path<String>,
+) -> Result<Json<ValidatorResponse>, axum::response::Response> {
+    let guard = state.lock().await;
+    let raw = parse_raw_address(&address_str)
+        .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
+    let addr = Address::from(raw);
+    match guard.state.get_validator(&addr) {
+        Some(v) => Ok(Json(ValidatorResponse {
+            address: address_str,
+            exists: true,
+            status: format!("{:?}", v.status),
+            stake: v.stake.to_string(),
+        })),
+        None => Ok(Json(ValidatorResponse {
+            address: address_str,
+            exists: false,
+            status: "unknown".to_string(),
+            stake: "0".to_string(),
         })),
     }
 }
@@ -446,6 +497,9 @@ async fn block_production_loop(state: SharedState) {
                 timestamp: now,
                 proposer: Address::from([0u8; 32]),
                 chain_id: 0,
+                proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
             },
             body: BlockBody {
                 transactions: txs,
@@ -529,6 +583,9 @@ mod tests {
                 height: 5, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: Address::from([0xAAu8; 32]), chain_id: 0,
+                proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
             },
             body: BlockBody { transactions: vec![] },
         };
@@ -556,6 +613,9 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: Address::from([0xAAu8; 32]),
                 chain_id: 0,
+                proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
             },
             body: BlockBody { transactions: vec![] },
         };
