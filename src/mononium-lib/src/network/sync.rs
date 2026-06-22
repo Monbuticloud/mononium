@@ -5,7 +5,24 @@
 //! from the last verified height after a restart.
 
 use std::path::Path;
+use std::time::Duration;
+
+use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
+use tracing::{error, info, warn};
+
+use parity_scale_codec::Encode;
+
+use crate::core::block::Block;
+use crate::network::messages::{
+    compute_batch_hash, validate_sync_request, BlockSyncRequest, BlockSyncResponse, SyncDirection,
+    MAX_SYNC_BLOCKS,
+};
+use crate::network::sync_protocol::{SyncRequest, SyncResponse};
+use crate::network::{P2pEvent, P2pHandle};
+use crate::storage::tables;
+use crate::storage::StorageEngine;
 
 // ---------------------------------------------------------------------------
 // HeightRange — a contiguous range of blocks to sync from one peer
@@ -131,6 +148,220 @@ impl SyncCursor {
         match serde_json::from_str(&json) {
             Ok(cursor) => cursor,
             Err(_) => Self::new(genesis_hash),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sync loop — catch-up via Request-Response
+// ---------------------------------------------------------------------------
+
+/// Maximum time to wait for a sync response from a peer (per batch).
+const SYNC_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Number of consecutive failures before we abort the sync loop.
+const MAX_CONSECUTIVE_FAILURES: usize = 10;
+
+/// Run the sync catch-up loop.
+///
+/// 1. Loads or creates a [`SyncCursor`] from `cursor_path`.
+/// 2. Contacts peers to discover the chain tip.
+/// 3. Downloads and verifies blocks in batches (up to 100 per request).
+/// 4. Stores verified blocks and persists the cursor periodically.
+///
+/// Returns `Ok(())` once the local node is caught up to the network tip.
+/// When a peer fails to respond or returns invalid data, the loop tries
+/// the next peer.  If all peers fail after `MAX_CONSECUTIVE_FAILURES`
+/// attempts the function returns an error.
+pub async fn run_sync_loop(
+    p2p: &P2pHandle,
+    storage: &dyn StorageEngine,
+    genesis_hash: [u8; 32],
+    cursor_path: &Path,
+    era_length: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cursor = SyncCursor::load(cursor_path, genesis_hash);
+
+    // --- Step 1: discover the network tip ---
+    let peers = p2p.connected_peers().await;
+    if peers.is_empty() {
+        return Err("sync: no connected peers".into());
+    }
+
+    // Subscribe to events to receive SyncResponse
+    let mut events = p2p.subscribe();
+
+    // Send a tip-discovery request: ask for block at height 1, the response
+    // includes `highest_height` from the peer's chain tip.
+    let tip_req = SyncRequest::BlockSync(BlockSyncRequest {
+        start_height: 1,
+        max_blocks: 1,
+        direction: SyncDirection::Forward,
+        known_block_hash: None,
+    });
+    p2p.send_sync_request(peers[0], tip_req).await?;
+
+    let tip_height = match wait_for_sync_response(&mut events, peers[0]).await {
+        Some(resp) => {
+            let SyncResponse::BlockSync(bsr) = resp else {
+                return Err("sync: unexpected tip response type".into());
+            };
+            // Use the peer's reported highest_height
+            bsr.highest_height
+        }
+        None => return Err("sync: no tip response from peer".into()),
+    };
+
+    if tip_height <= cursor.last_verified_height {
+        info!(tip_height, "already caught up");
+        return Ok(());
+    }
+    cursor.set_target(tip_height);
+
+    // --- Step 2: check for checkpoint sync ---
+    if cursor.needs_checkpoint(era_length) {
+        info!(
+            last_verified = cursor.last_verified_height,
+            target = cursor.target_height,
+            "gap is large, checkpoint sync would be ideal (falling back to block-by-block)"
+        );
+    }
+
+    // --- Step 3: download blocks in batches ---
+    let batch_size: u16 = 100.min(MAX_SYNC_BLOCKS);
+    let mut consecutive_failures = 0;
+    let mut peer_index = 0;
+
+    while cursor.gap() > 0 {
+        let peer = peers[peer_index % peers.len()];
+        peer_index += 1;
+
+        let start = cursor.last_verified_height + 1;
+        let sync_req = SyncRequest::BlockSync(BlockSyncRequest {
+            start_height: start,
+            max_blocks: batch_size,
+            direction: SyncDirection::Forward,
+            known_block_hash: Some(cursor.last_verified_hash),
+        });
+
+        info!(start, batch_size, peer = %peer, "requesting sync batch");
+
+        p2p.send_sync_request(peer, sync_req).await?;
+
+        let response = match tokio::time::timeout(SYNC_TIMEOUT, wait_for_sync_response(&mut events, peer)).await
+        {
+            Ok(Some(resp)) => resp,
+            Ok(None) => {
+                warn!("sync: peer {peer} returned no response, trying next");
+                consecutive_failures += 1;
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    return Err("sync: too many consecutive failures".into());
+                }
+                continue;
+            }
+            Err(_) => {
+                warn!("sync: timeout from peer {peer}, trying next");
+                consecutive_failures += 1;
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                    return Err("sync: too many consecutive timeouts".into());
+                }
+                continue;
+            }
+        };
+
+        let SyncResponse::BlockSync(bsr) = response else {
+            warn!("sync: unexpected response type, trying next");
+            consecutive_failures += 1;
+            continue;
+        };
+
+        if bsr.blocks.is_empty() {
+            warn!(height = start, "sync: empty batch (fork mismatch?)");
+            consecutive_failures += 1;
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                return Err("sync: peer returned empty batches".into());
+            }
+            continue;
+        }
+
+        // Verify batch hash
+        let local_hash = compute_batch_hash(&cursor.last_verified_hash, &bsr.blocks);
+        if local_hash != bsr.batch_hash {
+            warn!("sync: batch hash mismatch from {peer}, trying next");
+            consecutive_failures += 1;
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                return Err("sync: batch hash mismatch".into());
+            }
+            continue;
+        }
+
+        // Verify parent chain continuity
+        let mut prev_hash = cursor.last_verified_hash;
+        let mut valid = true;
+        for block in &bsr.blocks {
+            if block.header.parent_hash != prev_hash {
+                warn!(
+                    height = block.header.height,
+                    "sync: parent hash mismatch"
+                );
+                valid = false;
+                break;
+            }
+            prev_hash = *blake3::hash(&block.header.encode()).as_bytes();
+        }
+        if !valid {
+            consecutive_failures += 1;
+            continue;
+        }
+
+        // Store blocks
+        let last_block = bsr.blocks.last().expect("non-empty");
+        for block in &bsr.blocks {
+            let key = block.header.height.to_be_bytes();
+            let encoded = parity_scale_codec::Encode::encode(block);
+            if let Err(e) = storage.put(tables::BLOCKS, &key, &encoded) {
+                error!("sync: failed to store block {}: {e}", block.header.height);
+                return Err("sync: storage error".into());
+            }
+        }
+
+        // Advance cursor
+        let last_hash: [u8; 32] = *blake3::hash(&last_block.header.encode()).as_bytes();
+        cursor.advance(last_block.header.height, last_hash);
+        consecutive_failures = 0;
+
+        // Persist after every batch
+        if let Err(e) = cursor.save(cursor_path) {
+            warn!("sync: failed to persist cursor: {e}");
+        }
+
+        info!(
+            synced = cursor.last_verified_height,
+            target = cursor.target_height,
+            remaining = cursor.gap(),
+            "sync batch complete"
+        );
+    }
+
+    info!("sync complete at height {}", cursor.last_verified_height);
+    Ok(())
+}
+
+/// Wait for a [`P2pEvent::SyncResponse`] from a specific peer.
+async fn wait_for_sync_response(
+    events: &mut broadcast::Receiver<P2pEvent>,
+    peer: PeerId,
+) -> Option<SyncResponse> {
+    loop {
+        match events.recv().await {
+            Ok(P2pEvent::SyncResponse { peer: p, response }) if p == peer => {
+                return Some(*response);
+            }
+            Err(broadcast::error::RecvError::Lagged(n)) => {
+                warn!("sync: receiver lagged by {n} messages");
+            }
+            Err(broadcast::error::RecvError::Closed) => return None,
+            _ => continue,
         }
     }
 }
