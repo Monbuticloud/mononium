@@ -11,7 +11,7 @@ use libp2p_request_response::{self as request_response, json, ProtocolSupport};
 
 use parity_scale_codec::{Decode, Encode};
 
-use crate::core::block::{Block, BlockBody};
+use crate::core::block::Block;
 use crate::network::messages::{
     compute_batch_hash, validate_by_hash_request, validate_sync_request, BlockByHashRequest,
     BlockByHashResponse, BlockSyncRequest, BlockSyncResponse, SyncDirection, MAX_SYNC_BLOCKS,
@@ -199,6 +199,7 @@ fn serve_block_by_hash(
 mod tests {
     use super::*;
     use crate::core::account::Address;
+    use crate::core::block::BlockBody;
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
     use crate::crypto::falcon::Falcon512Signature;
     use crate::storage::redb::RedbEngine;

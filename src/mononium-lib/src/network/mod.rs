@@ -15,8 +15,10 @@ use libp2p::ping;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p_request_response::{self as request_response, json};
 use libp2p::{identity, Multiaddr, PeerId, Swarm};
+use std::sync::Arc;
 
-use crate::network::sync_protocol::{SyncRequest, SyncResponse};
+use crate::network::sync_protocol::{serve_sync_request, SyncRequest, SyncResponse};
+use crate::storage::StorageEngine;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{info, trace, warn};
 
@@ -224,6 +226,12 @@ pub struct P2pService {
     peer_scores: PeerScoreRepo,
     event_tx: broadcast::Sender<P2pEvent>,
     bootstrap_peers: Vec<Multiaddr>,
+    /// Optional storage engine for serving sync requests.
+    storage: Option<Arc<dyn StorageEngine>>,
+    /// Genesis block hash (used for batch hash computation).
+    genesis_hash: [u8; 32],
+    /// Highest known block height (updated as blocks are produced/received).
+    highest_known_height: u64,
 }
 
 impl P2pService {
@@ -300,7 +308,25 @@ impl P2pService {
             peer_scores: PeerScoreRepo::new(),
             event_tx,
             bootstrap_peers: config.bootstrap_peers,
+            storage: None,
+            genesis_hash: [0; 32],
+            highest_known_height: 0,
         })
+    }
+
+    /// Attach a storage engine for serving incoming sync requests.
+    ///
+    /// Without storage, sync requests are dropped (peer times out).
+    #[must_use]
+    pub fn with_storage(mut self, storage: Arc<dyn StorageEngine>, genesis_hash: [u8; 32]) -> Self {
+        self.storage = Some(storage);
+        self.genesis_hash = genesis_hash;
+        self
+    }
+
+    /// Update the highest known block height (used in sync responses).
+    pub fn set_highest_known_height(&mut self, height: u64) {
+        self.highest_known_height = height;
     }
 
     /// Start the P2P event loop. Consumes `self` and returns a [`P2pHandle`].
@@ -438,9 +464,22 @@ impl P2pService {
                     request_response::Event::Message { peer, message, .. } => {
                         match message {
                             request_response::Message::Request { request, channel, .. } => {
-                                info!("sync request from {peer}: {request:?}");
-                                // Drop the channel (no handler yet) — peer will time out
-                                drop(channel);
+                                // Compute the response first to avoid borrow conflicts
+                                // with self.swarm.behaviour_mut().
+                                let response = self
+                                    .storage
+                                    .as_ref()
+                                    .and_then(|storage| {
+                                        serve_sync_request(
+                                            &request,
+                                            storage.as_ref(),
+                                            &self.genesis_hash,
+                                            self.highest_known_height,
+                                        )
+                                    });
+                                if let Some(resp) = response {
+                                    self.swarm.behaviour_mut().sync.send_response(channel, resp);
+                                }
                             }
                             request_response::Message::Response { response, .. } => {
                                 trace!("sync response from {peer}: {response:?}");
