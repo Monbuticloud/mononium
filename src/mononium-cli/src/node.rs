@@ -33,6 +33,7 @@ use mononium_lib::rpc;
 use mononium_lib::rpc::server::start_rpc_server;
 use mononium_lib::rpc::state::AppState as RpcAppState;
 use mononium_lib::storage::genesis::load_genesis;
+use parity_scale_codec::Decode;
 use mononium_lib::storage::redb::RedbEngine;
 use mononium_lib::storage::tables;
 use mononium_lib::storage::StorageEngine;
@@ -268,10 +269,13 @@ fn build_router(state: SharedState) -> Router {
         .route("/health", get(health_handler))
         .route("/block/latest", get(block_latest_handler))
         .route("/block/{height}", get(block_by_height_handler))
+        .route("/block/hash/{hash}", get(block_by_hash_handler))
         .route("/balance/{address}", get(balance_handler))
         .route("/height", get(height_handler))
         .route("/era", get(era_handler))
+        .route("/genesis", get(genesis_handler))
         .route("/nonce/{address}", get(nonce_handler))
+        .route("/validators", get(validators_handler))
         .route("/validator/{address}", get(validator_handler))
         .route("/tx", axum::routing::post(tx_submit_handler))
         .with_state(state)
@@ -356,6 +360,58 @@ async fn era_handler(State(state): State<SharedState>) -> Json<EraResponse> {
     })
 }
 
+#[derive(serde::Serialize)]
+struct GenesisResponse {
+    genesis_hash: String,
+}
+
+async fn genesis_handler(State(state): State<SharedState>) -> Json<GenesisResponse> {
+    let guard = state.lock().await;
+    let key = 0u64.to_be_bytes();
+    let hash = if let Ok(Some(raw)) = guard.engine.get(tables::BLOCKS, &key) {
+        if let Ok(block) = Block::decode(&mut &raw[..]) {
+            let h = blake3::hash(&parity_scale_codec::Encode::encode(&block.header));
+            hex::encode(h.as_bytes())
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+    Json(GenesisResponse { genesis_hash: hash })
+}
+
+#[derive(serde::Serialize)]
+struct ValidatorsListResponse {
+    validators: Vec<ValidatorInfo>,
+}
+
+#[derive(serde::Serialize)]
+struct ValidatorInfo {
+    address: String,
+    stake: String,
+}
+
+async fn validators_handler(State(state): State<SharedState>) -> Json<ValidatorsListResponse> {
+    let guard = state.lock().await;
+    let keys = guard.engine.list_keys(tables::VALIDATORS).unwrap_or_default();
+    let mut validators = Vec::new();
+    for key in &keys {
+        if key.len() != 32 {
+            continue;
+        }
+        if let Ok(Some(raw)) = guard.engine.get(tables::VALIDATORS, key) {
+            if let Ok(entry) = mononium_lib::core::validator::ValidatorEntry::decode(&mut &raw[..]) {
+                validators.push(ValidatorInfo {
+                    address: hex::encode(&key[..]),
+                    stake: format!("{:#x}", entry.stake),
+                });
+            }
+        }
+    }
+    Json(ValidatorsListResponse { validators })
+}
+
 async fn block_latest_handler(
     State(state): State<SharedState>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
@@ -376,6 +432,34 @@ async fn block_by_height_handler(
     let block = load_block_json(&*guard.engine, height)
         .map_err(|_| err_response(404, format!("block {height} not found")))?;
     Ok(Json(block))
+}
+
+async fn block_by_hash_handler(
+    State(state): State<SharedState>,
+    axum::extract::Path(hash_hex): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, axum::response::Response> {
+    let s = hash_hex.trim_start_matches("0x");
+    let hash = hex::decode(s).map_err(|_| err_response(400, "invalid hex hash".to_string()))?;
+    if hash.len() != 32 {
+        return Err(err_response(400, "hash must be 32 bytes".to_string()));
+    }
+    let guard = state.lock().await;
+    let keys = guard.engine.list_keys(tables::BLOCKS).map_err(|_| err_response(500, "storage error".to_string()))?;
+    for key in &keys {
+        if key.len() != 8 {
+            continue;
+        }
+        if let Ok(Some(raw)) = guard.engine.get(tables::BLOCKS, key) {
+            if let Ok(block) = Block::decode(&mut &raw[..]) {
+                let block_hash = blake3::hash(&parity_scale_codec::Encode::encode(&block.header));
+                if block_hash.as_bytes() == &hash[..] {
+                    let json = serde_json::to_value(&block).unwrap();
+                    return Ok(Json(json));
+                }
+            }
+        }
+    }
+    Err(err_response(404, "block not found by hash".to_string()))
 }
 
 async fn balance_handler(

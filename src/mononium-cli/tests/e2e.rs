@@ -29,6 +29,8 @@ impl NodeProcess {
             .arg("--observer")
             .arg("--rest-port")
             .arg(port.to_string())
+            .arg("--rpc-port")
+            .arg("0")
             .arg("--log-level")
             .arg("error")
             .stdout(std::process::Stdio::piped())
