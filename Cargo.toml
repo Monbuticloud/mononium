@@ -7,7 +7,7 @@ members = [
 
 [workspace.dependencies]
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "signal"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

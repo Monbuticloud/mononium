@@ -281,10 +281,17 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         }
     });
 
-    // ---------- 17. Block production loop ----------
+    // ---------- 17. Block production loop with graceful shutdown ----------
     tracing::info!("starting block production loop (5s blocks)");
-    block_production_loop(shared).await;
 
+    tokio::select! {
+        _ = block_production_loop(shared) => {}
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("SIGINT received, shutting down gracefully...");
+        }
+    }
+
+    tracing::info!("node stopped");
     Ok(())
 }
 
