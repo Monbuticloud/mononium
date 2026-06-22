@@ -101,6 +101,11 @@ pub enum P2pEvent {
         source: PeerId,
         evidence: Box<EquivocationEvidence>,
     },
+    /// Response to an outgoing sync request.
+    SyncResponse {
+        peer: PeerId,
+        response: Box<SyncResponse>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +141,10 @@ enum P2pCommand {
     PublishBlock(Box<Block>),
     PublishVote(CommitVote),
     PublishEvidence(Box<EquivocationEvidence>),
+    SendSyncRequest {
+        peer: PeerId,
+        request: SyncRequest,
+    },
     Shutdown,
 }
 
@@ -187,6 +196,20 @@ impl P2pHandle {
     /// Publish equivocation evidence to the gossip network.
     pub async fn publish_evidence(&self, evidence: EquivocationEvidence) -> Result<(), Box<dyn std::error::Error>> {
         self.cmd_tx.send(P2pCommand::PublishEvidence(Box::new(evidence))).await?;
+        Ok(())
+    }
+
+    /// Send a sync request to a specific peer.
+    ///
+    /// The response will be delivered via [`P2pEvent::SyncResponse`].
+    pub async fn send_sync_request(
+        &self,
+        peer: PeerId,
+        request: SyncRequest,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.cmd_tx
+            .send(P2pCommand::SendSyncRequest { peer, request })
+            .await?;
         Ok(())
     }
 
@@ -420,6 +443,9 @@ impl P2pService {
                                 Err(e) => warn!("{e}"),
                             }
                         }
+                        Some(P2pCommand::SendSyncRequest { peer, request }) => {
+                            self.swarm.behaviour_mut().sync.send_request(&peer, request);
+                        }
                         Some(P2pCommand::Shutdown) | None => {
                             info!("P2P shutting down");
                             break;
@@ -482,7 +508,10 @@ impl P2pService {
                                 }
                             }
                             request_response::Message::Response { response, .. } => {
-                                trace!("sync response from {peer}: {response:?}");
+                                let _ = self.event_tx.send(P2pEvent::SyncResponse {
+                                    peer,
+                                    response: Box::new(response),
+                                });
                             }
                         }
                     }
@@ -504,7 +533,9 @@ impl P2pService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::network::messages::{BlockSyncRequest, SyncDirection};
     use std::net::TcpListener;
+    use tempfile::TempDir;
 
     #[test]
     fn test_prepare_gossip_message_accepts_valid_size() {
@@ -765,6 +796,92 @@ mod tests {
             Ok(other) => panic!("expected VoteReceived, got {other:?}"),
             Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
                 panic!("no VoteReceived event within timeout");
+            }
+            Err(e) => panic!("channel error: {e}"),
+        }
+
+        handle1.shutdown().await;
+        handle2.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn test_p2p_sync_request_delivers_response() {
+        // Setup: node1 has blocks 1..=5 in storage; node2 sends a sync request
+        let port1 = pick_unused_port();
+        let port2 = pick_unused_port();
+
+        let dir = TempDir::with_prefix("mononium-sync-test-").unwrap();
+        let db_path = dir.path().join("test.redb");
+        let engine = crate::storage::redb::RedbEngine::open(&db_path).unwrap();
+        let genesis_hash = [0xFE; 32];
+
+        // Store blocks at heights 1..=5
+        for h in 1..=5u64 {
+            let block = crate::core::block::Block {
+                header: crate::core::block::BlockHeader {
+                    height: h,
+                    parent_hash: [0; 32],
+                    global_state_root: [0; 32],
+                    tx_root: [0; 32],
+                    timestamp: 1_700_000_000 + h,
+                    proposer: crate::core::account::Address::from([0x01; 32]),
+                    chain_id: 0,
+                    proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                        &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                    )
+                    .unwrap(),
+                },
+                body: crate::core::block::BlockBody { transactions: vec![] },
+            };
+            let key = h.to_be_bytes();
+            let encoded = parity_scale_codec::Encode::encode(&block);
+            engine.put(crate::storage::tables::BLOCKS, &key, &encoded).unwrap();
+        }
+
+        let storage: Arc<dyn StorageEngine> = Arc::new(engine);
+
+        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
+        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+
+        let mut node1 = P2pService::new(cfg1, 0).unwrap().with_storage(storage, genesis_hash);
+        node1.set_highest_known_height(5);
+        let handle1 = node1.start().unwrap();
+
+        let node2 = P2pService::new(cfg2, 0).unwrap();
+        let handle2 = node2.start().unwrap();
+        let mut events2 = handle2.subscribe();
+
+        // Connect node2 → node1
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{port1}").parse().unwrap();
+        handle2.dial(addr).unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        // Node2 sends a forward sync request for heights 2..=4
+        let peer1 = handle1.local_peer_id().clone();
+        let request = SyncRequest::BlockSync(BlockSyncRequest {
+            start_height: 2,
+            max_blocks: 3,
+            direction: SyncDirection::Forward,
+            known_block_hash: None,
+        });
+        handle2.send_sync_request(peer1, request).await.unwrap();
+
+        // Wait for response
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        match events2.try_recv() {
+            Ok(P2pEvent::SyncResponse { response, .. }) => {
+                let SyncResponse::BlockSync(resp) = *response else {
+                    panic!("expected BlockSync response");
+                };
+                assert_eq!(resp.blocks.len(), 3);
+                assert_eq!(resp.blocks[0].header.height, 2);
+                assert_eq!(resp.blocks[2].header.height, 4);
+            }
+            Ok(other) => panic!("expected SyncResponse, got {other:?}"),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty) => {
+                panic!("no SyncResponse received within timeout");
             }
             Err(e) => panic!("channel error: {e}"),
         }
