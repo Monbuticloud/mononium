@@ -184,6 +184,19 @@ mod tests {
     }
 
     #[test]
+    fn test_load_genesis_stores_hash() {
+        let (dir, engine) = setup_engine();
+        let path = write_genesis_json(dir.path(), &minimal_genesis_json());
+        load_genesis(&engine, &path).unwrap();
+
+        let raw = engine.get(tables::META, tables::GENESIS_HASH_KEY).unwrap().unwrap();
+        assert_eq!(raw.len(), 32, "genesis hash must be 32 bytes");
+        // Deterministic: same JSON → same hash
+        let expected = blake3::hash(minimal_genesis_json().as_bytes());
+        assert_eq!(raw, expected.as_bytes());
+    }
+
+    #[test]
     fn test_load_genesis_rejects_duplicate() {
         let (dir, engine) = setup_engine();
         let path = write_genesis_json(dir.path(), &minimal_genesis_json());
