@@ -2,6 +2,7 @@
 //! and supply policy.
 
 pub mod election;
+pub mod engine;
 pub mod era;
 pub mod finality;
 pub mod fork_choice;
