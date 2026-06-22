@@ -156,6 +156,7 @@ pub(crate) enum P2pCommand {
 // ---------------------------------------------------------------------------
 
 /// A handle to a running P2P service.
+#[derive(Clone)]
 pub struct P2pHandle {
     pub(crate) cmd_tx: mpsc::Sender<P2pCommand>,
     pub(crate) local_peer_id: PeerId,

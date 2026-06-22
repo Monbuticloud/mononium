@@ -211,12 +211,13 @@ impl ConsensusEngine {
     ///
     /// Returns when the channel is closed or a fatal error occurs.
     #[allow(clippy::too_many_arguments)]
-    pub async fn start_consensus_loop<S: StorageEngine>(
+    #[allow(clippy::too_many_arguments)]
+    pub async fn start_consensus_loop(
         &mut self,
         state: Arc<RwLock<StateMachine>>,
         mempool: Arc<RwLock<Mempool>>,
-        p2p: P2pHandle,
-        storage: &S,
+        p2p: &P2pHandle,
+        storage: &dyn StorageEngine,
         _genesis_hash: [u8; 32],
         block_time_secs: u64,
     ) {
@@ -282,12 +283,13 @@ impl ConsensusEngine {
 
     /// Produce a block as the scheduled proposer.
     #[allow(clippy::too_many_arguments)]
-    async fn produce_block<S: StorageEngine>(
+    #[allow(clippy::too_many_arguments)]
+    async fn produce_block(
         &self,
         state: Arc<RwLock<StateMachine>>,
         mempool: Arc<RwLock<Mempool>>,
         p2p: &P2pHandle,
-        storage: &S,
+        storage: &dyn StorageEngine,
         height: u64,
         schedule: &ProposerSchedule,
     ) {
