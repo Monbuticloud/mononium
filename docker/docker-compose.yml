@@ -1,0 +1,119 @@
+# Mononium devnet — Bootstrap + 3 validators + RPC observer
+# ===========================================================
+# Start with:
+#   docker compose up -d
+#
+# Scale validators:
+#   docker compose up -d --scale validator=3
+#
+# Each node gets unique ports:
+#   Bootstrap:  P2P=30332  REST=9932  RPC=9942
+#   Validator N: P2P=30333  REST=9933  RPC=9943  (default)
+#                 + offset=(N-1) for scaled instances
+#   Observer:   P2P=30336  REST=9936  RPC=9946
+
+services:
+  bootstrap:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: mononium-bootstrap
+    ports:
+      - "30332:30332"
+      - "9932:9932"
+      - "9942:9942"
+    volumes:
+      - mononium-bootstrap:/data
+    environment:
+      - RUST_LOG=info
+    command:
+      - "--config"
+      - "/etc/mononium/configs/node.devnet.yaml"
+      - "--data-dir"
+      - "/data"
+      - "--key"
+      - "validator-1"
+      - "--p2p-port"
+      - "30332"
+      - "--rest-port"
+      - "9932"
+      - "--rpc-port"
+      - "9942"
+    networks:
+      - mononium
+
+  validator:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    deploy:
+      replicas: 1
+    ports:
+      - "30333"
+      - "9933"
+      - "9943"
+    volumes:
+      - mononium-validators:/data
+    environment:
+      - RUST_LOG=info
+    command:
+      - "--config"
+      - "/etc/mononium/configs/node.devnet.yaml"
+      - "--data-dir"
+      - "/data"
+      - "--key"
+      - "validator-2" # each replica overrides key in entrypoint
+      - "--p2p-port"
+      - "30333"
+      - "--rest-port"
+      - "9933"
+      - "--rpc-port"
+      - "9943"
+      - "--bootnode"
+      - "/dns/bootstrap/tcp/30332/p2p/QmBootstrapPeerId" # placeholder — replace with real peer ID
+    networks:
+      - mononium
+    depends_on:
+      bootstrap:
+        condition: service_started
+
+  observer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: mononium-observer
+    ports:
+      - "30336:30336"
+      - "9936:9936"
+      - "9946:9946"
+    volumes:
+      - mononium-observer:/data
+    environment:
+      - RUST_LOG=info
+    command:
+      - "--config"
+      - "/etc/mononium/configs/node.observer.yaml"
+      - "--data-dir"
+      - "/data"
+      - "--p2p-port"
+      - "30336"
+      - "--rest-port"
+      - "9936"
+      - "--rpc-port"
+      - "9946"
+      - "--bootnode"
+      - "/dns/bootstrap/tcp/30332/p2p/QmBootstrapPeerId"
+    networks:
+      - mononium
+    depends_on:
+      bootstrap:
+        condition: service_started
+
+volumes:
+  mononium-bootstrap:
+  mononium-validators:
+  mononium-observer:
+
+networks:
+  mononium:
+    driver: bridge
