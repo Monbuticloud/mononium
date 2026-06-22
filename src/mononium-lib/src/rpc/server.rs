@@ -8,14 +8,15 @@ use std::sync::Arc;
 use jsonrpsee::server::ServerBuilder;
 use jsonrpsee::RpcModule;
 
+use crate::core::account::Address;
+use crate::core::block::{Block, BlockHeader};
+use crate::core::transaction::Transaction;
 use crate::rpc::state::AppState;
 
 /// JSON-RPC method result type.
 type RpcResult = Result<serde_json::Value, jsonrpsee::types::ErrorObjectOwned>;
 
 /// Start the JSON-RPC WebSocket server on the given address.
-///
-/// Returns a handle that can be used to stop the server gracefully.
 pub async fn start_rpc_server(
     addr: &str,
     state: Arc<AppState>,
@@ -30,21 +31,59 @@ pub async fn start_rpc_server(
     register_chain_methods(&mut module)?;
     register_state_methods(&mut module)?;
     register_block_methods(&mut module)?;
+    register_tx_methods(&mut module)?;
+    register_network_methods(&mut module)?;
+    register_governance_methods(&mut module)?;
 
     let handle = server.start(module);
     Ok(handle)
 }
 
-/// Chain-level queries.
+// ── Helpers ──────────────────────────────────────────────────────
+
+/// Helper: decode a hex address (with or without 0x prefix) into Address.
+fn parse_address(hex_str: &str) -> Result<Address, jsonrpsee::types::ErrorObjectOwned> {
+    let s = hex_str.trim_start_matches("0x");
+    let bytes = hex::decode(s).map_err(|e| {
+        jsonrpsee::types::ErrorObject::owned(-2, format!("invalid hex: {e}"), None::<()>)
+    })?;
+    if bytes.len() != 32 {
+        return Err(jsonrpsee::types::ErrorObject::owned(-2, "address must be 32 bytes", None::<()>));
+    }
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(&bytes);
+    Ok(Address::from(arr))
+}
+
+/// Helper: decode a block from storage at the given height.
+fn load_block(storage: &dyn crate::storage::StorageEngine, height: u64)
+    -> Option<Block>
+{
+    let key = height.to_be_bytes();
+    let bytes = storage.get(crate::storage::tables::BLOCKS, &key).ok()??;
+    parity_scale_codec::Decode::decode(&mut &bytes[..]).ok()
+}
+
+/// Helper: load the account for an address.
+fn load_account(state: &AppState, addr: &Address) -> Option<crate::core::account::Account> {
+    let sm = state.state_machine.read().ok()?;
+    sm.get_account(addr)
+}
+
+// ── Chain methods ────────────────────────────────────────────────
+
 fn register_chain_methods(
     module: &mut RpcModule<Arc<AppState>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     module.register_method("chain_get_health", |_params, app, _ext| -> RpcResult {
-        let height = app.consensus.current_height;
+        let finalized = app.consensus.commit_tracker.as_ref()
+            .map(|ct| ct.last_finalized_height());
         Ok(serde_json::json!({
             "status": "ok",
-            "height": height,
+            "height": app.consensus.current_height,
             "chain_id": app.chain_id,
+            "peers": 0,  // sync-only; network_peers method for live count
+            "finalized_height": finalized.unwrap_or(0),
         }))
     })?;
 
@@ -52,95 +91,219 @@ fn register_chain_methods(
         Ok(serde_json::json!(app.consensus.current_height))
     })?;
 
+    module.register_method("chain_get_genesis", |_params, app, _ext| -> RpcResult {
+        Ok(serde_json::json!(hex::encode(app.genesis_hash)))
+    })?;
+
+    module.register_method("era_current", |_params, app, _ext| -> RpcResult {
+        let era = crate::consensus::era::era_at_height(app.consensus.current_height);
+        Ok(serde_json::json!(era))
+    })?;
+
     Ok(())
 }
 
-/// State queries (balance, nonce, etc.).
+// ── State methods ────────────────────────────────────────────────
+
 fn register_state_methods(
     module: &mut RpcModule<Arc<AppState>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     module.register_method("state_get_balance", |params, app, _ext| -> RpcResult {
-        let addr: String = params.one::<String>()?;
-        let addr_str = addr.trim_start_matches("0x");
-        let addr_bytes = hex::decode(addr_str).map_err(|e| {
-            jsonrpsee::types::ErrorObject::owned(-2, format!("invalid hex address: {e}"), None::<()>)
-        })?;
-        if addr_bytes.len() != 32 {
-            return Err(jsonrpsee::types::ErrorObject::owned(-2, "address must be 32 bytes", None::<()>));
-        }
-        let mut addr_arr = [0u8; 32];
-        addr_arr.copy_from_slice(&addr_bytes);
-        let account = {
-            let sm = app.state_machine.read().map_err(|e| {
-                jsonrpsee::types::ErrorObject::owned(-1, format!("lock error: {e}"), None::<()>)
-            })?;
-            let address = crate::core::account::Address::from(addr_arr);
-            sm.get_account(&address).map(|a| a.balance)
-        };
-        match account {
-            Some(bal) => Ok(serde_json::json!({"balance": format!("{bal:#x}")})),
-            None => Ok(serde_json::json!({"balance": "0x0"})),
-        }
+        let addr_str: String = params.one::<String>()?;
+        let addr = parse_address(&addr_str)?;
+        let bal = load_account(app, &addr).map(|a| a.balance).unwrap_or_default();
+        Ok(serde_json::json!({"balance": format!("{bal:#x}")}))
     })?;
 
     module.register_method("state_get_nonce", |params, app, _ext| -> RpcResult {
-        let addr: String = params.one::<String>()?;
-        let addr_str = addr.trim_start_matches("0x");
-        let addr_bytes = hex::decode(addr_str).map_err(|e| {
-            jsonrpsee::types::ErrorObject::owned(-2, format!("invalid hex address: {e}"), None::<()>)
+        let addr_str: String = params.one::<String>()?;
+        let addr = parse_address(&addr_str)?;
+        let nonce = load_account(app, &addr).map(|a| a.nonce).unwrap_or(0);
+        Ok(serde_json::json!({"nonce": nonce}))
+    })?;
+
+    module.register_method("validator_stake", |params, app, _ext| -> RpcResult {
+        let addr_str: String = params.one::<String>()?;
+        let addr = parse_address(&addr_str)?;
+        let sm = app.state_machine.read().map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(-1, format!("lock error: {e}"), None::<()>)
         })?;
-        if addr_bytes.len() != 32 {
-            return Err(jsonrpsee::types::ErrorObject::owned(-2, "address must be 32 bytes", None::<()>));
-        }
-        let mut addr_arr = [0u8; 32];
-        addr_arr.copy_from_slice(&addr_bytes);
-        let nonce = {
-            let sm = app.state_machine.read().map_err(|e| {
-                jsonrpsee::types::ErrorObject::owned(-1, format!("lock error: {e}"), None::<()>)
-            })?;
-            let address = crate::core::account::Address::from(addr_arr);
-            sm.get_account(&address).map(|a| a.nonce)
-        };
-        Ok(serde_json::json!({"nonce": nonce.unwrap_or(0)}))
+        let stake = sm.validator_stake(&addr).unwrap_or_default();
+        Ok(serde_json::json!({"stake": format!("{stake:#x}")}))
+    })?;
+
+    module.register_method("validator_set", |_params, app, _ext| -> RpcResult {
+        let sm = app.state_machine.read().map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(-1, format!("lock error: {e}"), None::<()>)
+        })?;
+        let validators: Vec<serde_json::Value> = sm.active_set()
+            .iter()
+            .map(|addr| serde_json::json!({
+                "address": hex::encode(addr.as_ref()),
+                "stake": format!("{:x}", sm.validator_stake(addr).unwrap_or_default()),
+            }))
+            .collect();
+        Ok(serde_json::json!(validators))
     })?;
 
     Ok(())
 }
 
-/// Block queries.
+// ── Block methods ────────────────────────────────────────────────
+
 fn register_block_methods(
     module: &mut RpcModule<Arc<AppState>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     module.register_method("block_latest", |_params, app, _ext| -> RpcResult {
         let height = app.consensus.current_height;
-        let key = height.to_be_bytes();
-        let bytes: Option<Vec<u8>> = app.storage.get(crate::storage::tables::BLOCKS, &key)
-            .ok()
-            .flatten();
-        match bytes {
-            Some(b) => {
-                let block: crate::core::block::Block =
-                    parity_scale_codec::Decode::decode(&mut &b[..]).map_err(|e| {
-                        jsonrpsee::types::ErrorObject::owned(
-                            -1,
-                            format!("failed to decode block: {e}"),
-                            None::<()>,
-                        )
-                    })?;
-                Ok(serde_json::to_value(&block).unwrap_or_default())
-            }
+        match load_block(&*app.storage, height) {
+            Some(block) => Ok(serde_json::to_value(&block).unwrap_or_default()),
             None => Ok(serde_json::json!(null)),
+        }
+    })?;
+
+    module.register_method("block_header", |params, app, _ext| -> RpcResult {
+        let raw: serde_json::Value = params.one::<serde_json::Value>()?;
+        let height = block_id_to_height(&raw, app)?;
+        match load_block(&*app.storage, height) {
+            Some(block) => Ok(serde_json::to_value(&block.header).unwrap_or_default()),
+            None => Err(jsonrpsee::types::ErrorObject::owned(-4, "block not found", None::<()>)),
+        }
+    })?;
+
+    module.register_method("block_get", |params, app, _ext| -> RpcResult {
+        let raw: serde_json::Value = params.one::<serde_json::Value>()?;
+        let height = block_id_to_height(&raw, app)?;
+        match load_block(&*app.storage, height) {
+            Some(block) => Ok(serde_json::to_value(&block).unwrap_or_default()),
+            None => Err(jsonrpsee::types::ErrorObject::owned(-4, "block not found", None::<()>)),
         }
     })?;
 
     Ok(())
 }
 
+/// Convert a BlockId JSON value to a u64 height.
+/// Supports: number (height), string "latest", hex string (hash — walks storage).
+fn block_id_to_height(
+    raw: &serde_json::Value,
+    app: &AppState,
+) -> Result<u64, jsonrpsee::types::ErrorObjectOwned> {
+    match raw {
+        serde_json::Value::Number(n) => {
+            n.as_u64().ok_or_else(|| {
+                jsonrpsee::types::ErrorObject::owned(-2, "invalid block height", None::<()>)
+            })
+        }
+        serde_json::Value::String(s) if s == "latest" => {
+            Ok(app.consensus.current_height)
+        }
+        serde_json::Value::String(s) => {
+            // Hash-based lookup: walk storage from current height backward
+            let s = s.trim_start_matches("0x");
+            let hash = hex::decode(s).map_err(|e| {
+                jsonrpsee::types::ErrorObject::owned(-2, format!("invalid hex hash: {e}"), None::<()>)
+            })?;
+            if hash.len() != 32 {
+                return Err(jsonrpsee::types::ErrorObject::owned(-2, "hash must be 32 bytes", None::<()>));
+            }
+            // Linear scan backward from current height (acceptable for localnet)
+            let mut h = app.consensus.current_height;
+            while h > 0 {
+                if let Some(block) = load_block(&*app.storage, h) {
+                    let block_hash = blake3::hash(&parity_scale_codec::Encode::encode(&block.header));
+                    if block_hash.as_bytes() == &hash[..] {
+                        return Ok(h);
+                    }
+                }
+                h -= 1;
+            }
+            Err(jsonrpsee::types::ErrorObject::owned(-4, "block not found by hash", None::<()>))
+        }
+        _ => Err(jsonrpsee::types::ErrorObject::owned(-2, "block id must be number, 'latest', or hex hash", None::<()>)),
+    }
+}
+
+// ── Transaction methods ──────────────────────────────────────────
+
+fn register_tx_methods(
+    module: &mut RpcModule<Arc<AppState>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    module.register_method("tx_submit", |params, app, _ext| -> RpcResult {
+        let hex_tx: String = params.one::<String>()?;
+        let raw = hex::decode(hex_tx.trim_start_matches("0x")).map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(-3, format!("invalid tx hex: {e}"), None::<()>)
+        })?;
+        let tx: Transaction = parity_scale_codec::Decode::decode(&mut &raw[..]).map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(-3, format!("invalid tx data: {e}"), None::<()>)
+        })?;
+        let tx_hash = blake3::hash(&parity_scale_codec::Encode::encode(&tx));
+        let tx_id = hex::encode(tx_hash.as_bytes());
+        {
+            let mut mp = app.mempool.write().map_err(|e| {
+                jsonrpsee::types::ErrorObject::owned(-1, format!("mempool lock: {e}"), None::<()>)
+            })?;
+            mp.insert(tx);
+        }
+        Ok(serde_json::json!({"tx_hash": format!("0x{tx_id}")}))
+    })?;
+
+    // tx_status is limited without persistent tx tracking — returns pending or unknown
+    module.register_method("tx_status", |params, app, _ext| -> RpcResult {
+        let _tx_hash: String = params.one::<String>()?;
+        // Without tx-result tracking, we can only report unknown
+        // TODO: track tx results in StateMachine or a separate table
+        Ok(serde_json::json!({"status": "unknown"}))
+    })?;
+
+    Ok(())
+}
+
+// ── Network methods ──────────────────────────────────────────────
+
+fn register_network_methods(
+    module: &mut RpcModule<Arc<AppState>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    module.register_method("network_peers", |_params, app, _ext| -> RpcResult {
+        let peers = tokio::runtime::Handle::current().block_on(app.p2p.connected_peers());
+        let peers_json: Vec<serde_json::Value> = peers
+            .iter()
+            .map(|pid| serde_json::json!({
+                "peer_id": pid.to_string(),
+            }))
+            .collect();
+        Ok(serde_json::json!(peers_json))
+    })?;
+
+    Ok(())
+}
+
+// ── Governance methods ──────────────────────────────────────────
+
+fn register_governance_methods(
+    module: &mut RpcModule<Arc<AppState>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    module.register_method("governance_proposals", |_params, app, _ext| -> RpcResult {
+        // List active proposals via governance state
+        // Without full SMT iteration, return empty list for now
+        Ok(serde_json::json!([]))
+    })?;
+
+    module.register_method("governance_params", |_params, app, _ext| -> RpcResult {
+        // Read governance params from SMT
+        // Without param enumeration, return defaults
+        Ok(serde_json::json!([]))
+    })?;
+
+    Ok(())
+}
+
+// ── Tests ────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use jsonrpsee::core::client::ClientT;
-    use std::sync::{Arc, RwLock};
 
     fn test_state() -> Arc<AppState> {
         let dir = tempfile::tempdir().unwrap();
@@ -150,10 +313,12 @@ mod tests {
                 .unwrap(),
         );
 
-        let state_machine = Arc::new(RwLock::new(crate::core::state::StateMachine::new(
-            Vec::<(crate::core::account::Address, crate::core::account::Account)>::new(),
-        )));
-        let mempool = Arc::new(RwLock::new(crate::mempool::Mempool::new(
+        let state_machine = Arc::new(std::sync::RwLock::new(
+            crate::core::state::StateMachine::new(
+                Vec::<(Address, crate::core::account::Account)>::new(),
+            ),
+        ));
+        let mempool = Arc::new(std::sync::RwLock::new(crate::mempool::Mempool::new(
             crate::mempool::MempoolConfig::default(),
         )));
         let consensus = Arc::new(crate::consensus::engine::ConsensusEngine::new(
@@ -180,31 +345,123 @@ mod tests {
         })
     }
 
-    #[tokio::test]
-    async fn test_chain_get_health_returns_ok() {
-        let state = test_state();
+    async fn build_server(state: &Arc<AppState>) -> (jsonrpsee::server::ServerHandle, std::net::SocketAddr) {
         let server = ServerBuilder::default()
             .build("127.0.0.1:0")
             .await
             .unwrap();
         let addr = server.local_addr().unwrap();
-
         let mut module = RpcModule::new(state.clone());
         register_chain_methods(&mut module).unwrap();
-        let _handle = server.start(module);
+        register_state_methods(&mut module).unwrap();
+        register_block_methods(&mut module).unwrap();
+        register_tx_methods(&mut module).unwrap();
+        register_network_methods(&mut module).unwrap();
+        register_governance_methods(&mut module).unwrap();
+        let handle = server.start(module);
+        (handle, addr)
+    }
 
+    async fn rpc_call(
+        addr: std::net::SocketAddr,
+        method: &str,
+        params: jsonrpsee::core::params::ArrayParams,
+    ) -> serde_json::Value {
         let client = jsonrpsee::ws_client::WsClientBuilder::default()
             .build(&format!("ws://{addr}"))
             .await
             .unwrap();
+        client.request(method, params).await.unwrap()
+    }
 
-        let response: serde_json::Value = client
-            .request("chain_get_health", jsonrpsee::core::params::ArrayParams::new())
-            .await
-            .unwrap();
+    #[tokio::test]
+    async fn test_chain_get_health() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "chain_get_health", jsonrpsee::core::params::ArrayParams::new()).await;
+        assert_eq!(resp["status"], "ok");
+        assert_eq!(resp["height"], 0);
+        assert_eq!(resp["chain_id"], 0);
+        assert!(resp["peers"].is_number());
+    }
 
-        assert_eq!(response["status"], "ok");
-        assert_eq!(response["height"], 0);
-        assert_eq!(response["chain_id"], 0);
+    #[tokio::test]
+    async fn test_chain_get_height() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "chain_get_height", jsonrpsee::core::params::ArrayParams::new()).await;
+        assert_eq!(resp, 0);
+    }
+
+    #[tokio::test]
+    async fn test_chain_get_genesis() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "chain_get_genesis", jsonrpsee::core::params::ArrayParams::new()).await;
+        let hex_str = resp.as_str().unwrap();
+        assert_eq!(hex_str.len(), 64); // 32 bytes in hex
+    }
+
+    #[tokio::test]
+    async fn test_era_current() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "era_current", jsonrpsee::core::params::ArrayParams::new()).await;
+        assert_eq!(resp, 0);
+    }
+
+    #[tokio::test]
+    async fn test_state_get_balance_unknown() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "state_get_balance", params).await;
+        assert_eq!(resp["balance"], "0x0");
+    }
+
+    #[tokio::test]
+    async fn test_state_get_nonce_unknown() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "state_get_nonce", params).await;
+        assert_eq!(resp["nonce"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_block_latest_returns_null_when_no_blocks() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "block_latest", jsonrpsee::core::params::ArrayParams::new()).await;
+        assert!(resp.is_null());
+    }
+
+    #[tokio::test]
+    async fn test_validator_set_empty() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "validator_set", jsonrpsee::core::params::ArrayParams::new()).await;
+        assert!(resp.is_array());
+        assert!(resp.as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_tx_submit_invalid_hex() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("not-hex").unwrap();
+        let result = {
+            let client = jsonrpsee::ws_client::WsClientBuilder::default()
+                .build(&format!("ws://{addr}"))
+                .await
+                .unwrap();
+            let r: Result<serde_json::Value, jsonrpsee::core::client::Error> =
+                client.request("tx_submit", params).await;
+            r
+        };
+        assert!(result.is_err());
     }
 }

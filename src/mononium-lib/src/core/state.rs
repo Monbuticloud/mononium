@@ -219,6 +219,16 @@ impl StateMachine {
         self.active_set = active_set;
     }
 
+    /// Get the current active validator set.
+    pub fn active_set(&self) -> &[Address] {
+        &self.active_set
+    }
+
+    /// Get the stake of a validator, or None if not registered.
+    pub fn validator_stake(&self, address: &Address) -> Option<U256> {
+        self.get_validator(address).map(|v| v.stake)
+    }
+
     /// Distribute collected block fees to active validators proportionally
     /// by stake. Each validator's account balance is credited.
     fn distribute_fees(&mut self, total_fees: u128) {
