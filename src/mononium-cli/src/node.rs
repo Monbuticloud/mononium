@@ -80,7 +80,14 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     // ---------- 3. Validate ----------
     config.validate().context("config validation failed")?;
 
-    // ---------- 4. Open database ----------
+    // ---------- 4. Log role ----------
+    if config.observer {
+        tracing::info!("role: observer (no signing, sync-only)");
+    } else {
+        tracing::info!("role: validator");
+    }
+
+    // ---------- 6. Open database ----------
     let data_dir = config.data_dir();
     let db_dir = Path::new(&data_dir);
     tokio::fs::create_dir_all(db_dir).await?;
@@ -89,7 +96,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     let engine = RedbEngine::open(&db_path)
         .context("failed to open database")?;
 
-    // ---------- 5. Load genesis ----------
+    // ---------- 7. Load genesis ----------
     {
         let genesis_loaded = engine.exists(tables::META, tables::GENESIS_LOADED_KEY)?;
         if !genesis_loaded {
@@ -103,14 +110,14 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         }
     }
 
-    // ---------- 6. Determine current height ----------
+    // ---------- 8. Determine current height ----------
     let current_height = load_latest_height(&engine)?;
     tracing::info!(height = current_height, "node starting");
 
-    // ---------- 7. Wrap engine in Arc for sharing ----------
+    // ---------- 9. Wrap engine in Arc for sharing ----------
     let engine: Arc<dyn StorageEngine> = Arc::new(engine);
 
-    // ---------- 8. Load genesis hash from storage ----------
+    // ---------- 10. Load genesis hash + chain_id from storage ----------
     let genesis_hash_raw = engine
         .get(tables::META, tables::GENESIS_HASH_KEY)?
         .unwrap_or_else(|| vec![0u8; 32]);
@@ -126,11 +133,18 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         })
         .unwrap_or(0);
 
-    // ---------- 9. Initialize state machine from storage ----------
-    let state = load_state_from_storage(&*engine)?;
+    // ---------- 11. Initialize state machine from storage ----------
+    let mut state = load_state_from_storage(&*engine)?;
     tracing::info!(height = current_height, "state machine initialized");
 
-    // ---------- 9. Create mempool ----------
+    // ---------- 11b. Crash recovery: verify state consistency ----------
+    if let Err(e) = verify_state_consistency(&mut state, &*engine, current_height) {
+        tracing::error!("crash recovery failed: {e}");
+        // Mismatch is fatal — redb ACID guarantee should prevent this
+        anyhow::bail!("state root mismatch — database may be corrupted: {e}");
+    }
+
+    // ---------- 12. Create mempool ----------
     let mempool_config = MempoolConfig {
         max_size: 10_000,
         ttl: Duration::from_secs(600),
@@ -140,7 +154,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     let mempool = Mempool::new(mempool_config.clone());
     tracing::info!("mempool ready");
 
-    // ---------- 10. Start P2P networking (if enabled) ----------
+    // ---------- 13. Start P2P networking (if enabled) ----------
     let p2p_port = config.p2p_port();
     let p2p_handle: Arc<mononium_lib::network::P2pHandle> = if p2p_port > 0 {
         let p2p_config = mononium_lib::network::P2pConfig {
@@ -173,7 +187,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         Arc::new(mononium_lib::network::dummy_p2p_handle())
     };
 
-    // ---------- 11. Spawn sync loop (background task) ----------
+    // ---------- 14. Spawn sync loop (background task) ----------
     if p2p_port > 0 {
         let sync_p2p = p2p_handle.clone();
         let sync_engine = engine.clone();
@@ -215,7 +229,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         });
     }
 
-    // ---------- 12. Start JSON-RPC WebSocket server ----------
+    // ---------- 15. Start JSON-RPC WebSocket server ----------
     let rpc_port = config.rpc_port();
     if rpc_port > 0 {
         let rpc_consensus = Arc::new({
@@ -248,7 +262,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         });
     }
 
-    // ---------- 13. Start REST API ----------
+    // ---------- 16. Start REST API ----------
     let rest_port = config.rest_port();
     let shared = Arc::new(Mutex::new(AppState {
         engine,
@@ -267,7 +281,7 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         }
     });
 
-    // ---------- 13. Block production loop ----------
+    // ---------- 17. Block production loop ----------
     tracing::info!("starting block production loop (5s blocks)");
     block_production_loop(shared).await;
 
@@ -326,6 +340,40 @@ fn load_latest_height(engine: &dyn StorageEngine) -> Result<u64> {
     let mut buf = [0u8; 8];
     buf.copy_from_slice(max_key);
     Ok(u64::from_be_bytes(buf))
+}
+
+/// Verify that the rebuilt SMT state root matches the latest block's global_state_root.
+/// This is the core crash recovery check: if they match, the node can safely resume.
+/// If they don't, the database is corrupt and the node must panic.
+fn verify_state_consistency(
+    state: &mut StateMachine,
+    engine: &dyn StorageEngine,
+    height: u64,
+) -> Result<()> {
+    if height == 0 {
+        return Ok(()); // genesis — no previous block to verify against
+    }
+    let key = height.to_be_bytes();
+    let raw = engine
+        .get(tables::BLOCKS, &key)?
+        .ok_or_else(|| anyhow::anyhow!("block {height} not found during consistency check"))?;
+    let block = Block::decode(&mut &raw[..])
+        .map_err(|e| anyhow::anyhow!("failed to decode block {height}: {e}"))?;
+    let expected_root = block.header.global_state_root;
+    let actual_root = state.state_root();
+    if expected_root != actual_root {
+        anyhow::bail!(
+            "state root mismatch at height {height}: expected {} got {}",
+            hex::encode(expected_root),
+            hex::encode(actual_root),
+        );
+    }
+    tracing::info!(
+        height,
+        state_root = %hex::encode(expected_root),
+        "state consistency verified"
+    );
+    Ok(())
 }
 
 /// Load all accounts from storage into the in-memory state machine.
@@ -848,5 +896,81 @@ mod tests {
         assert_ne!(root, [0u8; 32]);
         // No accounts
         assert!(sm.get_account(&Address::from([0x01u8; 32])).is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Crash recovery
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_verify_state_consistency_genesis_height_skips() {
+        let engine = setup_engine();
+        let mut sm = load_state_from_storage(&engine).unwrap();
+        // Height 0 should always pass (no previous block to verify)
+        verify_state_consistency(&mut sm, &engine, 0).unwrap();
+    }
+
+    #[test]
+    fn test_verify_state_consistency_matching_root() {
+        let engine = setup_engine();
+        let mut sm = load_state_from_storage(&engine).unwrap();
+        let state_root = sm.state_root();
+
+        // Insert a block with the correct state root
+        let block = Block {
+            header: BlockHeader {
+                height: 5,
+                parent_hash: [0u8; 32],
+                global_state_root: state_root,
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: Address::from([0xAAu8; 32]),
+                chain_id: 0,
+                proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: BlockBody { transactions: vec![] },
+        };
+        let key = 5u64.to_be_bytes();
+        engine.put(tables::BLOCKS, &key, &parity_scale_codec::Encode::encode(&block)).unwrap();
+
+        verify_state_consistency(&mut sm, &engine, 5).unwrap();
+    }
+
+    #[test]
+    fn test_verify_state_consistency_mismatch_fails() {
+        let engine = setup_engine();
+        let mut sm = load_state_from_storage(&engine).unwrap();
+
+        // Insert a block with a WRONG state root
+        let block = Block {
+            header: BlockHeader {
+                height: 3,
+                parent_hash: [0u8; 32],
+                global_state_root: [0xFFu8; 32], // wrong!
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: Address::from([0xAAu8; 32]),
+                chain_id: 0,
+                proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: BlockBody { transactions: vec![] },
+        };
+        let key = 3u64.to_be_bytes();
+        engine.put(tables::BLOCKS, &key, &parity_scale_codec::Encode::encode(&block)).unwrap();
+
+        let err = verify_state_consistency(&mut sm, &engine, 3).unwrap_err();
+        assert!(err.to_string().contains("state root mismatch"), "got: {err}");
+    }
+
+    #[test]
+    fn test_verify_state_consistency_missing_block_fails() {
+        let engine = setup_engine();
+        let mut sm = load_state_from_storage(&engine).unwrap();
+        let err = verify_state_consistency(&mut sm, &engine, 42).unwrap_err();
+        assert!(err.to_string().contains("not found"), "got: {err}");
     }
 }
