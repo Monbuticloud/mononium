@@ -393,7 +393,7 @@ fn register_subscription_methods(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonrpsee::core::client::ClientT;
+    use jsonrpsee::core::client::{ClientT, SubscriptionClientT};
 
     fn test_state() -> Arc<AppState> {
         let dir = tempfile::tempdir().unwrap();
@@ -448,6 +448,7 @@ mod tests {
         register_tx_methods(&mut module).unwrap();
         register_network_methods(&mut module).unwrap();
         register_governance_methods(&mut module).unwrap();
+        register_subscription_methods(&mut module).unwrap();
         let handle = server.start(module);
         (handle, addr)
     }
@@ -553,5 +554,55 @@ mod tests {
             r
         };
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_blocks_returns_subscription_id() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+
+        // Subscribe — this should succeed if the method is registered
+        let stream = client
+            .subscribe::<serde_json::Value, _>(
+                "subscribe_blocks",
+                jsonrpsee::core::params::ArrayParams::new(),
+                "unsubscribe_blocks",
+            )
+            .await;
+        assert!(stream.is_ok(), "subscribe failed: {:?}", stream.err());
+
+        // Send a block event via the broadcast channel to test notification delivery
+        let sig = crate::crypto::falcon::Falcon512Signature::from_bytes(
+            &[0u8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+        )
+        .unwrap();
+        let header = crate::core::block::BlockHeader {
+            height: 42,
+            parent_hash: [0u8; 32],
+            global_state_root: [0u8; 32],
+            tx_root: [0u8; 32],
+            timestamp: 0,
+            proposer: crate::core::account::Address::from([0u8; 32]),
+            chain_id: 0,
+            proposer_signature: sig,
+        };
+        state.block_events.send(header).unwrap();
+
+        // Read from the subscription stream
+        let mut stream = stream.unwrap();
+        let notification = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.next(),
+        )
+        .await;
+        assert!(notification.is_ok(), "timed out waiting for block event");
+        if let Ok(Some(Ok(val))) = notification {
+            assert_eq!(val["height"], 42);
+        }
     }
 }
