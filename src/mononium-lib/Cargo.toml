@@ -33,6 +33,10 @@ toml.workspace = true
 # Compression
 snap.workspace = true
 
+# RPC
+jsonrpsee.workspace = true
+jsonrpsee-types.workspace = true
+
 [features]
 default = []
 gui = []

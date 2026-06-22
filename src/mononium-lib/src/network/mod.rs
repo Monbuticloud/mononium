@@ -137,7 +137,7 @@ impl Default for P2pConfig {
 // Command channel
 // ---------------------------------------------------------------------------
 
-enum P2pCommand {
+pub(crate) enum P2pCommand {
     Dial(Multiaddr),
     PublishTx(Vec<Transaction>),
     PublishBlock(Box<Block>),
@@ -157,9 +157,9 @@ enum P2pCommand {
 
 /// A handle to a running P2P service.
 pub struct P2pHandle {
-    cmd_tx: mpsc::Sender<P2pCommand>,
-    local_peer_id: PeerId,
-    event_tx: broadcast::Sender<P2pEvent>,
+    pub(crate) cmd_tx: mpsc::Sender<P2pCommand>,
+    pub(crate) local_peer_id: PeerId,
+    pub(crate) event_tx: broadcast::Sender<P2pEvent>,
 }
 
 impl P2pHandle {
