@@ -50,7 +50,7 @@ pub struct EquivocationEvidence {
 // ---------------------------------------------------------------------------
 
 /// Direction for block sync requests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub enum SyncDirection {
     /// Sync forward from `start_height` toward tip.
     #[codec(index = 0)]
@@ -66,7 +66,7 @@ pub enum SyncDirection {
 /// - `known_block_hash` anchors the request: the responder MUST verify
 ///   the anchor hash matches the block at `start_height - 1`. If it does
 ///   not match, the response is empty (peer is on a different fork).
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockSyncRequest {
     pub start_height: u64,
     /// Max blocks to return (capped at 500 by protocol).
@@ -77,7 +77,7 @@ pub struct BlockSyncRequest {
 }
 
 /// Response to a [`BlockSyncRequest`].
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockSyncResponse {
     /// Blocks in order (may be empty if anchor mismatch or no blocks).
     pub blocks: Vec<Block>,
@@ -88,7 +88,7 @@ pub struct BlockSyncResponse {
 }
 
 /// Request specific blocks by their BLAKE3 hashes (max 100 hashes).
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockByHashRequest {
     pub block_hashes: Vec<[u8; 32]>,
 }
@@ -97,7 +97,7 @@ pub struct BlockByHashRequest {
 ///
 /// Blocks are returned in request order. Missing blocks are omitted
 /// (caller infers absence from position).
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockByHashResponse {
     pub blocks: Vec<Block>,
 }

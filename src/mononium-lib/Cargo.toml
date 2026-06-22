@@ -19,6 +19,7 @@ tracing.workspace = true
 async-trait.workspace = true
 tokio.workspace = true
 libp2p.workspace = true
+libp2p-request-response.workspace = true
 
 # Crypto crates (ADR-019)
 falcon-rs = "0.2"

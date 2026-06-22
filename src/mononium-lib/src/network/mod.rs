@@ -4,6 +4,7 @@ pub mod constants;
 pub mod messages;
 pub mod peer_score;
 pub mod sync;
+pub mod sync_protocol;
 pub mod topics;
 
 use libp2p::gossipsub::{self, MessageAuthenticity, MessageId};
@@ -12,9 +13,12 @@ use libp2p::kad::{self, store::MemoryStore};
 use libp2p::mdns;
 use libp2p::ping;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
+use libp2p_request_response::{self as request_response, json};
 use libp2p::{identity, Multiaddr, PeerId, Swarm};
+
+use crate::network::sync_protocol::{SyncRequest, SyncResponse};
 use tokio::sync::{broadcast, mpsc};
-use tracing::{info, warn};
+use tracing::{info, trace, warn};
 
 use parity_scale_codec::{Decode, Encode};
 
@@ -36,6 +40,7 @@ pub struct MononiumBehaviour {
     pub mdns: mdns::tokio::Behaviour,
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
+    pub sync: json::Behaviour<SyncRequest, SyncResponse>,
 }
 
 #[derive(Debug)]
@@ -45,6 +50,7 @@ pub enum CombinedEvent {
     Mdns(mdns::Event),
     Identify(identify::Event),
     Ping(ping::Event),
+    Sync(request_response::Event<SyncRequest, SyncResponse>),
 }
 
 impl From<gossipsub::Event> for CombinedEvent {
@@ -61,6 +67,9 @@ impl From<identify::Event> for CombinedEvent {
 }
 impl From<ping::Event> for CombinedEvent {
     fn from(e: ping::Event) -> Self { Self::Ping(e) }
+}
+impl From<request_response::Event<SyncRequest, SyncResponse>> for CombinedEvent {
+    fn from(e: request_response::Event<SyncRequest, SyncResponse>) -> Self { Self::Sync(e) }
 }
 
 // ---------------------------------------------------------------------------
@@ -259,12 +268,15 @@ impl P2pService {
         // Ping
         let ping = ping::Behaviour::default();
 
+        let sync = crate::network::sync_protocol::build_sync_behaviour();
+
         let behaviour = MononiumBehaviour {
             gossipsub,
             kademlia,
             mdns,
             identify,
             ping,
+            sync,
         };
 
         let swarm = libp2p::SwarmBuilder::with_existing_identity(local_key)
@@ -419,6 +431,29 @@ impl P2pService {
                             self.peer_scores.apply_event(&propagation_source, ScoreEvent::InvalidBlockGossiped);
                         }
                     }
+                }
+            }
+            SwarmEvent::Behaviour(CombinedEvent::Sync(event)) => {
+                match event {
+                    request_response::Event::Message { peer, message, .. } => {
+                        match message {
+                            request_response::Message::Request { request, channel, .. } => {
+                                info!("sync request from {peer}: {request:?}");
+                                // Drop the channel (no handler yet) — peer will time out
+                                drop(channel);
+                            }
+                            request_response::Message::Response { response, .. } => {
+                                trace!("sync response from {peer}: {response:?}");
+                            }
+                        }
+                    }
+                    request_response::Event::InboundFailure { peer, error, .. } => {
+                        warn!("sync inbound failure from {peer}: {error:?}");
+                    }
+                    request_response::Event::OutboundFailure { peer, error, .. } => {
+                        warn!("sync outbound failure to {peer}: {error:?}");
+                    }
+                    _ => {}
                 }
             }
             SwarmEvent::NewListenAddr { address, .. } => info!("listening on {address}"),
