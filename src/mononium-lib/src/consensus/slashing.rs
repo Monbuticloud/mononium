@@ -83,8 +83,13 @@ pub fn verify_equivocation(
 mod tests {
     use super::*;
     use crate::core::account::Address;
+    use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
     use crate::crypto::falcon::{Falcon512, Falcon512KeyPair};
     use crate::crypto::signature::SignatureScheme;
+
+    fn dummy_sig() -> Falcon512Signature {
+        Falcon512Signature::from_bytes(&[0xCDu8; FALCON_SIGNATURE_SIZE]).unwrap()
+    }
 
     fn header(height: u64, parent: u8) -> BlockHeader {
         BlockHeader {
@@ -95,6 +100,7 @@ mod tests {
             timestamp: 1_700_000_000,
             proposer: Address::from([0x01; 32]),
             chain_id: 0,
+            proposer_signature: dummy_sig(),
         }
     }
 

@@ -32,6 +32,8 @@ pub struct BlockHeader {
     pub proposer: Address,
     /// Network identifier (prevents replay across networks).
     pub chain_id: u64,
+    /// Falcon-512 signature by the proposer over SCALE-encoded header fields.
+    pub proposer_signature: crate::crypto::falcon::Falcon512Signature,
 }
 
 // ---------------------------------------------------------------------------
@@ -82,6 +84,27 @@ pub struct CommitVote {
 // Tests
 // ---------------------------------------------------------------------------
 
+/// Helper: minimal block header with a dummy proposer signature.
+/// Override specific fields with `..` syntax in tests.
+#[cfg(test)]
+#[must_use]
+pub fn test_header() -> BlockHeader {
+    use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+    use crate::crypto::falcon::Falcon512Signature;
+    let dummy_sig =
+        Falcon512Signature::from_bytes(&[0xCDu8; FALCON_SIGNATURE_SIZE]).unwrap();
+    BlockHeader {
+        height: 0,
+        parent_hash: [0u8; 32],
+        global_state_root: [0u8; 32],
+        tx_root: [0u8; 32],
+        timestamp: 0,
+        proposer: Address::from([0u8; 32]),
+        chain_id: 0,
+        proposer_signature: dummy_sig,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +126,7 @@ mod tests {
             timestamp: 1_700_000_000,
             proposer: Address::from([0xABu8; 32]),
             chain_id: 0,
+            proposer_signature: dummy_sig(),
         };
         let encoded = h.encode();
         let decoded = BlockHeader::decode(&mut &encoded[..]).unwrap();
@@ -119,6 +143,7 @@ mod tests {
             timestamp: 1_700_000_001,
             proposer: Address::from([0xABu8; 32]),
             chain_id: 1,
+            proposer_signature: dummy_sig(),
         };
         let json = serde_json::to_string(&h).unwrap();
         let decoded: BlockHeader = serde_json::from_str(&json).unwrap();
@@ -136,6 +161,7 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: Address::from([0x04u8; 32]),
                 chain_id: 0,
+                proposer_signature: dummy_sig(),
             },
             body: BlockBody {
                 transactions: vec![Transaction {
@@ -193,6 +219,7 @@ mod tests {
                 timestamp: 0,
                 proposer: Address::from([0u8; 32]),
                 chain_id: 0,
+                proposer_signature: dummy_sig(),
             },
             body: BlockBody { transactions: vec![] },
         };

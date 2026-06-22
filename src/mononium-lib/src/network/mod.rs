@@ -631,6 +631,7 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: crate::core::account::Address::from([0xDDu8; 32]),
                 chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![] },
         };

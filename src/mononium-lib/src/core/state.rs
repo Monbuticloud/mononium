@@ -691,6 +691,7 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer,
                 chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![] },
         }
@@ -718,6 +719,7 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: Address::from([0u8; 32]),
                 chain_id,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         }
@@ -830,6 +832,7 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: alice(),
                 chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -872,6 +875,7 @@ mod tests {
                 height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx1, tx2] },
         };
@@ -903,6 +907,7 @@ mod tests {
                 height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -955,6 +960,7 @@ mod tests {
                 height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -987,6 +993,7 @@ mod tests {
                 height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: bob(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1039,6 +1046,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
         };
@@ -1055,6 +1063,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx2] },
         };
@@ -1079,6 +1088,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![make_register_tx(5, 50)] },
         };
@@ -1101,6 +1111,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
         };
@@ -1122,6 +1133,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
         };
@@ -1170,6 +1182,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1206,6 +1219,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1239,6 +1253,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1267,6 +1282,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1309,6 +1325,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1336,6 +1353,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: addr, chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1364,6 +1382,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1398,6 +1417,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1429,6 +1449,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1462,6 +1483,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: addr, chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1487,6 +1509,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1525,6 +1548,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1555,6 +1579,7 @@ mod tests {
             header: BlockHeader { height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1584,6 +1609,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1609,6 +1635,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1630,6 +1657,7 @@ mod tests {
                 height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1656,6 +1684,7 @@ mod tests {
                 height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1686,6 +1715,7 @@ mod tests {
                 height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1743,6 +1773,7 @@ mod tests {
                 height: 1, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_000, proposer: alice_addr, chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1787,6 +1818,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
@@ -1824,6 +1856,7 @@ mod tests {
             header: BlockHeader { height: 2, parent_hash: [0u8; 32],
                 global_state_root: [0u8; 32], tx_root: [0u8; 32],
                 timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
             },
             body: BlockBody { transactions: vec![tx] },
         };
