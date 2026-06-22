@@ -15,7 +15,9 @@ use libp2p::ping;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
 use libp2p_request_response::{self as request_response, json};
 use libp2p::{identity, Multiaddr, PeerId, Swarm};
+use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 
 use crate::network::sync_protocol::{serve_sync_request, SyncRequest, SyncResponse};
 use crate::storage::StorageEngine;
@@ -145,6 +147,7 @@ enum P2pCommand {
         peer: PeerId,
         request: SyncRequest,
     },
+    GetPeers(oneshot::Sender<Vec<PeerId>>),
     Shutdown,
 }
 
@@ -213,6 +216,15 @@ impl P2pHandle {
         Ok(())
     }
 
+    /// Get the list of currently connected peers.
+    pub async fn connected_peers(&self) -> Vec<PeerId> {
+        let (tx, rx) = oneshot::channel();
+        if self.cmd_tx.send(P2pCommand::GetPeers(tx)).await.is_err() {
+            return vec![];
+        }
+        rx.await.unwrap_or_default()
+    }
+
     /// Signal the event loop to shut down and wait for it to finish.
     pub async fn shutdown(self) {
         let _ = self.cmd_tx.send(P2pCommand::Shutdown).await;
@@ -255,6 +267,8 @@ pub struct P2pService {
     genesis_hash: [u8; 32],
     /// Highest known block height (updated as blocks are produced/received).
     highest_known_height: u64,
+    /// Currently connected peers (tracked from swarm events).
+    connected_peers: HashSet<PeerId>,
 }
 
 impl P2pService {
@@ -334,6 +348,7 @@ impl P2pService {
             storage: None,
             genesis_hash: [0; 32],
             highest_known_height: 0,
+            connected_peers: HashSet::new(),
         })
     }
 
@@ -446,6 +461,11 @@ impl P2pService {
                         Some(P2pCommand::SendSyncRequest { peer, request }) => {
                             self.swarm.behaviour_mut().sync.send_request(&peer, request);
                         }
+                        Some(P2pCommand::GetPeers(sender)) => {
+                            let peers: Vec<PeerId> =
+                                self.connected_peers.iter().copied().collect();
+                            let _ = sender.send(peers);
+                        }
                         Some(P2pCommand::Shutdown) | None => {
                             info!("P2P shutting down");
                             break;
@@ -523,6 +543,14 @@ impl P2pService {
                     }
                     _ => {}
                 }
+            }
+            SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                self.connected_peers.insert(peer_id);
+                info!("peer connected: {peer_id}");
+            }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                self.connected_peers.remove(&peer_id);
+                info!("peer disconnected: {peer_id}");
             }
             SwarmEvent::NewListenAddr { address, .. } => info!("listening on {address}"),
             _ => {}
