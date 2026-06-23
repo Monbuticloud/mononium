@@ -263,8 +263,16 @@ mod tests {
     #[test]
     fn test_score_event_deltas() {
         assert_eq!(ScoreEvent::ValidBlockPropagated.delta(), 1);
+        assert_eq!(ScoreEvent::ValidVotePropagated.delta(), 1);
+        assert_eq!(ScoreEvent::SuccessfulSyncBatch.delta(), 2);
         assert_eq!(ScoreEvent::SyncBatchHashMismatch.delta(), -10);
         assert_eq!(ScoreEvent::SyncBatchVerifyFail.delta(), -20);
+        assert_eq!(ScoreEvent::EmptySyncResponse.delta(), -2);
+        assert_eq!(ScoreEvent::SyncTimeout.delta(), -4);
+        assert_eq!(ScoreEvent::InvalidBlockGossiped.delta(), -10);
+        assert_eq!(ScoreEvent::InvalidVoteGossiped.delta(), -10);
+        assert_eq!(ScoreEvent::ConnectDisconnectLoop.delta(), -10);
+        assert_eq!(ScoreEvent::DuplicateBlockGossip.delta(), -2);
     }
 
     #[test]
@@ -277,6 +285,56 @@ mod tests {
 
         repo.apply_event(&peer, ScoreEvent::InvalidBlockGossiped);
         assert_eq!(repo.score(&peer), Some(-9)); // 1 - 10 = -9
+    }
+
+    #[test]
+    fn test_repo_len_and_is_empty() {
+        let mut repo = PeerScoreRepo::new();
+        assert!(repo.is_empty());
+        assert_eq!(repo.len(), 0);
+
+        let peer = dummy_peer_id(1);
+        repo.apply_event(&peer, ScoreEvent::ValidBlockPropagated);
+        assert!(!repo.is_empty());
+        assert_eq!(repo.len(), 1);
+    }
+
+    #[test]
+    fn test_repo_iter() {
+        let mut repo = PeerScoreRepo::new();
+        let p1 = dummy_peer_id(1);
+        let p2 = dummy_peer_id(2);
+        repo.apply_event(&p1, ScoreEvent::ValidBlockPropagated);
+        repo.apply_event(&p2, ScoreEvent::InvalidBlockGossiped);
+
+        let scores: Vec<(PeerId, i32)> = repo.iter().map(|(p, s)| (*p, s.score())).collect();
+        assert_eq!(scores.len(), 2);
+        assert!(scores.contains(&(p1, 1)));
+        assert!(scores.contains(&(p2, -10)));
+    }
+
+    #[test]
+    fn test_repo_default_is_empty() {
+        let repo: PeerScoreRepo = Default::default();
+        assert!(repo.is_empty());
+    }
+
+    #[test]
+    fn test_peer_score_default_is_zero() {
+        let ps: PeerScore = Default::default();
+        assert_eq!(ps.score(), 0);
+    }
+
+    #[test]
+    fn test_repo_score_none_for_unknown() {
+        let repo = PeerScoreRepo::new();
+        assert_eq!(repo.score(&dummy_peer_id(99)), None);
+    }
+
+    #[test]
+    fn test_repo_is_banned_unknown_peer() {
+        let repo = PeerScoreRepo::new();
+        assert!(!repo.is_banned(&dummy_peer_id(99), 0));
     }
 
     #[test]
