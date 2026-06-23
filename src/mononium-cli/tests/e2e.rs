@@ -31,6 +31,8 @@ impl NodeProcess {
             .arg(port.to_string())
             .arg("--rpc-port")
             .arg("0")
+            .arg("--p2p-port")
+            .arg("0")
             .arg("--log-level")
             .arg("error")
             .stdout(std::process::Stdio::piped())

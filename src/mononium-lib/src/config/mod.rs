@@ -343,17 +343,17 @@ impl NodeConfig {
         let p2p = self.p2p_port();
         let rest = self.rest_port();
         let rpc = self.rpc_port();
-        if p2p == rest {
+        if p2p != 0 && p2p == rest {
             return Err(LibError::Storage(format!(
                 "p2p_port ({p2p}) and rest_port ({rest}) must differ"
             )));
         }
-        if p2p == rpc {
+        if p2p != 0 && p2p == rpc {
             return Err(LibError::Storage(format!(
                 "p2p_port ({p2p}) and rpc_port ({rpc}) must differ"
             )));
         }
-        if rest == rpc {
+        if rest != 0 && rest == rpc {
             return Err(LibError::Storage(format!(
                 "rest_port ({rest}) and rpc_port ({rpc}) must differ"
             )));
@@ -563,6 +563,16 @@ mode = "compact"
     }
 
     #[test]
+    fn test_validate_zero_ports_allowed() {
+        let mut cfg = defaults();
+        cfg.genesis = Some("genesis.json".to_string());
+        cfg.key = Some("test".to_string());
+        cfg.network.p2p_port = Some(0);
+        cfg.network.rpc_port = Some(0);
+        cfg.network.rest_port = Some(9933);
+        assert!(cfg.validate().is_ok(), "both p2p and rpc disabled (0) should be valid");
+    }
+
     fn test_validate_observer_with_key_errors() {
         let mut cfg = defaults();
         cfg.key = Some("alice".to_string());
