@@ -1044,6 +1044,37 @@ mod tests {
     }
 
     #[test]
+    fn test_dummy_handle_publish_evidence_fails() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = crate::network::dummy_p2p_handle();
+        let evidence = crate::network::messages::EquivocationEvidence {
+            header_a: crate::core::block::BlockHeader {
+                height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 0, proposer: crate::core::account::Address::from([0u8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_a: [0xAAu8; 666],
+            header_b: crate::core::block::BlockHeader {
+                height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1, proposer: crate::core::account::Address::from([0u8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_b: [0xBBu8; 666],
+            proposer: [0u8; 32],
+        };
+        let result = rt.block_on(handle.publish_evidence(evidence));
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_prepare_gossip_rejects_oversized_block() {
         let block_topic = TopicConfig::standard_topics(0)[1].clone(); // blocks topic = 500KB
         let big_block = GossipMessage::Block(Box::new(crate::core::block::Block {
