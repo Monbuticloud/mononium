@@ -105,4 +105,25 @@ mod tests {
         assert_eq!(DEFAULT_MAX_TX_PER_ACCOUNT, 50);
         assert_eq!(DEFAULT_UNLOCK_TIMEOUT_SECS, 20);
     }
+
+    #[test]
+    fn test_default_min_fee() {
+        assert!((DEFAULT_MIN_FEE_MONEX - 0.0667).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_default_dirs_contain_mononium() {
+        let data = default_data_dir();
+        let keys = default_key_dir();
+        let cfg = default_config_dir();
+        assert!(data.to_string_lossy().contains(".mononium/data"));
+        assert!(keys.to_string_lossy().contains(".mononium/keys"));
+        assert!(cfg.to_string_lossy().contains(".mononium"));
+        assert!(!cfg.to_string_lossy().contains("data"));
+    }
+
+    #[test]
+    fn test_default_min_fee_monex_positive() {
+        assert!(DEFAULT_MIN_FEE_MONEX > 0.0);
+    }
 }
