@@ -489,9 +489,8 @@ mod tests {
 
     #[test]
     fn test_save_then_load_roundtrip() {
-        let dir = std::env::temp_dir().join("mononium_sync_test");
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join("cursor.json");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cursor.json");
 
         // Write a known cursor
         let genesis = [0xAB; 32];

@@ -987,6 +987,63 @@ mod tests {
     }
 
     #[test]
+    fn test_dummy_handle_local_peer_id_returns_some() {
+        let handle = crate::network::dummy_p2p_handle();
+        let pid = handle.local_peer_id();
+        assert!(!pid.to_base58().is_empty());
+    }
+
+    #[test]
+    fn test_dummy_handle_publish_block_fails() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = crate::network::dummy_p2p_handle();
+        let block = crate::core::block::Block {
+            header: crate::core::block::BlockHeader {
+                height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 0, proposer: crate::core::account::Address::from([0u8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: crate::core::block::BlockBody { transactions: vec![] },
+        };
+        let result = rt.block_on(handle.publish_block(block));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dummy_handle_send_sync_request_fails() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = crate::network::dummy_p2p_handle();
+        let peer = handle.local_peer_id().clone();
+        let req = crate::network::sync_protocol::SyncRequest::BlockSync(
+            crate::network::messages::BlockSyncRequest {
+                start_height: 1, max_blocks: 1, direction: crate::network::messages::SyncDirection::Forward,
+                known_block_hash: None,
+            }
+        );
+        let result = rt.block_on(handle.send_sync_request(peer, req));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dummy_handle_publish_vote_fails() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = crate::network::dummy_p2p_handle();
+        let vote = crate::core::block::CommitVote {
+            height: 1, block_hash: [0u8; 32],
+            validator: crate::core::account::Address::from([0u8; 32]),
+            signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+            ).unwrap(),
+        };
+        let result = rt.block_on(handle.publish_vote(vote));
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_prepare_gossip_rejects_oversized_block() {
         let block_topic = TopicConfig::standard_topics(0)[1].clone(); // blocks topic = 500KB
         let big_block = GossipMessage::Block(Box::new(crate::core::block::Block {
