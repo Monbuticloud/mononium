@@ -776,4 +776,74 @@ mod tests {
         let resp: serde_json::Value = rpc_call(addr, "tx_submit", params).await;
         assert!(resp["tx_hash"].as_str().unwrap_or("").starts_with("0x"));
     }
+
+    #[tokio::test]
+    async fn test_tx_submit_invalid_scale_data() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        // Valid hex bytes that aren't valid SCALE
+        let bad_hex = "deadbeef";
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(bad_hex).unwrap();
+        let result: Result<serde_json::Value, _> = client.request("tx_submit", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_block_get_by_hash_not_found() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("block_get", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_block_get_by_invalid_params() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        // Passing an object instead of number/string should fail
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(serde_json::json!({"invalid": true})).unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("block_get", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tx_submit_with_0x_prefix() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let tx = crate::core::transaction::Transaction {
+            chain_id: 0, nonce: 0,
+            sender: crate::core::account::Address::from([0xCCu8; 32]),
+            fee: 1_000u64.into(),
+            body: crate::core::transaction::TxBody::Transfer {
+                recipient: crate::core::account::Address::from([0xDDu8; 32]),
+                amount: 50u64.into(),
+            },
+            signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+            ).unwrap(),
+        };
+        let encoded = parity_scale_codec::Encode::encode(&tx);
+        let hex_tx = format!("0x{}", hex::encode(&encoded));
+
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(hex_tx).unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "tx_submit", params).await;
+        assert!(resp["tx_hash"].as_str().unwrap_or("").starts_with("0x"));
+    }
 }
