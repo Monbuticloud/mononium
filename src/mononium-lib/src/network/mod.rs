@@ -932,4 +932,95 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.local_addr().unwrap().port()
     }
+
+    #[test]
+    fn test_dummy_p2p_handle_returns_handle() {
+        let handle = crate::network::dummy_p2p_handle();
+        assert!(!handle.local_peer_id().to_base58().is_empty());
+    }
+
+    #[test]
+    fn test_dummy_p2p_handle_subscribe() {
+        let handle = crate::network::dummy_p2p_handle();
+        let mut rx = handle.subscribe();
+        // No events expected on dummy handle
+        let result = rx.try_recv();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dummy_p2p_handle_connected_peers() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = crate::network::dummy_p2p_handle();
+        let peers = rt.block_on(handle.connected_peers());
+        assert!(peers.is_empty());
+    }
+
+    #[test]
+    fn test_p2p_config_defaults() {
+        let cfg = P2pConfig::default();
+        assert_eq!(cfg.p2p_port, crate::network::constants::DEFAULT_P2P_PORT);
+        assert!(cfg.bootstrap_peers.is_empty());
+        assert!(cfg.enable_mdns);
+        assert_eq!(cfg.max_peers, 50);
+    }
+
+    #[test]
+    fn test_dummy_p2p_handle_publish_tx() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let handle = crate::network::dummy_p2p_handle();
+        let tx = crate::core::transaction::Transaction {
+            chain_id: 0, nonce: 0,
+            sender: crate::core::account::Address::from([0xAAu8; 32]),
+            fee: 0u64.into(),
+            body: crate::core::transaction::TxBody::Transfer {
+                recipient: crate::core::account::Address::from([0xBBu8; 32]),
+                amount: 1u64.into(),
+            },
+            signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+            ).unwrap(),
+        };
+        // publish_tx on dummy handle should fail gracefully (no event loop)
+        let result = rt.block_on(handle.publish_tx(vec![tx]));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_prepare_gossip_rejects_oversized_block() {
+        let block_topic = TopicConfig::standard_topics(0)[1].clone(); // blocks topic = 500KB
+        let big_block = GossipMessage::Block(Box::new(crate::core::block::Block {
+            header: crate::core::block::BlockHeader {
+                height: 1, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 0,
+                proposer: crate::core::account::Address::from([0u8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: crate::core::block::BlockBody {
+                transactions: (0..10_000).map(|i| crate::core::transaction::Transaction {
+                    chain_id: 0, nonce: i,
+                    sender: {
+                        let mut addr_bytes = [0u8; 32];
+                        let le = (i as u128).to_le_bytes();
+                        addr_bytes[..16].copy_from_slice(&le);
+                        crate::core::account::Address::from(addr_bytes)
+                    },
+                    fee: 0u64.into(),
+                    body: crate::core::transaction::TxBody::Transfer {
+                        recipient: crate::core::account::Address::from([0xBBu8; 32]),
+                        amount: 1u64.into(),
+                    },
+                    signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                        &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                    ).unwrap(),
+                }).collect(),
+            },
+        }));
+        let result = prepare_gossip_message(&big_block, &block_topic);
+        assert!(result.is_err());
+    }
 }

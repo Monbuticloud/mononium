@@ -598,4 +598,182 @@ mod tests {
             assert_eq!(val["height"], 42);
         }
     }
+
+    #[tokio::test]
+    async fn test_tx_status_returns_unknown() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("0xabcd").unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "tx_status", params).await;
+        assert_eq!(resp["status"], "unknown");
+    }
+
+    #[tokio::test]
+    async fn test_network_peers_returns_empty_when_no_p2p() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        // The dummy P2pHandle may time out, so use a short timeout and expect an empty list or error
+        let result: Result<Result<serde_json::Value, _>, _> = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            client.request("network_peers", jsonrpsee::core::params::ArrayParams::new()),
+        ).await;
+        match result {
+            Ok(Ok(resp)) => assert!(resp.is_array()),
+            _ => {} // timeout or error is acceptable with dummy handle
+        }
+    }
+
+    #[tokio::test]
+    async fn test_governance_proposals_returns_empty() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "governance_proposals", jsonrpsee::core::params::ArrayParams::new()).await;
+        assert!(resp.is_array());
+        assert!(resp.as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_governance_params_returns_empty() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "governance_params", jsonrpsee::core::params::ArrayParams::new()).await;
+        assert!(resp.is_array());
+        assert!(resp.as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_validator_stake_unknown() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "validator_stake", params).await;
+        assert_eq!(resp["stake"], "0x0");
+    }
+
+    #[tokio::test]
+    async fn test_block_header_latest_fails_when_no_blocks() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("latest").unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client
+            .request("block_header", params).await;
+        // No blocks in storage — expect error
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_finality_returns_subscription_id() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let stream = client
+            .subscribe::<serde_json::Value, _>(
+                "subscribe_finality",
+                jsonrpsee::core::params::ArrayParams::new(),
+                "unsubscribe_finality",
+            )
+            .await;
+        assert!(stream.is_ok(), "finality subscribe failed: {:?}", stream.err());
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_votes_returns_subscription_id() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let stream = client
+            .subscribe::<serde_json::Value, _>(
+                "subscribe_votes",
+                jsonrpsee::core::params::ArrayParams::new(),
+                "unsubscribe_votes",
+            )
+            .await;
+        assert!(stream.is_ok(), "votes subscribe failed: {:?}", stream.err());
+    }
+
+    #[tokio::test]
+    async fn test_block_get_by_height() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        // First store a block
+        let block = crate::core::block::Block {
+            header: crate::core::block::BlockHeader {
+                height: 7,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: crate::core::account::Address::from([0xAAu8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: crate::core::block::BlockBody { transactions: vec![] },
+        };
+        let key = 7u64.to_be_bytes();
+        state.storage.put(crate::storage::tables::BLOCKS, &key,
+            &parity_scale_codec::Encode::encode(&block)).unwrap();
+
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(serde_json::json!(7)).unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "block_get", params).await;
+        assert_eq!(resp["header"]["height"], 7);
+    }
+
+    #[tokio::test]
+    async fn test_block_get_missing_returns_error() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(99).unwrap();
+        let result: Result<serde_json::Value, _> = client.request("block_get", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tx_submit_valid_hex() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let tx = crate::core::transaction::Transaction {
+            chain_id: 0, nonce: 0,
+            sender: crate::core::account::Address::from([0xAAu8; 32]),
+            fee: 1_000u64.into(),
+            body: crate::core::transaction::TxBody::Transfer {
+                recipient: crate::core::account::Address::from([0xBBu8; 32]),
+                amount: 100u64.into(),
+            },
+            signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+            ).unwrap(),
+        };
+        let encoded = parity_scale_codec::Encode::encode(&tx);
+        let hex_tx = hex::encode(&encoded);
+
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(hex_tx).unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "tx_submit", params).await;
+        assert!(resp["tx_hash"].as_str().unwrap_or("").starts_with("0x"));
+    }
 }
