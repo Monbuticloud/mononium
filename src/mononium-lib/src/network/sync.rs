@@ -373,6 +373,7 @@ async fn wait_for_sync_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     
 
     // -----------------------------------------------------------------------
@@ -764,5 +765,136 @@ mod tests {
         assert_eq!(loaded.last_verified_height, 10);
         assert_eq!(loaded.target_height, 200);
         assert!(loaded.pending_range.is_none());
+    }
+
+    // ── Property-based tests ───────────────────────────────────────
+
+    proptest! {
+        #[test]
+        fn proptest_gap_identity(
+            verified in any::<u64>(),
+            target in any::<u64>(),
+        ) {
+            let mut cursor = SyncCursor::new([0; 32]);
+            if verified > 0 {
+                cursor.advance(verified, [0xAA; 32]);
+            }
+            cursor.set_target(target);
+            let expected_gap = target.saturating_sub(verified);
+            assert_eq!(cursor.gap(), expected_gap,
+                "gap() target - last_verified: verified={verified} target={target}");
+        }
+
+        #[test]
+        fn proptest_gap_decreases_after_advance(
+            initial_target in 1u64..1_000_000u64,
+            advance_to in 1u64..1_000_000u64,
+        ) {
+            let mut cursor = SyncCursor::new([0; 32]);
+            cursor.set_target(initial_target);
+            if advance_to > 0 && advance_to > cursor.last_verified_height {
+                cursor.advance(advance_to, [0xBB; 32]);
+            }
+            if advance_to <= initial_target {
+                let expected = initial_target - advance_to;
+                assert_eq!(cursor.gap(), expected,
+                    "gap decrease: initial_target={initial_target} advance_to={advance_to}");
+            }
+        }
+
+        #[test]
+        fn proptest_needs_checkpoint_monotonic(
+            small_gap in 0u64..10_000u64,
+            large_gap in 10_001u64..100_000u64,
+            era_length in 1u64..1000u64,
+        ) {
+            let mut small = SyncCursor::new([0; 32]);
+            small.set_target(small_gap);
+            let mut large = SyncCursor::new([0; 32]);
+            large.set_target(large_gap);
+            if small.needs_checkpoint(era_length) {
+                assert!(large.needs_checkpoint(era_length),
+                    "needs_checkpoint not monotone: small={small_gap} large={large_gap} era={era_length}");
+            }
+        }
+
+        #[test]
+        fn proptest_needs_checkpoint_exact_threshold(
+            gap in 0u64..10_000u64,
+            era_length in 1u64..1000u64,
+        ) {
+            let mut cursor = SyncCursor::new([0; 32]);
+            cursor.set_target(gap);
+            let expected = gap >= 2 * era_length;
+            assert_eq!(cursor.needs_checkpoint(era_length), expected,
+                "needs_checkpoint mismatch at gap={gap} era={era_length}");
+        }
+
+        #[test]
+        fn proptest_advance_monotonic(
+            steps in proptest::collection::vec(1u64..10_000u64, 1..20usize),
+        ) {
+            let mut cursor = SyncCursor::new([0; 32]);
+            let mut prev_height = 0u64;
+            let mut cumulative = 0u64;
+            for &step in &steps {
+                cumulative += step;
+                let hash_byte = (cumulative & 0xFF) as u8;
+                cursor.advance(cumulative, [hash_byte; 32]);
+                assert!(cursor.last_verified_height > prev_height,
+                    "advance did not increase height: prev={prev_height}");
+                assert_eq!(cursor.last_verified_height, cumulative);
+                prev_height = cumulative;
+            }
+        }
+
+        #[test]
+        fn proptest_gap_invariant_after_mixed_ops(
+            ops in proptest::collection::vec(
+                proptest::prop_oneof![
+                    (0u64..100_000u64).prop_map(|t| (0, t)),
+                    (1u64..10_000u64).prop_map(|h| (1, h)),
+                ],
+                1..30usize,
+            )
+        ) {
+            let mut cursor = SyncCursor::new([0; 32]);
+            let mut verified = 0u64;
+            let mut target = 0u64;
+
+            for (op, val) in &ops {
+                match *op {
+                    0 => {
+                        cursor.set_target(*val);
+                        target = *val;
+                    }
+                    1 => {
+                        let new_h = verified + *val;
+                        cursor.advance(new_h, [0xCC; 32]);
+                        verified = new_h;
+                    }
+                    _ => unreachable!(),
+                }
+                assert_eq!(cursor.gap(), target.saturating_sub(verified),
+                    "invariant broken: verified={verified} target={target}");
+            }
+        }
+
+        #[test]
+        fn proptest_pending_clear_roundtrip(
+            start in any::<u64>(),
+            end in any::<u64>(),
+        ) {
+            let mut cursor = SyncCursor::new([0; 32]);
+            let end = end.max(start + 1);
+            cursor.set_pending(HeightRange {
+                start,
+                end,
+                peer_id: "test".into(),
+            });
+            assert!(cursor.pending_range.is_some());
+            cursor.clear_pending();
+            assert!(cursor.pending_range.is_none());
+        }
     }
 }

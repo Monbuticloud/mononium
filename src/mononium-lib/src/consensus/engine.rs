@@ -428,6 +428,7 @@ mod tests {
     use crate::core::transaction::TxBody;
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
     use crate::crypto::falcon::Falcon512Signature;
+    use proptest::prelude::*;
 
     fn addr(b: u8) -> Address {
         Address::from([b; 32])
@@ -828,5 +829,65 @@ mod tests {
         assert!(is_timestamp_monotonic(101, 100));
         assert!(is_timestamp_monotonic(100, 100));
         assert!(!is_timestamp_monotonic(99, 100));
+    }
+
+    // ── Property-based tests ───────────────────────────────────────
+
+    proptest! {
+        #[test]
+        fn proptest_compute_tx_root_deterministic(
+            tx_count in 0usize..20usize,
+            nonce_offset in any::<u64>(),
+            amount_offset in any::<u64>(),
+        ) {
+            let txs: Vec<Transaction> = (0..tx_count)
+                .map(|i| Transaction {
+                    chain_id: 0,
+                    nonce: nonce_offset + i as u64,
+                    sender: addr(1),
+                    fee: U256::from(10),
+                    body: TxBody::Transfer {
+                        recipient: addr(2),
+                        amount: U256::from(100 + amount_offset + i as u64),
+                    },
+                    signature: dummy_sig(),
+                })
+                .collect();
+            let body = BlockBody { transactions: txs.clone() };
+            let root1 = compute_tx_root(&body);
+            let root2 = compute_tx_root(&body);
+            assert_eq!(root1, root2);
+        }
+
+        #[test]
+        fn proptest_is_timestamp_acceptable_symmetric(
+            time in any::<u64>(),
+            tolerance in any::<u64>(),
+        ) {
+            // Within tolerance: |block_time - local_time| ≤ tolerance
+            let acceptable = |block, local| is_timestamp_acceptable(block, local, tolerance);
+            // Symmetry: acceptable(a, b) == acceptable(b, a)
+            for delta in [0u64, 1, tolerance / 2, tolerance, tolerance + 1, u64::MAX / 2] {
+                let block_time = time.wrapping_add(delta);
+                let local_time = time;
+                let fwd = acceptable(block_time, local_time);
+                let rev = acceptable(local_time, block_time);
+                assert_eq!(fwd, rev,
+                    "symmetry violated: tolerance={tolerance} time={time} delta={delta}");
+            }
+        }
+
+        #[test]
+        fn proptest_is_timestamp_monotonic_consistent(
+            a in any::<u64>(),
+            b in any::<u64>(),
+        ) {
+            let result = is_timestamp_monotonic(a, b);
+            if a >= b {
+                assert!(result, "monotonic({a}, {b}) should be true");
+            } else {
+                assert!(!result, "monotonic({a}, {b}) should be false");
+            }
+        }
     }
 }

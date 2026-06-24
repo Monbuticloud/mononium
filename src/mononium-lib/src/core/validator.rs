@@ -95,6 +95,7 @@ pub struct ValidatorEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_validator_status_registered() {
@@ -237,5 +238,57 @@ mod tests {
         let encoded = entry.encode();
         let decoded = ValidatorEntry::decode(&mut &encoded[..]).unwrap();
         assert_eq!(entry, decoded);
+    }
+
+    // ── Property-based tests ───────────────────────────────────────
+
+    proptest::proptest! {
+        #[test]
+        fn proptest_validator_status_staked_roundtrip(stake_low in any::<u64>()) {
+            let status = ValidatorStatus::Staked { stake: U256::from(stake_low) };
+            let encoded = status.encode();
+            let decoded = ValidatorStatus::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(status, decoded);
+        }
+
+        #[test]
+        fn proptest_validator_status_unstaking_roundtrip(
+            release_era in any::<u64>(),
+            amount_low in any::<u64>(),
+        ) {
+            let status = ValidatorStatus::Unstaking {
+                release_era,
+                amount: U256::from(amount_low),
+            };
+            let encoded = status.encode();
+            let decoded = ValidatorStatus::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(status, decoded);
+        }
+
+        #[test]
+        fn proptest_validator_status_frozen_roundtrip(frozen_until in any::<u64>()) {
+            let status = ValidatorStatus::Frozen { frozen_until };
+            let encoded = status.encode();
+            let decoded = ValidatorStatus::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(status, decoded);
+        }
+
+        #[test]
+        fn proptest_validator_entry_roundtrip(
+            addr_byte in any::<u8>(),
+            stake_low in any::<u64>(),
+            reg_era in any::<u64>(),
+        ) {
+            let entry = ValidatorEntry {
+                address: Address::from([addr_byte; 32]),
+                public_key: [addr_byte.wrapping_add(1); 897],
+                stake: U256::from(stake_low),
+                status: ValidatorStatus::Staked { stake: U256::from(stake_low) },
+                registration_era: reg_era,
+            };
+            let encoded = entry.encode();
+            let decoded = ValidatorEntry::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(entry, decoded);
+        }
     }
 }

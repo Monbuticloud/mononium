@@ -283,6 +283,7 @@ pub fn scale_decode_account(bytes: &[u8]) -> Account {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use super::*;
 
     #[test]
@@ -495,5 +496,69 @@ mod tests {
         let addr = Address::from([0x42; 32]);
         // Address has no Display impl, use Debug + format_address
         assert_eq!(format_address(&addr), format_address(&addr));
+    }
+
+    // ── Property-based tests ───────────────────────────────────────
+
+    proptest! {
+        #[test]
+        fn proptest_address_parse_display_roundtrip(bytes in proptest::collection::vec(any::<u8>(), 32)) {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            let addr = Address::from(arr);
+            let formatted = format_address(&addr);
+            let parsed = parse_address(&formatted).unwrap();
+            assert_eq!(addr, parsed);
+        }
+
+        #[test]
+        fn proptest_address_scale_roundtrip(bytes in proptest::collection::vec(any::<u8>(), 32)) {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            let addr = Address::from(arr);
+            let encoded = parity_scale_codec::Encode::encode(&addr);
+            let decoded = parity_scale_codec::Decode::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(addr, decoded);
+        }
+
+        #[test]
+        fn proptest_address_serde_roundtrip(bytes in proptest::collection::vec(any::<u8>(), 32)) {
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&bytes);
+            let addr = Address::from(arr);
+            let json = serde_json::to_string(&addr).unwrap();
+            let decoded: Address = serde_json::from_str(&json).unwrap();
+            assert_eq!(addr, decoded);
+        }
+
+        #[test]
+        fn proptest_account_scale_roundtrip(
+            balance in any::<u64>(),
+            nonce in any::<u64>(),
+        ) {
+            let acct = Account {
+                balance: primitive_types::U256::from(balance),
+                nonce,
+                code_hash: None,
+            };
+            let encoded = parity_scale_codec::Encode::encode(&acct);
+            let decoded = parity_scale_codec::Decode::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(acct, decoded);
+        }
+
+        #[test]
+        fn proptest_account_serde_roundtrip(
+            balance in any::<u64>(),
+            nonce in any::<u64>(),
+        ) {
+            let acct = Account {
+                balance: primitive_types::U256::from(balance),
+                nonce,
+                code_hash: None,
+            };
+            let json = serde_json::to_string(&acct).unwrap();
+            let decoded: Account = serde_json::from_str(&json).unwrap();
+            assert_eq!(acct, decoded);
+        }
     }
 }

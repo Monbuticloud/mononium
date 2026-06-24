@@ -188,6 +188,7 @@ mod tests {
     use crate::core::block::CommitVote;
     use crate::core::block::{BlockBody, BlockHeader};
     use crate::core::account::Address;
+    use proptest::prelude::*;
 
     fn dummy_block() -> Block {
         Block {
@@ -591,5 +592,73 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let decoded: GossipMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, decoded);
+    }
+
+    // ── Property-based tests ───────────────────────────────────────
+
+    proptest! {
+        #[test]
+        fn proptest_compute_batch_hash_deterministic(
+            genesis_byte in any::<u8>(),
+        ) {
+            let genesis = [genesis_byte; 32];
+            let blocks = vec![dummy_block()];
+            let h1 = compute_batch_hash(&genesis, &blocks);
+            let h2 = compute_batch_hash(&genesis, &blocks);
+            assert_eq!(h1, h2);
+        }
+
+        #[test]
+        fn proptest_compute_batch_hash_empty_returns_genesis(
+            genesis_byte in any::<u8>(),
+        ) {
+            let genesis = [genesis_byte; 32];
+            let hash = compute_batch_hash(&genesis, &[]);
+            assert_eq!(hash, genesis);
+        }
+
+        #[test]
+        fn proptest_compute_batch_hash_differs_for_different_blocks(
+            genesis_byte in any::<u8>(),
+        ) {
+            let genesis = [genesis_byte; 32];
+            let mut b1 = dummy_block();
+            b1.header.height = 1;
+            let mut b2 = dummy_block();
+            b2.header.height = 2;
+            let h1 = compute_batch_hash(&genesis, &[b1]);
+            let h2 = compute_batch_hash(&genesis, &[b2]);
+            assert_ne!(h1, h2);
+        }
+
+        #[test]
+        fn proptest_block_sync_request_scale_roundtrip(
+            start_height in any::<u64>(),
+            max_blocks in 1u16..=500u16,
+            has_known_hash in proptest::bool::ANY,
+        ) {
+            let req = BlockSyncRequest {
+                start_height,
+                max_blocks,
+                direction: SyncDirection::Forward,
+                known_block_hash: if has_known_hash { Some([0xAB; 32]) } else { None },
+            };
+            let encoded = req.encode();
+            let decoded = BlockSyncRequest::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(req, decoded);
+        }
+
+        #[test]
+        fn proptest_block_by_hash_request_scale_roundtrip(
+            count in 1usize..=5usize,
+        ) {
+            let hashes: Vec<[u8; 32]> = (0..count)
+                .map(|i| [(i * 17) as u8; 32])
+                .collect();
+            let req = BlockByHashRequest { block_hashes: hashes.clone() };
+            let encoded = req.encode();
+            let decoded = BlockByHashRequest::decode(&mut &encoded[..]).unwrap();
+            assert_eq!(req, decoded);
+        }
     }
 }
