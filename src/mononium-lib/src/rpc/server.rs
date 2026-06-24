@@ -822,6 +822,210 @@ mod tests {
         assert!(result.is_err());
     }
 
+    // ── parse_address tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_parse_address_invalid_hex() {
+        let result = parse_address("0xGGGG");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_address_wrong_length() {
+        let result = parse_address("0xabcd");
+        assert!(result.is_err());
+    }
+
+    // ── state method error paths ──────────────────────────────────
+
+    #[tokio::test]
+    async fn test_state_get_balance_invalid_address() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("not-hex").unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("state_get_balance", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_state_get_nonce_invalid_address() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("not-hex").unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("state_get_nonce", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validator_stake_invalid_address() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("not-hex").unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("validator_stake", params).await;
+        assert!(result.is_err());
+    }
+
+    // ── block_header with stored block ─────────────────────────────
+
+    #[tokio::test]
+    async fn test_block_header_with_stored_block() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let block = crate::core::block::Block {
+            header: crate::core::block::BlockHeader {
+                height: 5,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: crate::core::account::Address::from([0xAAu8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: crate::core::block::BlockBody { transactions: vec![] },
+        };
+        let key = 5u64.to_be_bytes();
+        state.storage.put(crate::storage::tables::BLOCKS, &key,
+            &parity_scale_codec::Encode::encode(&block)).unwrap();
+
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(serde_json::json!(5)).unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "block_header", params).await;
+        assert_eq!(resp["height"], 5);
+    }
+
+    // ── block_id_to_height error paths ────────────────────────────
+
+    #[tokio::test]
+    async fn test_block_get_by_invalid_number() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        // Use a negative number to exercise the as_u64 error path
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert(serde_json::json!(-1)).unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("block_get", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_block_get_by_hash_too_short() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("0xabcd").unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("block_get", params).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_block_get_by_hash_invalid_hex() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let mut params = jsonrpsee::core::params::ArrayParams::new();
+        params.insert("0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ").unwrap();
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let result: Result<serde_json::Value, _> = client.request("block_get", params).await;
+        assert!(result.is_err());
+    }
+
+    // ── subscription notification tests ────────────────────────────
+
+    #[tokio::test]
+    async fn test_subscribe_finality_notification() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let mut stream = client
+            .subscribe::<serde_json::Value, _>(
+                "subscribe_finality",
+                jsonrpsee::core::params::ArrayParams::new(),
+                "unsubscribe_finality",
+            )
+            .await
+            .unwrap();
+
+        state.finality_events.send(99).unwrap();
+
+        let notification = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.next(),
+        )
+        .await;
+        assert!(notification.is_ok(), "timed out waiting for finality event");
+        if let Ok(Some(Ok(val))) = notification {
+            assert_eq!(val["height"], 99);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_votes_notification() {
+        let state = test_state();
+        let (_handle, addr) = build_server(&state).await;
+        let client = jsonrpsee::ws_client::WsClientBuilder::default()
+            .build(&format!("ws://{addr}"))
+            .await
+            .unwrap();
+        let mut stream = client
+            .subscribe::<serde_json::Value, _>(
+                "subscribe_votes",
+                jsonrpsee::core::params::ArrayParams::new(),
+                "unsubscribe_votes",
+            )
+            .await
+            .unwrap();
+
+        let vote = crate::core::block::CommitVote {
+            height: 42,
+            block_hash: [0xABu8; 32],
+            validator: crate::core::account::Address::from([0xBBu8; 32]),
+            signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                &[0xCCu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+            ).unwrap(),
+        };
+        state.vote_events.send(vote).unwrap();
+
+        let notification = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.next(),
+        )
+        .await;
+        assert!(notification.is_ok(), "timed out waiting for vote event");
+        if let Ok(Some(Ok(val))) = notification {
+            assert_eq!(val["height"], 42);
+        }
+    }
+
     #[tokio::test]
     async fn test_tx_submit_with_0x_prefix() {
         let state = test_state();
