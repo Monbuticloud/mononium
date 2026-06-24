@@ -702,6 +702,55 @@ mod tests {
         ));
     }
 
+    // -- ConsensusEngine mutator tests ------------------------------------
+
+    #[test]
+    fn test_set_local_validator() {
+        let mut engine = ConsensusEngine::new(ConsensusConfig::default());
+        assert!(engine.local_validator.is_none());
+        let key = LocalValidatorKey {
+            address: addr(1),
+        };
+        engine.set_local_validator(key);
+        assert!(engine.local_validator.is_some());
+        assert_eq!(engine.local_validator.as_ref().unwrap().address, addr(1));
+    }
+
+    #[test]
+    fn test_set_current_height() {
+        let mut engine = ConsensusEngine::new(ConsensusConfig::default());
+        assert_eq!(engine.current_height, 0);
+        engine.set_current_height(42);
+        assert_eq!(engine.current_height, 42);
+    }
+
+    #[test]
+    fn test_build_schedule_creates_proposer_schedule() {
+        let active_set = vec![addr(1), addr(2), addr(3)];
+        let schedule = ConsensusEngine::build_schedule(active_set.clone(), 1, 0);
+        assert_eq!(schedule.active_set(), &active_set[..]);
+    }
+
+    #[test]
+    fn test_set_schedule() {
+        let mut engine = ConsensusEngine::new(ConsensusConfig::default());
+        assert!(engine.schedule.is_none());
+        let schedule = ProposerSchedule::new(vec![addr(1)], 1, 0);
+        engine.set_schedule(schedule);
+        assert!(engine.schedule.is_some());
+    }
+
+    #[test]
+    fn test_set_commit_tracker() {
+        let mut engine = ConsensusEngine::new(ConsensusConfig::default());
+        assert!(engine.commit_tracker.is_none());
+        use std::collections::HashMap;
+        let weights: HashMap<Address, primitive_types::U256> = [(addr(1), 100u64.into())].into();
+        let tracker = CommitTracker::new(weights);
+        engine.set_commit_tracker(tracker);
+        assert!(engine.commit_tracker.is_some());
+    }
+
     // -- compute_tx_root tests -------------------------------------------
 
     #[test]
@@ -710,6 +759,29 @@ mod tests {
         let root = compute_tx_root(&body);
         let expected: [u8; 32] = *blake3::hash(&[0u8; 0]).as_bytes();
         assert_eq!(root, expected);
+    }
+
+    #[test]
+    fn test_compute_tx_root_with_multiple_txs() {
+        let txs: Vec<Transaction> = (0..5)
+            .map(|i| Transaction {
+                chain_id: 0,
+                nonce: i,
+                sender: addr(1),
+                fee: U256::from(10),
+                body: TxBody::Transfer {
+                    recipient: addr(2),
+                    amount: U256::from(100 + i),
+                },
+                signature: dummy_sig(),
+            })
+            .collect();
+        let body = BlockBody { transactions: txs };
+        let root = compute_tx_root(&body);
+        assert_ne!(root, [0u8; 32]);
+        // Deterministic: same inputs → same root
+        let body2 = BlockBody { transactions: body.transactions.clone() };
+        assert_eq!(root, compute_tx_root(&body2));
     }
 
     #[test]

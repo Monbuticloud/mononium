@@ -396,6 +396,13 @@ mod tests {
     use jsonrpsee::core::client::{ClientT, SubscriptionClientT};
 
     fn test_state() -> Arc<AppState> {
+        test_state_with_height(0, Vec::new())
+    }
+
+    fn test_state_with_height(
+        height: u64,
+        validators: Vec<(Address, crate::core::account::Account)>,
+    ) -> Arc<AppState> {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rpc_test.db");
         let storage: Arc<dyn crate::storage::StorageEngine> = Arc::new(
@@ -404,16 +411,16 @@ mod tests {
         );
 
         let state_machine = Arc::new(std::sync::RwLock::new(
-            crate::core::state::StateMachine::new(
-                Vec::<(Address, crate::core::account::Account)>::new(),
-            ),
+            crate::core::state::StateMachine::new(validators),
         ));
         let mempool = Arc::new(std::sync::RwLock::new(crate::mempool::Mempool::new(
             crate::mempool::MempoolConfig::default(),
         )));
-        let consensus = Arc::new(crate::consensus::engine::ConsensusEngine::new(
+        let mut consensus = crate::consensus::engine::ConsensusEngine::new(
             crate::consensus::ConsensusConfig::default(),
-        ));
+        );
+        consensus.set_current_height(height);
+        let consensus = Arc::new(consensus);
 
         let p2p = Arc::new(crate::network::dummy_p2p_handle());
 
@@ -881,6 +888,49 @@ mod tests {
     }
 
     // ── block_header with stored block ─────────────────────────────
+
+    #[tokio::test]
+    async fn test_block_latest_with_stored_block() {
+        let state = test_state_with_height(7, Vec::new());
+        let (_handle, addr) = build_server(&state).await;
+        let block = crate::core::block::Block {
+            header: crate::core::block::BlockHeader {
+                height: 7,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: crate::core::account::Address::from([0xAAu8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: crate::core::block::BlockBody { transactions: vec![] },
+        };
+        let key = 7u64.to_be_bytes();
+        state.storage.put(crate::storage::tables::BLOCKS, &key,
+            &parity_scale_codec::Encode::encode(&block)).unwrap();
+        let resp: serde_json::Value = rpc_call(addr, "block_latest",
+            jsonrpsee::core::params::ArrayParams::new()).await;
+        assert_eq!(resp["header"]["height"], 7);
+    }
+
+    #[tokio::test]
+    async fn test_validator_set_with_populated_state() {
+        let addr1 = crate::core::account::Address::from([0xAAu8; 32]);
+        let addr2 = crate::core::account::Address::from([0xBBu8; 32]);
+        let acct1 = crate::core::account::Account::new(primitive_types::U256::from(1000));
+        let acct2 = crate::core::account::Account::new(primitive_types::U256::from(2000));
+        let state = test_state_with_height(0, vec![(addr1, acct1), (addr2, acct2)]);
+        // active_set is empty by default — just verify shape
+        let (_handle, addr) = build_server(&state).await;
+        let resp: serde_json::Value = rpc_call(addr, "validator_set",
+            jsonrpsee::core::params::ArrayParams::new()).await;
+        let arr = resp.as_array().unwrap();
+        // active_set starts empty; this test validates the endpoint works
+        assert_eq!(arr.len(), 0);
+    }
 
     #[tokio::test]
     async fn test_block_header_with_stored_block() {
