@@ -538,4 +538,231 @@ mod tests {
 
         let _ = std::fs::remove_dir(&dir);
     }
+
+    // -----------------------------------------------------------------------
+    // invariant: advance must panic for non-increasing heights
+    // -----------------------------------------------------------------------
+
+    #[test]
+    #[should_panic(expected = "advance requires height > current")]
+    fn test_advance_same_height_panics() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.advance(10, [0xAA; 32]);
+        cursor.advance(10, [0xBB; 32]); // same height → panic
+    }
+
+    #[test]
+    #[should_panic(expected = "advance requires height > current")]
+    fn test_advance_lower_height_panics() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.advance(20, [0xAA; 32]);
+        cursor.advance(15, [0xBB; 32]); // lower height → panic
+    }
+
+    #[test]
+    #[should_panic(expected = "advance requires height > current")]
+    fn test_advance_zero_panics_when_already_at_zero() {
+        // advance(0, ...) should panic since 0 ≤ 0
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.advance(0, [0xFF; 32]);
+    }
+
+    // -----------------------------------------------------------------------
+    // invariant: gap identity gap = target − last_verified
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_gap_identity_after_multiple_advances() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(100);
+        assert_eq!(cursor.gap(), 100); // 100 − 0
+
+        cursor.advance(30, [0xAA; 32]);
+        assert_eq!(cursor.gap(), 70);  // 100 − 30
+
+        cursor.advance(80, [0xBB; 32]);
+        assert_eq!(cursor.gap(), 20);  // 100 − 80
+
+        cursor.advance(100, [0xCC; 32]);
+        assert_eq!(cursor.gap(), 0);   // 100 − 100
+    }
+
+    #[test]
+    fn test_gap_without_target_is_zero() {
+        // set_target was never called, so target_height defaults to 0
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.advance(10, [0xAA; 32]);
+        // Though last_verified = 10, target = 0, so saturating_sub → 0
+        assert_eq!(cursor.gap(), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // needs_checkpoint edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_needs_checkpoint_exactly_at_threshold_for_various_era_lengths() {
+        let check = |gap, era_len, expected| {
+            let mut cursor = SyncCursor::new([0; 32]);
+            cursor.set_target(gap);
+            assert_eq!(cursor.needs_checkpoint(era_len), expected,
+                "gap={gap} era_len={era_len}");
+        };
+        check(0,   720, false);
+        check(1,   720, false);
+        check(1439, 720, false);
+        check(1440, 720, true);  // 2 × 720
+        check(1441, 720, true);
+        check(0,   100, false);
+        check(200, 100, true);   // 2 × 100
+        check(199, 100, false);
+    }
+
+    #[test]
+    fn test_needs_checkpoint_with_narrow_era_length() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(1);
+        // 2 × 1 = 2, gap = 1, so false
+        assert!(!cursor.needs_checkpoint(1));
+    }
+
+    #[test]
+    fn test_needs_checkpoint_after_advance_reduces_gap() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(3000);
+        assert!(cursor.needs_checkpoint(720));
+        cursor.advance(2000, [0xAA; 32]);
+        // gap = 1000, still < 2 × 720 = 1440
+        assert!(!cursor.needs_checkpoint(720));
+    }
+
+    // -----------------------------------------------------------------------
+    // pending range invariants
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_set_pending_overwrites_previous() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_pending(HeightRange { start: 1, end: 10, peer_id: "A".into() });
+        cursor.set_pending(HeightRange { start: 10, end: 20, peer_id: "B".into() });
+        assert_eq!(cursor.pending_range.as_ref().unwrap().peer_id, "B");
+        assert_eq!(cursor.pending_range.as_ref().unwrap().start, 10);
+    }
+
+    #[test]
+    fn test_clear_pending_idempotent() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.clear_pending();           // nothing to clear
+        assert!(cursor.pending_range.is_none());
+        cursor.clear_pending();           // still nothing
+        assert!(cursor.pending_range.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // persistence: load from corrupt file
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_load_from_corrupt_file_returns_fresh_cursor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corrupt.json");
+        std::fs::write(&path, "this is not valid json").unwrap();
+        let genesis = [0x42; 32];
+        let cursor = SyncCursor::load(&path, genesis);
+        assert_eq!(cursor.last_verified_height, 0);
+        assert_eq!(cursor.last_verified_hash, genesis);
+    }
+
+    // -----------------------------------------------------------------------
+    // persistence: save error when parent missing (root dir is fine though)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_save_to_deep_path_creates_parent_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("subdir").join("cursor.json");
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.advance(5, [0xFF; 32]);
+        cursor.save(&path).unwrap();
+        assert!(path.exists());
+        let loaded = SyncCursor::load(&path, [0; 32]);
+        assert_eq!(loaded.last_verified_height, 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // set_target edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_set_target_reduces_gap_when_lower() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(100);
+        cursor.advance(50, [0xAA; 32]);
+        cursor.set_target(60); // lower target
+        assert_eq!(cursor.gap(), 10); // 60 − 50
+    }
+
+    #[test]
+    fn test_set_target_higher_increases_gap() {
+        let mut cursor = SyncCursor::new([0; 32]);
+        cursor.set_target(50);
+        cursor.advance(30, [0xAA; 32]);
+        cursor.set_target(100); // higher target
+        assert_eq!(cursor.gap(), 70); // 100 − 30
+    }
+
+    // -----------------------------------------------------------------------
+    // advance updates hash correctly
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_advance_updates_hash_and_height_invariant() {
+        let genesis = [0x01; 32];
+        let mut cursor = SyncCursor::new(genesis);
+        assert_eq!(cursor.last_verified_height, 0);
+        assert_eq!(cursor.last_verified_hash, genesis);
+
+        cursor.advance(7, [0x07; 32]);
+        assert_eq!(cursor.last_verified_height, 7);
+        assert_eq!(cursor.last_verified_hash, [0x07; 32]);
+
+        cursor.advance(42, [0x2A; 32]);
+        assert_eq!(cursor.last_verified_height, 42);
+        assert_eq!(cursor.last_verified_hash, [0x2A; 32]);
+    }
+
+    // -----------------------------------------------------------------------
+    // save/load roundtrip invariants for various states
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_save_load_roundtrip_new_cursor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cursor.json");
+        let genesis = [0x99; 32];
+
+        SyncCursor::new(genesis).save(&path).unwrap();
+        let loaded = SyncCursor::load(&path, genesis);
+        assert_eq!(loaded.last_verified_height, 0);
+        assert_eq!(loaded.last_verified_hash, genesis);
+        assert_eq!(loaded.target_height, 0);
+        assert!(loaded.pending_range.is_none());
+    }
+
+    #[test]
+    fn test_save_load_roundtrip_partial_sync() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cursor.json");
+        let genesis = [0x99; 32];
+        {
+            let mut cursor = SyncCursor::new(genesis);
+            cursor.advance(10, [0x0A; 32]);
+            cursor.set_target(200);
+            cursor.save(&path).unwrap();
+        }
+        let loaded = SyncCursor::load(&path, genesis);
+        assert_eq!(loaded.last_verified_height, 10);
+        assert_eq!(loaded.target_height, 200);
+        assert!(loaded.pending_range.is_none());
+    }
 }
