@@ -358,6 +358,14 @@ mod tests {
         assert_eq!(bytes, sig.as_ref());
     }
 
+    #[test]
+    fn test_signature_as_bytes() {
+        let kp = Falcon512::generate(&test_seed()).unwrap();
+        let sig = Falcon512::sign(&kp, test_message()).unwrap();
+        let bytes = sig.as_bytes();
+        assert_eq!(bytes.len(), FALCON_SIGNATURE_SIZE);
+    }
+
     // -----------------------------------------------------------------------
     // Deterministic signing
     // -----------------------------------------------------------------------

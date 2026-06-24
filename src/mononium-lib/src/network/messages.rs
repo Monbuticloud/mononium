@@ -301,6 +301,106 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // EquivocationEvidence — JSON serde (covers custom sig_serde for [u8; 666])
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_equivocation_evidence_json_roundtrip() {
+        let evidence = EquivocationEvidence {
+            header_a: BlockHeader {
+                height: 1,
+                parent_hash: [0xAAu8; 32],
+                global_state_root: [0xBBu8; 32],
+                tx_root: [0xCCu8; 32],
+                timestamp: 100,
+                proposer: Address::from([0xDDu8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xEEu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_a: [0x11u8; 666],
+            header_b: BlockHeader {
+                height: 1,
+                parent_hash: [0xAAu8; 32],
+                global_state_root: [0xBBu8; 32],
+                tx_root: [0xCCu8; 32],
+                timestamp: 101,
+                proposer: Address::from([0xDDu8; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xEEu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_b: [0x22u8; 666],
+            proposer: [0xFFu8; 32],
+        };
+        let json = serde_json::to_string(&evidence).unwrap();
+        let decoded: EquivocationEvidence = serde_json::from_str(&json).unwrap();
+        assert_eq!(evidence, decoded);
+    }
+
+    #[test]
+    fn test_equivocation_evidence_json_invalid_sig_length() {
+        // Build a valid serialization then swap in wrong-length sig hex
+        let evidence = EquivocationEvidence {
+            header_a: BlockHeader {
+                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
+                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_a: [0x11u8; 666],
+            header_b: BlockHeader {
+                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
+                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_b: [0x22u8; 666],
+            proposer: [0xFFu8; 32],
+        };
+        let mut json = serde_json::to_value(&evidence).unwrap();
+        // Replace signature_a with 2 bytes (should be 666)
+        json["signature_a"] = serde_json::Value::String("ab".to_string());
+        let result: std::result::Result<EquivocationEvidence, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_equivocation_evidence_json_invalid_hex() {
+        let evidence = EquivocationEvidence {
+            header_a: BlockHeader {
+                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
+                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_a: [0x11u8; 666],
+            header_b: BlockHeader {
+                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
+                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_b: [0x22u8; 666],
+            proposer: [0xFFu8; 32],
+        };
+        let mut json = serde_json::to_value(&evidence).unwrap();
+        json["signature_a"] = serde_json::Value::String("not-hex!".to_string());
+        let result: std::result::Result<EquivocationEvidence, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    // -----------------------------------------------------------------------
     // Validation
     // -----------------------------------------------------------------------
 

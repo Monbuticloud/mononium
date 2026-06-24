@@ -283,4 +283,17 @@ mod tests {
         let ratio = tracker.finality_ratio(1);
         assert!((ratio - 0.75).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_finality_ratio_zero_stake_is_zero() {
+        // Empty stake weights → total_active_stake = 0
+        let tracker = CommitTracker::new(HashMap::new());
+        assert!((tracker.finality_ratio(1) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_finality_ratio_no_votes_with_stake_is_zero() {
+        let tracker = CommitTracker::new(weights(&[(addr(0xAA), 100)]));
+        assert!((tracker.finality_ratio(2) - 0.0).abs() < f64::EPSILON);
+    }
 }

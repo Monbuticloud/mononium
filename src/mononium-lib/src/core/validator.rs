@@ -197,6 +197,22 @@ mod tests {
     }
 
     #[test]
+    fn test_validator_entry_json_wrong_pubkey_length() {
+        let entry = ValidatorEntry {
+            address: Address::from([0xABu8; 32]),
+            public_key: [0xBCu8; 897],
+            stake: U256::from(10_000),
+            status: ValidatorStatus::Staked { stake: U256::from(10_000) },
+            registration_era: 0,
+        };
+        let mut json = serde_json::to_value(&entry).unwrap();
+        // Replace public_key hex with a 2-byte value
+        json["public_key"] = serde_json::Value::String("abcd".to_string());
+        let result: std::result::Result<ValidatorEntry, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_validator_entry_edge_cases() {
         // Zero stake + registered
         let entry = ValidatorEntry {
