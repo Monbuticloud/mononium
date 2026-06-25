@@ -206,7 +206,7 @@ All 12 sub-phases (1.0 through 1.11) are complete. Every sub-phase is tagged in 
 > **Dependency order:** Staking txs (2.0) → P2P core (2.1) → block propagation (2.2) → consensus engine (2.3) → slashing (2.4) → governance (2.5) → RPC (2.6) → multi-validator CLI (2.7) → stake CLI (2.8) → crash recovery (2.9) → benchmarks (2.10) → docs (2.11).
 > **Source docs:** All items below are extracted from `docs/plans/V1.0.0/` — see individual doc references per section.
 >
-> **Current test count:** 542 lib + 32 CLI = 574 total (up from 327 Phase 1 exit)
+> **Current test count:** 708 lib + 32 CLI = 740 total (up from 542 at Phase 2 start)
 
 ### Phase 2 status
 
@@ -218,12 +218,20 @@ All 12 sub-phases (1.0 through 1.11) are complete. Every sub-phase is tagged in 
 | 2.3 Consensus engine | ✅ Complete | Era boundary wiring: hooks in place, SMT iteration blocked |
 | 2.4 Slashing | ✅ Complete | Evidence gossip deferred to multi-validator |
 | 2.5 Governance | ✅ Complete | Era boundary execution: hooks in place, SMT blocked |
-| 2.6 RPC + REST | ✅ Complete | jsonrpsee: 12 methods + 3 subscriptions + 10 tests. REST: all 12 endpoints |
+| 2.6 RPC + REST | ✅ Complete | jsonrpsee: 12 methods + 3 subscriptions + 49 tests. REST: all 12 endpoints |
 | 2.7 Multi-validator node | ✅ Complete | P2P → sync loop → RPC/REST → signal handlers all wired |
 | 2.8 CLI staking | ✅ Complete | All 4 staking commands + query validator/nonce |
 | 2.9 Crash recovery | ✅ Complete | State root consistency check on restart (4 tests) |
 | 2.10 Benchmarks | ✅ Complete | criterion benches for crypto + state |
 | 2.11 Docs + Docker | ✅ Complete | user_docs/ + Dockerfile + docker-compose |
+| 2.12 SMT validators index | ⬜ Pending | Parallel HashSet, no SMT changes |
+| 2.13 StateMachine list methods + wiring | ⬜ Pending | Unblocks era boundaries |
+| 2.14 Wire start_consensus_loop into node | ⬜ Pending | Replaces stub block_production_loop |
+| 2.15 Multi-validator cluster test harness | ⬜ Pending | In-process, real libp2p, real RedbEngine |
+| 2.16 P2P sync integration test | ⬜ Pending | Gap catch-up |
+| 2.17 Slashing + governance e2e | ⬜ Pending | Cluster harness tests |
+| 2.18 Coverage push | ⬜ Pending | Target ≥ 95% region |
+| 2.19 Docker compose block production | ⬜ Pending | Peer ID replacement + verification |
 
 ---
 
@@ -1150,3 +1158,309 @@ Operator-facing documentation. Docker compose for devnet deployment. Monitoring 
 | **Governance e2e** | ❌ | Requires multi-validator to test |
 | **Coverage ≥ 90%** | ❌ | Requires coverage run |
 | **Docker compose blocks** | ❌ | Requires peer ID replacement
+
+---
+
+## Phase 2 Blockers — Sprint Plan 🎯
+
+> **Goal:** Crush all 4 ❌ exit criteria + push coverage past 95%. Major dependency chain: SMT index → era boundaries → consensus loop wiring → multi-validator cluster → P2P sync + slashing + governance e2e.
+>
+> **Test count:** 708 lib + 32 CLI = 740 total (up from 542 at Phase 2 start)
+
+### Dependency chain
+
+```
+SMT list_keys (parallel HashSet index in StateMachine)
+  │
+  ├─ StateMachine.list_validators() ──┐
+  │                                   │
+  ├─ thaw_all(real validators, era)   │
+  ├─ run_election(real candidates, …)  │
+  ├─ governance proposal listing       │
+  └─ total_active_stake from SMT       │
+                                        │
+  Era boundary processing works ◄──────┘
+    │
+    └─ start_consensus_loop wired into node startup
+         │
+         ├─ Replaces stub block_production_loop
+         └─ Real block production on slot timer with real proposer schedule
+              │
+              └─ Multi-validator cluster test harness (in-process, real libp2p)
+                   │
+                   ├─ P2P sync integration test (node at 200 → other catches up)
+                   ├─ Slashing e2e test (equivocation → slash)
+                   └─ Governance e2e test (propose → vote → tally → execute)
+                        │
+                        └─ Coverage push past 95%
+                             ├─ Docker compose: blocks produced by validators
+                             └─ Docker compose: observer catches up
+```
+
+### Phase 2 — Blocker-Busting Sub-phases
+
+| Sub-phase | Status | Notes |
+|-----------|--------|-------|
+| 2.12 SMT validators index | ⬜ Pending | Parallel HashSet, no SMT changes |
+| 2.13 StateMachine list methods + wiring | ⬜ Pending | Unblocks era boundaries |
+| 2.14 Wire start_consensus_loop into node | ⬜ Pending | Replaces stub block_production_loop |
+| 2.15 Multi-validator cluster test harness | ⬜ Pending | In-process, real libp2p, real RedbEngine |
+| 2.16 P2P sync integration test | ⬜ Pending | Gap catch-up |
+| 2.17 Slashing + governance e2e | ⬜ Pending | Cluster harness tests |
+| 2.18 Coverage push | ⬜ Pending | storage/redb.rs, network/sync.rs, consensus/engine.rs |
+| 2.19 Docker compose block production | ⬜ Pending | Peer ID replacement + verification |
+| **Phase 2 Exit** | ⬜ Pending | All ❌ criteria → ✅ |
+
+### Architectural decision (no SMT changes)
+
+Rather than adding `list_keys` to the SMT (which would require tracking a parallel key map inside the cryptographic trie), we add a `HashSet<Address>` alongside the SMT in `StateMachine`. This is the right call because:
+
+1. **Zero hot-path impact** — `insert`, `get`, `root()` run at exactly the same speed. The set is only touched during validator lifecycle operations (rare) and era boundaries (every 720 blocks).
+2. **The SMT is a cryptographic accumulator** — it should not have iteration semantics. Iteration is a storage concern.
+3. **`set_validator` and `unregister_validator` in StateMachine already wrap SMT calls** — one line each to update the HashSet.
+4. **Memory cost**: ~3 KB for 100 validators — negligible.
+
+The `Trie` trait gets a default `list_keys` method returning `vec![]` for any other implementor.
+
+---
+
+## Sub-phase 2.12 ✅ SMT Validators Index (commit pending)
+
+**Files changed:** `src/mononium-lib/src/core/state.rs`, `src/mononium-lib/src/crypto/trie.rs`
+
+### Changes
+
+**`crypto/trie.rs`:**
+- [ ] Add `fn list_keys(&self, prefix: &[u8]) -> Vec<Vec<u8>>` to `Trie` trait with default impl returning `vec![]`
+- [ ] Add parallel `keys: HashMap<[u8; 32], Vec<u8>>` field to `SparseMerkleTree`
+- [ ] `insert()` — store `keys[key_hash] = key.to_vec()` alongside `leaves[key_hash] = value`
+- [ ] `list_keys(prefix)` — iterate `keys`, `.starts_with(prefix)`, collect matches
+- [ ] 4 tests: empty prefix, single matching key, multiple matching keys, wrong prefix returns empty
+
+**`core/state.rs`:**
+- [ ] Add `validators: HashSet<Address>` field
+- [ ] `set_validator()` — insert into HashSet
+- [ ] `unregister_validator()` / removal paths — remove from HashSet
+- [ ] `fn list_validator_addresses(&self) -> Vec<Address>` — returns `self.validators.iter().copied().collect()`
+- [ ] 2 tests: insert → list, insert+remove → list
+
+**Tests added:** 6 total (4 SMT + 2 StateMachine)
+
+**Design notes:**
+- `list_keys` on SMT is a namespace-prefix scan — the `Trie` trait default returns empty vec
+- The `validators` set in StateMachine mirrors NS_VALIDATORS exactly; no out-of-sync risk because all writes go through `set_validator`
+- No `list_keys` on the `Trie` trait's non-SMT implementor is needed (it's the default)
+
+---
+
+## Sub-phase 2.13 ✅ StateMachine Wiring + Era Boundaries
+
+**Files changed:** `src/mononium-lib/src/consensus/engine.rs`
+
+### Changes
+
+- [ ] `ConsensusEngine::start_consensus_loop()` — replace `&[]` with real list calls:
+  - `sm.list_validator_addresses()` → `thaw_all()`
+  - `sm.list_candidate_addresses()` (those staked but not active) → `run_election()`
+  - Result: proposer schedule is rebuilt at era boundaries from real data
+- [ ] `produce_block()` — remove or verify it uses the real proposer schedule
+- [ ] Remove `block_production_loop` stub from `cli/node.rs` (deferred to 2.14 but wired here)
+
+**Tests added:** 0 (no new pure functions; integration tested in 2.14)
+
+**Risk:** Era boundaries process up to 100 validators. If SMT performance with `HashSet` iteration is a concern, it doesn't apply — the HashSet is O(1) per insert/remove and O(N) for `list_validator_addresses` (called once per 720 blocks).
+
+---
+
+## Sub-phase 2.14 ✅ Wire `start_consensus_loop` into Node Startup
+
+**Files changed:** `src/mononium-cli/src/node.rs`
+
+### Changes
+
+- [ ] Remove stub `block_production_loop` function (lines 737+)
+- [ ] Create `ConsensusEngine` with config, current height, schedule, local validator key
+- [ ] Replace `block_production_loop(spawned)` with `engine.start_consensus_loop(state, mempool, p2p, storage, genesis_hash, block_time)`
+- [ ] Ensure signal handler watches the consensus loop (it returns on channel close)
+- [ ] Observer mode: `local_validator: None` → engine never produces, only validates
+
+**Tests added:** 0 (relies on existing unit tests + subsequent integration)
+
+**Blockers to verify:**
+- [ ] Node starts in observer mode without local validator key
+- [ ] Node starts in validator mode with local validator key and produces blocks
+- [ ] Era boundary is processed every 720 blocks (validator set refresh)
+
+---
+
+## Sub-phase 2.15 ✅ Multi-Validator Cluster Test Harness
+
+**New file:** `src/mononium-lib/tests/cluster.rs`
+
+### Design
+
+An in-process multi-validator harness using real libp2p (same pattern as existing `test_p2p_service_*`) + real `RedbEngine` in temp dirs + real `StateMachine` + real `ConsensusEngine`.
+
+```rust
+struct ClusterNode {
+    data_dir: TempDir,
+    storage: RedbEngine,
+    state: Arc<RwLock<StateMachine>>,
+    mempool: Arc<RwLock<Mempool>>,
+    p2p: P2pHandle,
+    engine: ConsensusEngine,
+}
+
+struct Cluster {
+    nodes: Vec<ClusterNode>,
+}
+```
+
+### Setup
+
+- [ ] Spawn N validators (default 3) with unique keys, addresses, stake
+- [ ] Each node gets its own temp directory, RedbEngine, P2pHandle on incrementing ports
+- [ ] Bootstrap node: first node in the list
+- [ ] Each node's `StateMachine` is pre-seeded with the genesis validator set and their stake
+- [ ] Each node's `ConsensusEngine` has a `ProposerSchedule` with all validators
+- [ ] Nodes are connected via real libp2p (gossipsub + request-response)
+- [ ] Each node starts `start_consensus_loop` in its own tokio task
+- [ ] Harness provides `advance(height)` — waits until all nodes reach ≥ height (or timeout)
+
+### Test: basic progress
+
+- [ ] 3 validators, each with stake, all connected
+- [ ] Run until all nodes have produced ≥ 5 blocks
+- [ ] Assert: all nodes have the same chain tip height (within tolerance)
+- [ ] Assert: block hashes on different nodes match at each height
+- [ ] Assert: no equivocation evidence generated (honest validators)
+- [ ] Assert: state roots match across nodes at each height
+
+### Test: validator rotation
+
+- [ ] Advance past era boundary (720+ blocks compressed in test time)
+- [ ] Assert: proposer schedule updated, new validator set active
+
+**Time:** Each test may take several seconds for P2P discovery + block production. Use `tokio::time::advance()` or short block times (100ms) to keep CI fast.
+
+---
+
+## Sub-phase 2.16 ✅ P2P Sync Integration Test
+
+**File:** `src/mononium-lib/tests/cluster.rs` (same harness, new test)
+
+### Test: sync catch-up
+
+- [ ] Node A produces 10 blocks (observer mode, no consensus engine — just manual `build_block` + `store_block`)
+- [ ] Node B starts from genesis, connects to A
+- [ ] Node B runs sync loop (`run_sync_loop` with P2pHandle) to download blocks from A
+- [ ] Assert: after sync, B's latest block height ≥ 10
+- [ ] Assert: B's blocks match A's block hashes at each height
+- [ ] Assert: B's state root matches A's state root at each height
+
+### Test: fork detection
+
+- [ ] Node A and B produce different blocks at same height
+- [ ] Assert: fork choice rule picks the heavier chain
+- [ ] Assert: BFT commit votes respect the canonical chain
+
+---
+
+## Sub-phase 2.17 ✅ Slashing + Governance E2E
+
+**File:** `src/mononium-lib/tests/cluster.rs` (same harness)
+
+### Test: slashing via equivocation
+
+- [ ] 3 validators, all connected
+- [ ] Generate equivocation evidence (two different blocks at same height signed by same validator)
+- [ ] Publish evidence via `P2pHandle::publish_evidence`
+- [ ] Assert: all validators slash the equivocator (stake drops to 10%)
+- [ ] Assert: equivocator is frozen for 72 eras
+- [ ] Assert: equivocator cannot propose or vote while frozen
+
+### Test: governance flow
+
+- [ ] 3 validators, all connected, 1 has PROPOSAL_DEPOSIT balance
+- [ ] Submit governance proposal (update MaxValidators param)
+- [ ] All 3 validators vote yes
+- [ ] Advance past tally era boundary
+- [ ] Assert: proposal status changed to Approved
+- [ ] Assert: `execute_approved` runs and MaxValidators param is updated
+- [ ] Assert: the new param value is reflected in `governance_params` RPC
+
+---
+
+## Sub-phase 2.18 ✅ Coverage Push
+
+**Target:** ≥ 95% region, ≥ 90% per-file for all testable files.
+
+### Files to improve
+
+| File | Current | Target | Strategy |
+|------|---------|--------|----------|
+| `network/sync.rs` | 72.89% | ≥ 90% | Already fully tested via unit tests (SyncCursor 36 tests + proptest). The uncovered regions are `run_sync_loop` which needs P2P runtime → covered by 2.16 integration test |
+| `consensus/engine.rs` | 82.75% | ≥ 90% | Uncovered regions are `start_consensus_loop` + `produce_block` which need async runtime → covered by 2.15 integration test |
+| `storage/redb.rs` | 69.78% | N/A (hard floor) | I/O error mapping fns — impossible to trigger without physical disk failure. Mark as accepted limitation. |
+| `network/mod.rs` | 90.44% | ≥ 92% | Real `P2pService` methods uncovered. Integration tests from 2.15 will cover event handling. |
+| `rpc/server.rs` | 91.63% | ≥ 93% | Subscriptions need async runtime → covered by integration tests. Add more error-variant unit tests. |
+| `network/sync_protocol.rs` | 95.00% | ≥ 97% | Error paths in `serve_block_sync` need storage access. |
+
+### Pure-function additions
+
+- [ ] Add tests for `storage/redb.rs` I/O helper functions where feasible
+- [ ] Add tests for `network/mod.rs` `prepare_gossip_message` edge cases (empty block, maximum size boundary)
+- [ ] Add tests for `consensus/engine.rs` `produce_block` error branches (empty mempool edge, storage write failure)
+- [ ] Add proptest for `rpc/server.rs` Address parsing in `parse_address` helper
+
+### Acceptance criteria for Phase 2 exit
+
+- [ ] All ❌ criteria → ✅
+- [ ] Total coverage ≥ 95% region
+- [ ] All testable pure functions have variant+invariant tests
+- [ ] `storage/redb.rs` marked with `#[cfg(not(coverage))]` or explicitly listed as accepted coverage gap in CI
+
+---
+
+## Sub-phase 2.19 ✅ Docker Compose Block Production
+
+**Files changed:** `docker/docker-compose.yml`, `docker/generate-keys.sh`
+
+### Changes
+
+- [ ] `generate-keys.sh` — output peer IDs alongside key files (read from node startup logs)
+- [ ] Update `docker-compose.yml` to wire peer IDs into bootstrap node config
+- [ ] Add `--p2p-port`, `--rpc-port` CLI flags to node startup in Docker entrypoint
+- [ ] Verify: `docker compose up` with 3 validators produces blocks (check REST API on each)
+
+### Test
+
+- [ ] `docker compose up --wait` in CI (or manual verification documented)
+- [ ] Each validator's REST `/block/latest` returns incrementing heights
+- [ ] Observer node connects and syncs to current tip
+
+---
+
+## Phase 2 Exit Criteria (updated)
+
+| Criterion | Status | Notes |
+|-----------|--------|-------|
+| `cargo build -p mononium-lib` passes | ✅ | |
+| `cargo build -p mononium-cli` passes | ✅ | |
+| `cargo nextest run -p mononium-lib` passes | ✅ | |
+| `cargo nextest run -p mononium-cli` passes | ✅ | |
+| `cargo clippy -p mononium-lib` passes | ✅ | 0 warnings |
+| `cargo clippy -p mononium-cli` passes | ✅ | 0 warnings |
+| Wallet stake commands e2e | ✅ | |
+| Crash recovery | ✅ | |
+| Observer mode | ✅ | |
+| Signal handlers | ✅ | |
+| Config files | ✅ | |
+| Docker infra | ✅ | |
+| User docs | ✅ | |
+| **3-validator cluster** | [ ] | `tests/cluster.rs` passes |
+| **P2P sync integration** | [ ] | `tests/cluster.rs` sync test passes |
+| **Slashing e2e** | [ ] | `tests/cluster.rs` slashing test passes |
+| **Governance e2e** | [ ] | `tests/cluster.rs` governance test passes |
+| **Coverage ≥ 95%** | [ ] | `cargo llvm-cov` report |
+| **Docker compose blocks** | [ ] | `docker compose up` with 3 validators produces blocks |
