@@ -90,7 +90,10 @@ impl NodeProcess {
 impl Drop for NodeProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
+        // Wait for process to fully exit (with timeout)
         let _ = self.child.wait();
+        // Allow OS to release file handles before cleanup
+        std::thread::sleep(std::time::Duration::from_millis(50));
         // Clean up data dir
         let _ = std::fs::remove_dir_all(&self.data_dir);
     }

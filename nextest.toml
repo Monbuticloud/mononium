@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────────────
+# nextest configuration — mononium
+# ─────────────────────────────────────────────────────────────────────
+# Docs: https://nexte.st/book/configuration
+
+[profile.default]
+# Each test must complete within this wall time.
+# P2P integration tests run ~6s; proptest 256 cases may take 10-15s.
+timeout = "120s"
+
+# Fail-fast: stop after first failure (CI) or keep going (local).
+# Local dev benefits from seeing all failures in one run.
+fail-fast = false
+
+# How many test threads to use.
+# Default: number of CPUs.  Set lower for I/O-heavy tests.
+# threads = 8
+
+# Maximum slow time for a single test before it's logged as slow.
+slow-timeout = { period = "30s", term = "never" }
+
+# ── Retries ───────────────────────────────────────────────────────
+[profile.default.retry]
+# Number of retries for flaky tests (0 = no retry).
+retries = { backoff = "exponential", count = 1, delay = "1s" }
+flaky-result = "fail"
+
+# ── Overrides for slow tests ──────────────────────────────────────
+[[profile.default.overrides]]
+# E2E test spawns a full node + wallet process (~21s).
+filter = "test(e2e)"
+timeout = "300s"
+slow-timeout = { period = "60s", term = "never" }
+
+[[profile.default.overrides]]
+# P2P integration tests spin up libp2p peers (~6s each).
+filter = "test(p2p_service) + test(p2p_bootstrap) + test(p2p_publish) + test(p2p_sync) + test(p2p_event)"
+timeout = "120s"
+slow-timeout = { period = "30s", term = "never" }
+
+[[profile.default.overrides]]
+# Proptest tests run 256 iterations by default; can be slow.
+filter = "test(proptest)"
+timeout = "300s"
+slow-timeout = { period = "60s", term = "never" }
+
+# ── CI profile (stricter) ─────────────────────────────────────────
+[profile.ci]
+# Inherit from default
+inherits = "default"
+# Fail fast in CI — we want to fix the first failure
+fail-fast = true
+# Junit report for CI dashboards
+junit = { path = "target/nextest/ci-junit.xml" }
+
+[profile.ci.retry]
+# Retry flaky tests once in CI
+retries = { backoff = "exponential", count = 3, delay = "1s" }
+
+# ── Partitioning (for parallel CI shards) ─────────────────────────
+# Usage: cargo nextest run --partition hash:<N>/<T>
+[partition]
+# Default partition type
+type = "hash"
+
+# ── Output ─────────────────────────────────────────────────────────
+[store]
+# Where test results are stored
+dir = "target/nextest"
