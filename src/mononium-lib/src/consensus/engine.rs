@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use parity_scale_codec::Encode;
-use primitive_types::U256;
+
 use tokio::sync::RwLock;
 
 use crate::consensus::finality::CommitTracker;
@@ -19,7 +19,7 @@ use crate::core::state::StateMachine;
 use crate::core::transaction::Transaction;
 use crate::crypto::falcon::{Falcon512, Falcon512PublicKey, Falcon512Signature};
 use crate::crypto::signature::SignatureScheme;
-use crate::error::Result;
+
 use crate::mempool::Mempool;
 use crate::network::P2pHandle;
 use crate::storage::StorageEngine;
@@ -238,9 +238,10 @@ impl ConsensusEngine {
 
                 let addrs: Vec<crate::core::account::Address> = {
                     let mut sm = state.blocking_write();
-                    sm.thaw_all(&[] /* TODO: validator list from SMT */, current_era);
+                    let all_addrs = sm.list_validator_addresses();
+                    sm.thaw_all(&all_addrs, current_era);
                     let active = sm.run_election(
-                        &[] /* TODO: candidate list from SMT */,
+                        &all_addrs,
                         crate::core::constants::MAX_VALIDATORS,
                         current_era,
                     );
@@ -422,6 +423,7 @@ pub fn block_header_unsigned_payload(header: &crate::core::block::BlockHeader) -
 
 #[cfg(test)]
 mod tests {
+    use primitive_types::U256;
     use super::*;
     use crate::consensus::proposer::ProposerSchedule;
     use crate::core::account::Address;
@@ -831,6 +833,54 @@ mod tests {
         assert!(!is_timestamp_monotonic(99, 100));
     }
 
+    // -------------------------------------------------------------------
+    // timestamp invariant / variant edge cases
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn test_is_timestamp_acceptable_zero_tolerance() {
+        // With tolerance=0, only exact matches are acceptable
+        assert!(is_timestamp_acceptable(100, 100, 0));
+        assert!(!is_timestamp_acceptable(100, 101, 0));
+        assert!(!is_timestamp_acceptable(101, 100, 0));
+    }
+
+    #[test]
+    fn test_is_timestamp_acceptable_max_tolerance() {
+        // With large tolerance, anything is within range
+        assert!(is_timestamp_acceptable(0, u64::MAX, u64::MAX));
+        assert!(is_timestamp_acceptable(u64::MAX, 0, u64::MAX));
+    }
+
+    #[test]
+    fn test_is_timestamp_acceptable_wrapping_not_allowed() {
+        // Wrapping behavior: 0 - 1 should not be "acceptable" via wrap
+        // |0 - u64::MAX| = u64::MAX, which is > any reasonable tolerance
+        assert!(!is_timestamp_acceptable(0, u64::MAX, 10));
+    }
+
+    #[test]
+    fn test_compute_tx_root_same_txs_different_order_same_root() {
+        // compute_tx_root sorts tx hashes, so reordering gives same root
+        let tx1 = Transaction {
+            chain_id: 0, nonce: 0, sender: addr(1), fee: U256::from(10),
+            body: TxBody::Transfer { recipient: addr(2), amount: U256::from(100) },
+            signature: dummy_sig(),
+        };
+        let tx2 = Transaction {
+            chain_id: 0, nonce: 1, sender: addr(2), fee: U256::from(10),
+            body: TxBody::Transfer { recipient: addr(1), amount: U256::from(200) },
+            signature: dummy_sig(),
+        };
+
+        let body_ab = BlockBody { transactions: vec![tx1.clone(), tx2.clone()] };
+        let body_ba = BlockBody { transactions: vec![tx2, tx1] };
+
+        let root_ab = compute_tx_root(&body_ab);
+        let root_ba = compute_tx_root(&body_ba);
+        assert_eq!(root_ab, root_ba, "tx root should be order-independent (hashes sorted)");
+    }
+
     // ── Property-based tests ───────────────────────────────────────
 
     proptest! {
@@ -889,5 +939,65 @@ mod tests {
                 assert!(!result, "monotonic({a}, {b}) should be false");
             }
         }
+    }
+
+    // -------------------------------------------------------------------
+    // block_header_unsigned_payload
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn test_block_header_unsigned_payload_zeroes_signature() {
+        use parity_scale_codec::Decode;
+        use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        let sig = Falcon512Signature::from_bytes(&[0xABu8; FALCON_SIGNATURE_SIZE]).unwrap();
+        let header = crate::core::block::BlockHeader {
+            height: 1,
+            parent_hash: [0xAA; 32],
+            global_state_root: [0xBB; 32],
+            tx_root: [0xCC; 32],
+            timestamp: 1_700_000_000,
+            proposer: addr(1),
+            chain_id: 0,
+            proposer_signature: sig,
+        };
+
+        let bytes = block_header_unsigned_payload(&header);
+
+        // The unsigned payload should SCALE-decode with the signature zeroed
+        let decoded = crate::core::block::BlockHeader::decode(&mut &bytes[..]).unwrap();
+        assert_eq!(decoded.height, header.height);
+        assert_eq!(decoded.parent_hash, header.parent_hash);
+        assert_eq!(decoded.global_state_root, header.global_state_root);
+        assert_eq!(decoded.proposer, header.proposer);
+        // Signature should be zero-filled
+        assert_eq!(
+            decoded.proposer_signature,
+            Falcon512Signature::from_bytes(&[0u8; FALCON_SIGNATURE_SIZE]).unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_block_header_unsigned_payload_differs_from_original() {
+        use parity_scale_codec::Encode;
+        use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        let sig = Falcon512Signature::from_bytes(&[0xABu8; FALCON_SIGNATURE_SIZE]).unwrap();
+        let header = crate::core::block::BlockHeader {
+            height: 1,
+            parent_hash: [0xAA; 32],
+            global_state_root: [0xBB; 32],
+            tx_root: [0xCC; 32],
+            timestamp: 1_700_000_000,
+            proposer: addr(1),
+            chain_id: 0,
+            proposer_signature: sig.clone(),
+        };
+
+        let unsigned_bytes = block_header_unsigned_payload(&header);
+        let original_bytes = parity_scale_codec::Encode::encode(&header);
+
+        // SCALE encoding of unsigned and signed should differ (signature is part of the header)
+        // Since SCALE encodes the signature field, the zero-filled vs non-zero should differ
+        assert_ne!(unsigned_bytes, original_bytes,
+            "zeroed signature should produce different SCALE bytes");
     }
 }

@@ -3,6 +3,8 @@
 //! The state machine is the core of the protocol. It holds all on-chain
 //! state in a Sparse Merkle Tree and processes blocks deterministically.
 
+use std::collections::HashSet;
+
 use primitive_types::U256;
 
 use crate::core::account::{Account, Address, scale_encode_account};
@@ -50,6 +52,8 @@ pub struct StateMachine {
     state: SparseMerkleTree,
     /// Active validator set for fee distribution. Set at era boundary.
     active_set: Vec<Address>,
+    /// Track all known validator addresses for iteration (parallel index).
+    validators: HashSet<Address>,
 }
 
 impl StateMachine {
@@ -68,7 +72,7 @@ impl StateMachine {
             let value = crate::core::account::scale_encode_account(&acct);
             state.insert(&key, value);
         }
-        Self { state, active_set: vec![] }
+        Self { state, active_set: vec![], validators: HashSet::new() }
     }
 
     /// Return the current state root hash.
@@ -229,6 +233,11 @@ impl StateMachine {
         self.get_validator(address).map(|v| v.stake)
     }
 
+    /// Return all known validator addresses (used for era boundary processing).
+    pub fn list_validator_addresses(&self) -> Vec<Address> {
+        self.validators.iter().copied().collect()
+    }
+
     /// Distribute collected block fees to active validators proportionally
     /// by stake. Each validator's account balance is credited.
     fn distribute_fees(&mut self, total_fees: u128) {
@@ -343,6 +352,7 @@ impl StateMachine {
         let key = namespace_key(NS_VALIDATORS, addr.as_bytes());
         let value = entry.encode();
         self.state.insert(&key, value);
+        self.validators.insert(*addr);
     }
 
     // -- Generic SMT access (used by governance, future modules) ----------
@@ -359,12 +369,9 @@ impl StateMachine {
         self.state.get(&key).map(|s| s.to_vec())
     }
 
-    /// Total active stake: sum of stake for all `Active` validators.
+    /// Total active stake: sum of stake for the current active validator set.
     pub(crate) fn total_active_stake(&self) -> U256 {
-        // Iterate all validators via list_keys in NS_VALIDATORS
-        // For now, return zero (iteration not yet implemented in SMT)
-        // TODO: implement iteration or cache
-        U256::zero()
+        self.sum_stake(&self.active_set)
     }
 
     /// Sum of stake for a set of addresses.
@@ -2611,5 +2618,86 @@ mod tests {
         let burn_addr = crate::core::account::burn_address();
         let burn_acct = sm.get_account(&burn_addr).unwrap();
         assert_eq!(burn_acct.balance, U256::from(810) * one_monex);
+    }
+
+    // -----------------------------------------------------------------------
+    // list_validator_addresses tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_list_validator_addresses_empty() {
+        let sm = StateMachine::new(vec![]);
+        assert!(sm.list_validator_addresses().is_empty());
+    }
+
+    #[test]
+    fn test_list_validator_addresses_after_register() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![(alice(), make_account(0))];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(1000) + deposit);
+        create_validator(&mut sm, alice(), [0x42u8; 897], 0, 50);
+
+        let addrs = sm.list_validator_addresses();
+        assert_eq!(addrs.len(), 1);
+        assert!(addrs.contains(&alice()));
+    }
+
+    #[test]
+    fn test_list_validator_addresses_multiple() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![
+            (alice(), make_account(0)),
+            (bob(), make_account(0)),
+        ];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(1000) + deposit);
+        setup_bob_with_balance(&mut sm, U256::from(1000) + deposit);
+        create_validator(&mut sm, alice(), [0x42u8; 897], 0, 50);
+        create_validator(&mut sm, bob(), [0x43u8; 897], 0, 50);
+
+        let addrs = sm.list_validator_addresses();
+        assert_eq!(addrs.len(), 2);
+        assert!(addrs.contains(&alice()));
+        assert!(addrs.contains(&bob()));
+    }
+
+    #[test]
+    fn test_list_validator_addresses_after_stake() {
+        let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
+        let accounts = vec![
+            (alice(), make_account(0)),
+            (bob(), make_account(0)),
+        ];
+        let mut sm = StateMachine::new(accounts);
+        setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
+        setup_bob_with_balance(&mut sm, U256::from(2000) + deposit);
+
+        // Alice registers, Bob registers, Alice stakes to Bob
+        create_validator(&mut sm, alice(), [0x42u8; 897], 0, 50);
+        create_validator(&mut sm, bob(), [0x43u8; 897], 0, 50);
+
+        let tx = Transaction {
+            chain_id: 0, nonce: 1, sender: alice(),
+            fee: U256::from(75),
+            body: TxBody::Stake { validator: bob(), amount: U256::from(200) },
+            signature: dummy_sig(),
+        };
+        let block = Block {
+            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                timestamp: 1_700_000_001, proposer: bob(), chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: BlockBody { transactions: vec![tx] },
+        };
+        sm.apply_block(&block).unwrap();
+
+        let addrs = sm.list_validator_addresses();
+        assert_eq!(addrs.len(), 2);
+        assert!(addrs.contains(&alice()));
+        assert!(addrs.contains(&bob()));
     }
 }
