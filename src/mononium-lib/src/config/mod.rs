@@ -573,6 +573,7 @@ mode = "compact"
         assert!(cfg.validate().is_ok(), "both p2p and rpc disabled (0) should be valid");
     }
 
+    #[test]
     fn test_validate_observer_with_key_errors() {
         let mut cfg = defaults();
         cfg.key = Some("alice".to_string());
