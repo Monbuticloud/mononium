@@ -206,7 +206,8 @@ All 12 sub-phases (1.0 through 1.11) are complete. Every sub-phase is tagged in 
 > **Dependency order:** Staking txs (2.0) → P2P core (2.1) → block propagation (2.2) → consensus engine (2.3) → slashing (2.4) → governance (2.5) → RPC (2.6) → multi-validator CLI (2.7) → stake CLI (2.8) → crash recovery (2.9) → benchmarks (2.10) → docs (2.11).
 > **Source docs:** All items below are extracted from `docs/plans/V1.0.0/` — see individual doc references per section.
 >
-> **Current test count:** 708 lib + 32 CLI = 740 total (up from 542 at Phase 2 start)
+> **Current test count:** 680 lib + 32 CLI = 712 total (up from 542 at Phase 2 start)
+> **Commits:** state.rs `de33a99`, engine.rs `de33a99`+`a59ecc5`, genesis.rs `a59ecc5`, node.rs `a59ecc5`
 
 ### Phase 2 status
 
@@ -224,9 +225,9 @@ All 12 sub-phases (1.0 through 1.11) are complete. Every sub-phase is tagged in 
 | 2.9 Crash recovery                        | ✅ Complete | State root consistency check on restart (4 tests)                          |
 | 2.10 Benchmarks                           | ✅ Complete | criterion benches for crypto + state                                       |
 | 2.11 Docs + Docker                        | ✅ Complete | user_docs/ + Dockerfile + docker-compose                                   |
-| 2.12 SMT validators index                 | ⬜ Pending  | Parallel HashSet, no SMT changes                                           |
-| 2.13 StateMachine list methods + wiring   | ⬜ Pending  | Unblocks era boundaries                                                    |
-| 2.14 Wire start_consensus_loop into node  | ⬜ Pending  | Replaces stub block_production_loop                                        |
+| 2.12 SMT validators index                 | ✅ Complete | Commit `de33a99` — HashSet&lt;Address&gt; in StateMachine, 4 tests               |
+| 2.13 Era boundary wiring                  | ✅ Complete | Commit `de33a99`+`a59ecc5` — &lt;!-- --&gt;→list_validator_addresses()            |
+| 2.14 Wire start_consensus_loop into node  | ✅ Complete | Commit `a59ecc5` — block_production_loop removed, real consensus loop      |
 | 2.15 Multi-validator cluster test harness | ⬜ Pending  | In-process, real libp2p, real RedbEngine                                   |
 | 2.16 P2P sync integration test            | ⬜ Pending  | Gap catch-up                                                               |
 | 2.17 Slashing + governance e2e            | ⬜ Pending  | Cluster harness tests                                                      |
