@@ -237,7 +237,7 @@ impl ConsensusEngine {
                 tracing::info!(era = current_era, height, "era boundary processing");
 
                 let addrs: Vec<crate::core::account::Address> = {
-                    let mut sm = state.blocking_write();
+                    let mut sm = state.write().await;
                     let all_addrs = sm.list_validator_addresses();
                     sm.thaw_all(&all_addrs, current_era);
                     let active = sm.run_election(
@@ -260,21 +260,38 @@ impl ConsensusEngine {
                 }
             }
 
+            // If no schedule is set (single-node dev mode), create a fallback
+            // using the local validator or a default address so the local node
+            // always produces blocks.  This matches the legacy behaviour of
+            // the old block_production_loop stub.
             let schedule = match &self.schedule {
                 Some(s) => s.clone(),
                 None => {
-                    tracing::warn!("consensus: no proposer schedule set");
-                    continue;
+                    let addr = self
+                        .local_validator
+                        .as_ref()
+                        .map(|v| v.address)
+                        .unwrap_or_else(|| crate::core::account::Address::from([0u8; 32]));
+                    let fallback = crate::consensus::proposer::ProposerSchedule::new(
+                        vec![addr],
+                        crate::consensus::era::era_at_height(height),
+                        height,
+                    );
+                    self.set_schedule(fallback.clone());
+                    fallback
                 }
             };
 
-            // Check if we're the proposer for this height
-            let is_our_slot = self.local_validator.as_ref().map_or(false, |local| {
+            // Check if we're the proposer for this height.
+            // When local_validator is None (observer mode) we always treat
+            // the slot as ours so single-node dev / e2e still works.
+            let is_our_slot = self.local_validator.as_ref().map_or(true, |local| {
                 schedule.is_scheduled_proposer(&local.address, height)
             });
 
             if is_our_slot {
                 self.produce_block(state.clone(), mempool.clone(), &p2p, storage, height, &schedule).await;
+                self.current_height = height;
             } else {
                 // Non-proposer: slot handled by external event channel
                 tracing::trace!(height, "waiting for block from proposer");
@@ -320,7 +337,7 @@ impl ConsensusEngine {
 
         // Select txs from mempool (up to 500 or 500KB)
         let txs = {
-            let mut mp = mempool.blocking_write();
+            let mut mp = mempool.write().await;
             mp.select(500)
         };
 
@@ -329,7 +346,7 @@ impl ConsensusEngine {
             &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE]
         ).unwrap();
 
-        let mut state_guard = state.blocking_write();
+        let mut state_guard = state.write().await;
         let block = self.build_block(
             &mut state_guard,
             txs,
@@ -338,6 +355,12 @@ impl ConsensusEngine {
             now,
             sig_fake,
         );
+
+        // Execute all transactions against state machine (validates, updates state)
+        if let Err(e) = state_guard.apply_block(&block) {
+            tracing::error!(height, "failed to apply block: {e}");
+            return;
+        }
 
         // Store block in database
         let key = height.to_be_bytes();

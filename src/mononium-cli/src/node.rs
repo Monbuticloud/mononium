@@ -18,18 +18,20 @@ use axum::extract::State;
 use axum::routing::get;
 use axum::{Json, Router};
 use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tracing_subscriber::EnvFilter;
 
 use mononium_lib::config::NodeConfig;
 use mononium_lib::config::CliOverrides;
 use mononium_lib::consensus::era;
+use mononium_lib::consensus::engine::{ConsensusEngine, LocalValidatorKey};
+use mononium_lib::consensus::ConsensusConfig;
 use mononium_lib::core::account::Address;
 use mononium_lib::core::block::{Block, BlockBody, BlockHeader};
 use mononium_lib::core::state::StateMachine;
 use mononium_lib::core::transaction::Transaction;
 use mononium_lib::error::LibError;
 use mononium_lib::mempool::{Mempool, MempoolConfig};
-use mononium_lib::rpc;
 use mononium_lib::rpc::server::start_rpc_server;
 use mononium_lib::rpc::state::AppState as RpcAppState;
 use mononium_lib::storage::genesis::load_genesis;
@@ -46,8 +48,8 @@ use crate::NodeArgs;
 
 struct AppState {
     engine: Arc<dyn StorageEngine>,
-    state: StateMachine,
-    mempool: Mempool,
+    state: Arc<RwLock<StateMachine>>,
+    mempool: Arc<RwLock<Mempool>>,
     current_height: u64,
 }
 
@@ -153,6 +155,12 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     };
     let mempool = Mempool::new(mempool_config.clone());
     tracing::info!("mempool ready");
+
+    // ---------- 12b. Wrap state and mempool for shared access ----------
+    let state_shared = Arc::new(RwLock::new(state));
+    let mempool_shared = Arc::new(RwLock::new(mempool));
+    // Clone engine for consensus loop before AppState takes ownership
+    let engine_for_consensus = engine.clone();
 
     // ---------- 13. Start P2P networking (if enabled) ----------
     let p2p_port = config.p2p_port();
@@ -266,8 +274,8 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     let rest_port = config.rest_port();
     let shared = Arc::new(Mutex::new(AppState {
         engine,
-        state,
-        mempool,
+        state: state_shared.clone(),
+        mempool: mempool_shared.clone(),
         current_height,
     }));
 
@@ -281,11 +289,56 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
         }
     });
 
-    // ---------- 17. Block production loop with graceful shutdown ----------
-    tracing::info!("starting block production loop (5s blocks)");
+    // ---------- 17. Wire consensus engine ----------
+    let mut consensus_engine = ConsensusEngine::new(
+        ConsensusConfig::new(Duration::from_secs(5), 720, 100)
+    );
+    consensus_engine.set_current_height(current_height);
 
+    if !config.observer {
+        if let Some(ref kf_path) = config.key_file {
+            match crate::wallet::load_key(kf_path) {
+                Ok(kf) => {
+                    let addr_str = kf.address.trim_start_matches("0x");
+                    if let Ok(bytes) = hex::decode(addr_str) {
+                        if bytes.len() >= 32 {
+                            let mut addr_arr = [0u8; 32];
+                            addr_arr.copy_from_slice(&bytes[..32]);
+                            let addr = Address::from(addr_arr);
+                            consensus_engine.set_local_validator(
+                                LocalValidatorKey { address: addr }
+                            );
+                            tracing::info!(address = %kf.address, "local validator identity");
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(path = %kf_path, error = %e, "failed to load key file");
+                }
+            }
+        }
+    }
+
+    let consensus_p2p = p2p_handle.clone();
+    let consensus_genesis_hash = genesis_hash;
+    tracing::info!("starting consensus loop (5s blocks)");
+
+    let consensus_handle = tokio::spawn(async move {
+        consensus_engine.start_consensus_loop(
+            state_shared,
+            mempool_shared,
+            &*consensus_p2p,
+            &*engine_for_consensus,
+            consensus_genesis_hash,
+            5, // block time in seconds
+        ).await;
+    });
+
+    // ---------- 18. Wait for signal or consensus exit ----------
     tokio::select! {
-        _ = block_production_loop(shared) => {}
+        _ = consensus_handle => {
+            tracing::info!("consensus loop exited");
+        }
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("SIGINT received, shutting down gracefully...");
         }
@@ -487,23 +540,26 @@ fn err_response(code: u16, msg: String) -> axum::response::Response {
 
 async fn health_handler(State(state): State<SharedState>) -> Json<HealthResponse> {
     let guard = state.lock().await;
+    let height = load_latest_height(&*guard.engine).unwrap_or(guard.current_height);
     Json(HealthResponse {
         status: "ok".to_string(),
-        height: guard.current_height,
+        height,
     })
 }
 
 async fn height_handler(State(state): State<SharedState>) -> Json<HeightResponse> {
     let guard = state.lock().await;
+    let height = load_latest_height(&*guard.engine).unwrap_or(guard.current_height);
     Json(HeightResponse {
-        height: guard.current_height,
+        height,
     })
 }
 
 async fn era_handler(State(state): State<SharedState>) -> Json<EraResponse> {
     let guard = state.lock().await;
+    let height = load_latest_height(&*guard.engine).unwrap_or(guard.current_height);
     Json(EraResponse {
-        era: era::era_at_height(guard.current_height),
+        era: era::era_at_height(height),
     })
 }
 
@@ -563,10 +619,11 @@ async fn block_latest_handler(
     State(state): State<SharedState>,
 ) -> Result<Json<serde_json::Value>, axum::response::Response> {
     let guard = state.lock().await;
-    if guard.current_height == 0 {
+    let height = load_latest_height(&*guard.engine).unwrap_or(guard.current_height);
+    if height == 0 {
         return Err(err_response(404, "no blocks yet".to_string()));
     }
-    let block = load_block_json(&*guard.engine, guard.current_height)
+    let block = load_block_json(&*guard.engine, height)
         .map_err(|e| err_response(500, format!("{e}")))?;
     Ok(Json(block))
 }
@@ -619,7 +676,8 @@ async fn balance_handler(
         .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
     let addr = Address::from(raw);
 
-    match guard.state.get_account(&addr) {
+    let sm = guard.state.read().await;
+    match sm.get_account(&addr) {
         Some(acct) => Ok(Json(BalanceResponse {
             address: address_str,
             balance: acct.balance.to_string(),
@@ -641,7 +699,8 @@ async fn nonce_handler(
     let raw = parse_raw_address(&address_str)
         .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
     let addr = Address::from(raw);
-    let nonce = guard.state.get_account(&addr).map(|a| a.nonce).unwrap_or(0);
+    let sm = guard.state.read().await;
+    let nonce = sm.get_account(&addr).map(|a| a.nonce).unwrap_or(0);
     Ok(Json(NonceResponse { nonce }))
 }
 
@@ -653,7 +712,8 @@ async fn validator_handler(
     let raw = parse_raw_address(&address_str)
         .map_err(|_| err_response(400, format!("invalid address: {address_str}")))?;
     let addr = Address::from(raw);
-    match guard.state.get_validator(&addr) {
+    let sm = guard.state.read().await;
+    match sm.get_validator(&addr) {
         Some(v) => Ok(Json(ValidatorResponse {
             address: address_str,
             exists: true,
@@ -687,8 +747,9 @@ async fn tx_submit_handler(
     let hash = mononium_lib::crypto::hash::blake3_hash(&encoded);
     let tx_hash = hex::encode(&hash[..8]);
 
-    let mut guard = state.lock().await;
-    match guard.mempool.insert(tx) {
+    let guard = state.lock().await;
+    let result = guard.mempool.write().await.insert(tx);
+    match result {
         Ok(()) => {
             tracing::info!(tx_hash = %tx_hash, "tx added to mempool");
             Ok(Json(TxSubmitResponse {
@@ -728,66 +789,6 @@ fn load_block_json(engine: &dyn StorageEngine, height: u64) -> std::result::Resu
     let block: Block = parity_scale_codec::Decode::decode(&mut &raw[..])
         .map_err(|e| LibError::Codec(format!("block decode: {e}")))?;
     serde_json::to_value(&block).map_err(|e| LibError::Codec(format!("block JSON: {e}")))
-}
-
-// ---------------------------------------------------------------------------
-// Block production loop
-// ---------------------------------------------------------------------------
-
-async fn block_production_loop(state: SharedState) {
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-    // Ticks are immediate by default; consume the first one so we don't
-    // produce block 1 at t=0.
-    interval.tick().await;
-
-    loop {
-        interval.tick().await;
-        let mut guard = state.lock().await;
-        let height = guard.current_height + 1;
-
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        // Select transactions from mempool
-        let txs = guard.mempool.select(500);
-        if !txs.is_empty() {
-            tracing::info!(count = txs.len(), "including txs from mempool");
-        }
-
-        let block = Block {
-            header: BlockHeader {
-                height,
-                parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32],
-                tx_root: [0u8; 32],
-                timestamp: now,
-                proposer: Address::from([0u8; 32]),
-                chain_id: 0,
-                proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
-                    &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
-            },
-            body: BlockBody {
-                transactions: txs,
-            },
-        };
-
-        // Apply to state machine (updates state root, validates txs)
-        let _receipt = guard.state.apply_block(&block);
-
-        // Store in DB
-        let key = height.to_be_bytes();
-        let encoded = parity_scale_codec::Encode::encode(&block);
-        if let Err(e) = guard.engine.put(tables::BLOCKS, &key, &encoded) {
-            tracing::error!(%height, error = %e, "failed to store block");
-            continue;
-        }
-
-        guard.current_height = height;
-        tracing::info!(height, timestamp = now, "block produced");
-    }
 }
 
 // ---------------------------------------------------------------------------

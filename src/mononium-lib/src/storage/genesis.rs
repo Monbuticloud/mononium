@@ -10,10 +10,15 @@ use primitive_types::U256;
 use serde::Deserialize;
 use parity_scale_codec::Encode;
 
-use crate::core::account::Account;
+use crate::core::account::{Account, Address};
+use crate::core::block::{Block, BlockBody, BlockHeader};
+use crate::crypto::falcon::Falcon512Signature;
 use crate::error::{LibError, Result};
 use crate::storage::tables;
 use crate::storage::StorageEngine;
+
+/// Size of Falcon-512 signature in bytes.
+const FALCON_SIG_SIZE: usize = crate::crypto::constants::FALCON_SIGNATURE_SIZE;
 
 /// Fallible result alias used internally by the genesis module.
 type IoResult<T> = std::result::Result<T, LibError>;
@@ -117,6 +122,25 @@ pub fn load_genesis(engine: &impl StorageEngine, genesis_path: &Path) -> Result<
     // ---------- store genesis hash (BLAKE3 of raw JSON) ----------
     let genesis_hash = blake3::hash(json_str.as_bytes());
     engine.put(tables::META, tables::GENESIS_HASH_KEY, genesis_hash.as_bytes())?;
+
+    // ---------- store genesis block (height 0) ----------
+    // Required by the consensus engine which needs a parent block to build on.
+    let sig = Falcon512Signature::from_bytes(&[0u8; FALCON_SIG_SIZE])
+        .expect("zero-filled Falcon-512 signature is valid");
+    let genesis_block = Block {
+        header: BlockHeader {
+            height: 0,
+            parent_hash: [0u8; 32],
+            global_state_root: [0u8; 32],
+            tx_root: [0u8; 32],
+            timestamp: 0,
+            proposer: Address::from([0u8; 32]),
+            chain_id: config.chain_id,
+            proposer_signature: sig,
+        },
+        body: BlockBody { transactions: vec![] },
+    };
+    engine.put(tables::BLOCKS, &[0u8; 8], &genesis_block.encode())?;
 
     // ---------- mark genesis loaded ----------
     engine.put(tables::META, tables::GENESIS_LOADED_KEY, b"1")?;
