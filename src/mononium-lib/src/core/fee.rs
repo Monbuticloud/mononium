@@ -233,13 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn test_hybrid_fee_default_via_trait() {
-        let fee: Box<dyn FeePolicy> = Box::new(HybridFee::default());
-        let tx = dummy_transfer_tx();
-        assert!(fee.calculate_fee(&tx) > U256::zero());
-    }
-
-    #[test]
     fn test_encoded_size_increases_with_tx_complexity() {
         let small = dummy_transfer_tx();
         let medium = dummy_register_validator_tx();
@@ -252,5 +245,61 @@ mod tests {
         for s in &sizes {
             assert!(*s > 0);
         }
+    }
+
+    #[test]
+    fn test_fee_calculation_deterministic() {
+        let fee = HybridFee::new();
+        let tx = dummy_transfer_tx();
+        let f1 = fee.calculate_fee(&tx);
+        let f2 = fee.calculate_fee(&tx);
+        assert_eq!(f1, f2);
+    }
+
+    #[test]
+    fn test_flat_fee_plus_per_byte_is_positive() {
+        let fee = HybridFee::new();
+        let tx = dummy_transfer_tx();
+        let calculated = fee.calculate_fee(&tx);
+        assert!(calculated > U256::zero());
+        // Should be at least the flat fee
+        assert!(calculated >= fee.flat_fee);
+    }
+
+    #[test]
+    fn test_burn_fee_is_flat() {
+        let fee = HybridFee::new();
+        let perm = dummy_burn_tx_permanent();
+        let cap = dummy_burn_tx_cap_refill();
+        // Burn transactions have a flat fee regardless of content
+        assert_eq!(fee.calculate_fee(&perm), BURN_FLAT_FEE);
+        assert_eq!(fee.calculate_fee(&cap), BURN_FLAT_FEE);
+    }
+
+    #[test]
+    fn test_hybrid_fee_default_via_trait() {
+        let fee: Box<dyn FeePolicy> = Box::new(HybridFee::default());
+        let tx = dummy_transfer_tx();
+        assert!(fee.calculate_fee(&tx) > U256::zero());
+    }
+
+    #[test]
+    fn test_encoded_size_differs_by_tx_type() {
+        let transfer = dummy_transfer_tx();
+        let reg_validator = dummy_register_validator_tx();
+        // Register validator has more data → larger encoded size
+        assert!(HybridFee::encoded_size(&reg_validator) > HybridFee::encoded_size(&transfer),
+            "complex tx should be larger");
+        // Same type different amounts → same encoded size (amount is U256, same size)
+        let tx_a = Transaction {
+            body: TxBody::Transfer { recipient: Address::from([0xAA; 32]), amount: U256::from(1) },
+            ..transfer.clone()
+        };
+        let tx_b = Transaction {
+            body: TxBody::Transfer { recipient: Address::from([0xBB; 32]), amount: U256::MAX },
+            ..transfer
+        };
+        assert_eq!(HybridFee::encoded_size(&tx_a), HybridFee::encoded_size(&tx_b),
+            "same tx type should have same encoded size regardless of values");
     }
 }

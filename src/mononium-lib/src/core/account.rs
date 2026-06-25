@@ -451,6 +451,20 @@ mod tests {
     }
 
     #[test]
+    fn test_address_as_ref_returns_correct_bytes() {
+        let bytes = [0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04,
+                     0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
+                     0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
+                     0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C];
+        let addr = Address::from(bytes);
+        let as_ref: &[u8] = addr.as_ref();
+        assert_eq!(as_ref.len(), 32);
+        assert_eq!(as_ref[0], 0xDE);
+        assert_eq!(as_ref[31], 0x1C);
+        assert_eq!(as_ref, &bytes);
+    }
+
+    #[test]
     fn test_address_serde_wrong_length() {
         let err = serde_json::from_str::<Address>("\"0xaa\"").unwrap_err();
         assert!(err.to_string().contains("32 bytes"), "got: {err}");
@@ -560,5 +574,47 @@ mod tests {
             let decoded: Account = serde_json::from_str(&json).unwrap();
             assert_eq!(acct, decoded);
         }
+    }
+
+    // -------------------------------------------------------------------
+    // scale_encode_account / scale_decode_account
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn test_scale_encode_decode_account_roundtrip() {
+        let acct = Account {
+            balance: U256::from(12345),
+            nonce: 42,
+            code_hash: Some([0x99; 32]),
+        };
+        let bytes = scale_encode_account(&acct);
+        let decoded = scale_decode_account(&bytes);
+        assert_eq!(acct, decoded);
+    }
+
+    #[test]
+    fn test_scale_encode_decode_account_zero_balance() {
+        let acct = Account::new(U256::zero());
+        let bytes = scale_encode_account(&acct);
+        let decoded = scale_decode_account(&bytes);
+        assert_eq!(acct, decoded);
+    }
+
+    #[test]
+    #[should_panic(expected = "valid SCALE-encoded Account")]
+    fn test_scale_decode_account_invalid_panics() {
+        scale_decode_account(&[0u8; 4]);
+    }
+
+    // -------------------------------------------------------------------
+    // Address into_bytes
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn test_address_into_bytes_returns_owned() {
+        let bytes = [0xAB; 32];
+        let addr = Address::from(bytes);
+        let owned = addr.into_bytes();
+        assert_eq!(owned, bytes);
     }
 }

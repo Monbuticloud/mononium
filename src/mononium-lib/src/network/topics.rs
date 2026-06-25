@@ -64,6 +64,9 @@ pub struct RateLimiter {
     /// The number of messages allowed in the window.
     max_per_window: u32,
     /// Window duration.
+    #[cfg(test)]
+    pub(crate) window: Duration,
+    #[cfg(not(test))]
     window: Duration,
     /// Per-peer counters with timestamps.
     counters: HashMap<SocketAddr, (u32, Instant)>,
@@ -191,6 +194,69 @@ mod tests {
         assert!(rl.allow(peer_b)); // B still fresh
         assert!(rl.allow(peer_b));
         assert!(!rl.allow(peer_b)); // B at limit
+    }
+
+    #[test]
+    fn test_rate_limiter_window_resets_after_timeout() {
+        use std::time::Duration;
+        let mut rl = RateLimiter::new(2);
+        rl.window = Duration::from_millis(10);
+        let peer = "127.0.0.1:30333".parse().unwrap();
+
+        // Fill the window
+        assert!(rl.allow(peer));
+        assert!(rl.allow(peer));
+        assert!(!rl.allow(peer)); // at limit
+
+        // Wait for window to expire
+        std::thread::sleep(Duration::from_millis(20));
+
+        // After reset, should accept again
+        assert!(rl.allow(peer), "window should have reset");
+        assert!(rl.allow(peer));
+        assert!(!rl.allow(peer)); // at limit again
+    }
+
+    #[test]
+    fn test_rate_limiter_check_and_increment_with_window_reset() {
+        use std::time::Duration;
+        let mut rl = RateLimiter::new(1);
+        rl.window = Duration::from_millis(10);
+        let peer = "127.0.0.1:9999".parse().unwrap();
+
+        // Use check + increment
+        assert!(rl.check(peer));
+        rl.increment(peer);
+        assert!(!rl.check(peer)); // at limit
+
+        // Wait for window to expire
+        std::thread::sleep(Duration::from_millis(20));
+
+        // check should reset and return true again
+        assert!(rl.check(peer), "check should reset after window expiry");
+    }
+
+    #[test]
+    fn test_rate_limiter_increment_with_window_reset_maintains_limit() {
+        use std::time::Duration;
+        let mut rl = RateLimiter::new(2);
+        rl.window = Duration::from_millis(10);
+        let peer = "127.0.0.1:8888".parse().unwrap();
+
+        rl.increment(peer);
+        rl.increment(peer);
+        assert!(!rl.check(peer)); // at limit
+
+        // Wait for window to expire
+        std::thread::sleep(Duration::from_millis(20));
+
+        // After reset, increment — should be accepted
+        rl.increment(peer);
+        // After 1 increment with limit of 2, should allow 1 more
+        assert!(rl.check(peer));
+        rl.increment(peer);
+        assert!(!rl.check(peer)); // at limit again
+        // This covers both `check` and `increment` reset branches (lines 94, 111)
     }
 
     #[test]

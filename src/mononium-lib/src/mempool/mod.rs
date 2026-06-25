@@ -586,4 +586,76 @@ mod tests {
         let empty = pool.select(100);
         assert!(empty.is_empty());
     }
+
+    #[test]
+    fn test_remove_cleans_up_empty_sender_entry() {
+        // Insert two txs from same sender, remove one at a time.
+        // After removing the last one, the sender entry should be gone.
+        let mut pool = make_pool();
+        pool.insert(make_tx(1, 0, 100)).unwrap();
+        pool.insert(make_tx(1, 1, 100)).unwrap();
+        assert_eq!(pool.len(), 2);
+
+        // Remove first tx — sender still has 1 tx
+        assert!(pool.remove(&Address::from([1; 32]), 0));
+        assert_eq!(pool.len(), 1);
+
+        // Remove second tx — sender_txs becomes empty → entry is removed
+        assert!(pool.remove(&Address::from([1; 32]), 1));
+        assert_eq!(pool.len(), 0);
+
+        // Verify sender entry no longer exists: remove on non-existent nonce returns false
+        assert!(!pool.remove(&Address::from([1; 32]), 0));
+    }
+
+    #[test]
+    fn test_select_respects_per_sender_cap_with_multiple_senders() {
+        // Use a low per_sender_cap of 2 for select but high for insert
+        // Use separate pool with cap for both insert and select
+        let mut pool = make_pool_with_cap(10_000, 2, 10);
+        // Insert 2 txs from each of 3 senders (cap is 2)
+        pool.insert(make_tx(1, 0, 100)).unwrap();
+        pool.insert(make_tx(1, 1, 101)).unwrap();
+        pool.insert(make_tx(2, 0, 200)).unwrap();
+        pool.insert(make_tx(2, 1, 201)).unwrap();
+        pool.insert(make_tx(3, 0, 150)).unwrap();
+        pool.insert(make_tx(3, 1, 151)).unwrap();
+        assert_eq!(pool.len(), 6);
+
+        // Select with cap of 2 per sender: all 6 fit the cap
+        let selected = pool.select(20);
+        assert_eq!(selected.len(), 6,
+            "expected all 6 txs, got {}", selected.len());
+
+        // Each sender should contribute at most 2
+        for byte in [1u8, 2, 3] {
+            let sender_addr = Address::from([byte; 32]);
+            let count = selected.iter().filter(|tx| tx.sender == sender_addr).count();
+            assert!(count <= 2, "sender {byte} contributed {count}, cap is 2");
+        }
+    }
+
+    #[test]
+    fn test_select_per_sender_cap_at_boundary() {
+        // per_sender_cap of 2: insert 2 txs, select all → both selected
+        let mut pool = make_pool_with_cap(10_000, 2, 10);
+        pool.insert(make_tx(1, 0, 100)).unwrap();
+        pool.insert(make_tx(1, 1, 100)).unwrap();
+        assert_eq!(pool.len(), 2);
+        let selected = pool.select(10);
+        assert_eq!(selected.len(), 2);
+
+        // Insert 2 more from different senders, same cap of 2
+        let mut pool2 = make_pool_with_cap(10_000, 2, 10);
+        pool2.insert(make_tx(1, 0, 100)).unwrap();
+        pool2.insert(make_tx(1, 1, 100)).unwrap();
+        pool2.insert(make_tx(2, 0, 200)).unwrap();
+        pool2.insert(make_tx(2, 1, 200)).unwrap();
+        assert!(pool2.insert(make_tx(2, 2, 200)).is_err()); // 3rd from sender 2 → rejected by cap
+        // Only 4 should be in pool
+        assert_eq!(pool2.len(), 4);
+        // Select 10 → should get 2 + 2 = 4
+        let selected2 = pool2.select(10);
+        assert_eq!(selected2.len(), 4);
+    }
 }

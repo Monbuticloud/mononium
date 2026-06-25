@@ -326,6 +326,47 @@ mod tests {
     }
 
     #[test]
+    fn test_peer_score_is_banned_false_when_never_banned() {
+        let ps = PeerScore::new();
+        // Fresh PeerScore has banned_at_height = None → is_banned returns false
+        assert!(!ps.is_banned(0));
+        assert!(!ps.is_banned(100));
+        assert!(!ps.is_banned(u64::MAX));
+    }
+
+    #[test]
+    fn test_peer_score_is_banned_true_when_banned_and_still_active() {
+        let mut ps = PeerScore::new();
+        ps.apply_ban(100);
+        // banned_at_height = 100, BAN_DURATION = 720
+        assert!(ps.is_banned(100));   // 100 < 820
+        assert!(ps.is_banned(819));   // 819 < 820
+    }
+
+    #[test]
+    fn test_peer_score_is_banned_false_after_ban_expires() {
+        let mut ps = PeerScore::new();
+        ps.apply_ban(100);
+        // banned_at_height = 100, BAN_DURATION = 720
+        assert!(!ps.is_banned(820));  // 820 >= 820
+        assert!(!ps.is_banned(900));  // well past expiry
+    }
+
+    #[test]
+    fn test_peer_score_is_banned_transition() {
+        let mut ps = PeerScore::new();
+        // Not banned initially
+        assert!(!ps.is_banned(50));
+        // Apply ban at height 50
+        ps.apply_ban(50);
+        // Banned while within duration
+        assert!(ps.is_banned(50));
+        assert!(ps.is_banned(769)); // 50 + 720 - 1
+        // Ban expires
+        assert!(!ps.is_banned(770)); // 50 + 720
+    }
+
+    #[test]
     fn test_repo_score_none_for_unknown() {
         let repo = PeerScoreRepo::new();
         assert_eq!(repo.score(&dummy_peer_id(99)), None);

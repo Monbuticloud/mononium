@@ -594,6 +594,69 @@ mod tests {
         assert_eq!(msg, decoded);
     }
 
+    #[test]
+    fn test_gossip_block_json_roundtrip() {
+        let block = Block {
+            header: crate::core::block::BlockHeader {
+                height: 2,
+                parent_hash: [0xFFu8; 32],
+                global_state_root: [0xEEu8; 32],
+                tx_root: [0xDDu8; 32],
+                timestamp: 1_700_000_001,
+                proposer: crate::core::account::Address::from([0xCCu8; 32]),
+                chain_id: 1,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xAB; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            body: crate::core::block::BlockBody { transactions: vec![dummy_tx()] },
+        };
+        let msg = GossipMessage::Block(Box::new(block.clone()));
+        let json = serde_json::to_string(&msg).unwrap();
+        let decoded: GossipMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    fn dummy_equivocation_evidence() -> EquivocationEvidence {
+        EquivocationEvidence {
+            header_a: crate::core::block::BlockHeader {
+                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
+                tx_root: [0; 32], timestamp: 0, proposer: crate::core::account::Address::from([0; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_a: [0x11u8; 666],
+            header_b: crate::core::block::BlockHeader {
+                height: 2, parent_hash: [0xFF; 32], global_state_root: [0xEE; 32],
+                tx_root: [0xDD; 32], timestamp: 1, proposer: crate::core::account::Address::from([0x01; 32]),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                ).unwrap(),
+            },
+            signature_b: [0x22u8; 666],
+            proposer: [0xFFu8; 32],
+        }
+    }
+
+    #[test]
+    fn test_gossip_evidence_scale_roundtrip() {
+        let msg = GossipMessage::Evidence(Box::new(dummy_equivocation_evidence()));
+        let encoded = msg.encode();
+        let decoded = GossipMessage::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_gossip_evidence_json_roundtrip() {
+        let msg = GossipMessage::Evidence(Box::new(dummy_equivocation_evidence()));
+        let json = serde_json::to_string(&msg).unwrap();
+        let decoded: GossipMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, decoded);
+    }
+
     // ── Property-based tests ───────────────────────────────────────
 
     proptest! {

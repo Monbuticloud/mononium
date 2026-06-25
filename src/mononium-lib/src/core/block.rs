@@ -232,4 +232,40 @@ mod tests {
         };
         assert_ne!(b1.encode(), b2.encode());
     }
+
+    #[test]
+    fn test_block_json_roundtrip() {
+        let block = Block {
+            header: BlockHeader {
+                height: 7,
+                parent_hash: [0x07u8; 32],
+                global_state_root: [0x08u8; 32],
+                tx_root: [0x09u8; 32],
+                timestamp: 1_700_000_005,
+                proposer: Address::from([0x0Au8; 32]),
+                chain_id: 1,
+                proposer_signature: dummy_sig(),
+            },
+            body: BlockBody { transactions: vec![] },
+        };
+        let json = serde_json::to_string(&block).unwrap();
+        let decoded: Block = serde_json::from_str(&json).unwrap();
+        assert_eq!(block, decoded);
+    }
+
+    #[test]
+    fn test_block_body_empty_roundtrip() {
+        let body = BlockBody { transactions: vec![] };
+        let encoded = body.encode();
+        let decoded = BlockBody::decode(&mut &encoded[..]).unwrap();
+        assert_eq!(body, decoded);
+    }
+
+    #[test]
+    fn test_block_body_json_roundtrip() {
+        let body = BlockBody { transactions: vec![] };
+        let json = serde_json::to_string(&body).unwrap();
+        let decoded: BlockBody = serde_json::from_str(&json).unwrap();
+        assert_eq!(body, decoded);
+    }
 }
