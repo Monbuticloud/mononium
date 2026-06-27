@@ -125,6 +125,9 @@ jobs:
 
       - name: Profile node (60s perf sampling)
         run: |
+          # Lower paranoid so perf works (needed on some kernel configs even with sudo)
+          sudo sysctl -w kernel.perf_event_paranoid=1 2>/dev/null || true
+
           # Start node in background (observer mode, no p2p needed)
           ./target/flamegraph/mononium-cli node \
             --observer \
@@ -135,12 +138,21 @@ jobs:
             --log-level error &
           NODE_PID=$!
           echo "Node PID: $NODE_PID"
-          sleep 3
+          sleep 5
+
+          # Verify node is still alive
+          if ! kill -0 "$NODE_PID" 2>/dev/null; then
+            echo "Node died before sampling!"
+            exit 1
+          fi
 
           # Sample with perf for 60 seconds (99 Hz = ~6000 samples)
           echo "Sampling..."
-          sudo perf record -F 99 -p "$NODE_PID" -g -- sleep 60 2>&1
+          sudo perf record -F 99 -p "$NODE_PID" -g -o perf.data -- sleep 60 2>&1
           echo "Sampling done."
+
+          # Fix ownership so non-root steps can read perf.data
+          sudo chown "$(whoami)" perf.data 2>/dev/null || true
 
           # Cleanup
           kill "$NODE_PID" 2>/dev/null || true
@@ -148,14 +160,27 @@ jobs:
 
       - name: Generate flamegraph SVG
         run: |
-          perf script -i perf.data 2>/dev/null | inferno-collapse-perf > stacks.folded
+          if [ ! -f perf.data ] || [ ! -s perf.data ]; then
+            echo "No perf.data captured — skipping flamegraph"
+            mkdir -p flamegraph-output
+            echo "No samples captured" > flamegraph-output/status.txt
+            exit 0
+          fi
+          perf script -i perf.data 2>/dev/null | inferno-collapse-perf > stacks.folded 2>/dev/null || true
           wc -l stacks.folded
-          inferno-flamegraph < stacks.folded > flamegraph.svg 2>/dev/null
-          echo "Flamegraph generated: $(wc -c < flamegraph.svg) bytes"
+          if [ ! -s stacks.folded ]; then
+            echo "No stacks collapsed — skipping flamegraph"
+            mkdir -p flamegraph-output
+            echo "No stacks captured" > flamegraph-output/status.txt
+            exit 0
+          fi
+          mkdir -p flamegraph-output
+          inferno-flamegraph < stacks.folded > flamegraph-output/flamegraph.svg 2>/dev/null
+          echo "Flamegraph generated: $(wc -c < flamegraph-output/flamegraph.svg) bytes"
 
       - name: Upload flamegraph artifact
         uses: actions/upload-artifact@v4
         with:
           name: flamegraph
-          path: flamegraph.svg
+          path: flamegraph-output/
           if-no-files-found: warn
