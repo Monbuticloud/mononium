@@ -77,6 +77,13 @@ incremental = false
 overflow-checks = false
 codegen-units = 1
 
+# Flamegraph profiling — inherits release optimisation but keeps
+# debug symbols so flamegraph can resolve function names.
+[profile.flamegraph]
+inherits = "release"
+strip = "none"
+debug = 1
+
 [workspace.lints.rust]
 unused = "warn"
 dead_code = "warn"
