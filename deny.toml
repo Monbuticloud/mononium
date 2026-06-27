@@ -1,10 +1,9 @@
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-unsound = "deny"
-notice = "warn"
+# vulnerability, unsound, notice are removed in cargo-deny 0.19+;
+# vulnerability = always deny, unsound = always deny, notice = always warn.
+unmaintained = "workspace"
 yanked = "warn"
 ignore = []
 
