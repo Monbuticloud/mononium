@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_is_era_boundary() {
-        assert!(!is_era_boundary(0));   // genesis
+        assert!(!is_era_boundary(0)); // genesis
         assert!(!is_era_boundary(1));
         assert!(is_era_boundary(720));
         assert!(is_era_boundary(1440));
@@ -126,7 +126,12 @@ mod tests {
     #[test]
     fn test_election_mode_defaults_to_max_validators() {
         let mode = election_mode_for_era(1, None);
-        assert_eq!(mode, ElectionMode::TopN { max_validators: MAX_VALIDATORS });
+        assert_eq!(
+            mode,
+            ElectionMode::TopN {
+                max_validators: MAX_VALIDATORS
+            }
+        );
     }
 
     #[test]

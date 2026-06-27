@@ -177,7 +177,11 @@ impl SparseMerkleTree {
         }
 
         // After DEPTH iterations we should have exactly one node (the root)
-        debug_assert_eq!(nodes.len(), 1, "root computation must produce exactly one node");
+        debug_assert_eq!(
+            nodes.len(),
+            1,
+            "root computation must produce exactly one node"
+        );
         nodes.into_values().next().unwrap_or(defs[DEPTH])
     }
 }

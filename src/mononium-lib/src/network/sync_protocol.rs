@@ -31,10 +31,7 @@ pub const HASH_SYNC_PROTOCOL: &str = "/mononium/hash-sync/1.0";
 pub fn build_sync_behaviour() -> json::Behaviour<SyncRequest, SyncResponse> {
     json::Behaviour::new(
         [
-            (
-                StreamProtocol::new(SYNC_PROTOCOL),
-                ProtocolSupport::Full,
-            ),
+            (StreamProtocol::new(SYNC_PROTOCOL), ProtocolSupport::Full),
             (
                 StreamProtocol::new(HASH_SYNC_PROTOCOL),
                 ProtocolSupport::Full,
@@ -81,7 +78,9 @@ pub fn serve_sync_request(
     highest_known_height: u64,
 ) -> Option<SyncResponse> {
     match request {
-        SyncRequest::BlockSync(req) => serve_block_sync(req, storage, genesis_hash, highest_known_height),
+        SyncRequest::BlockSync(req) => {
+            serve_block_sync(req, storage, genesis_hash, highest_known_height)
+        }
         SyncRequest::BlockByHash(req) => serve_block_by_hash(req, storage),
     }
 }
@@ -215,17 +214,17 @@ mod tests {
             timestamp: 1_700_000_000 + height,
             proposer: Address::from([0x01; 32]),
             chain_id: 0,
-            proposer_signature: Falcon512Signature::from_bytes(
-                &[0xCD; FALCON_SIGNATURE_SIZE],
-            )
-            .unwrap(),
+            proposer_signature: Falcon512Signature::from_bytes(&[0xCD; FALCON_SIGNATURE_SIZE])
+                .unwrap(),
         }
     }
 
     fn store_block(engine: &RedbEngine, height: u64) {
         let block = Block {
             header: dummy_header(height),
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         let key = height.to_be_bytes();
         let encoded = block.encode();
@@ -389,13 +388,17 @@ mod tests {
         // Store a block and its hash index
         let block = Block {
             header: dummy_header(42),
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         let encoded = block.encode();
         let hash: [u8; 32] = *blake3::hash(&encoded).as_bytes();
         let height_key = 42u64.to_be_bytes();
         engine.put(tables::BLOCKS, &height_key, &encoded).unwrap();
-        engine.put(tables::BLOCK_HASHES, &hash, &height_key).unwrap();
+        engine
+            .put(tables::BLOCK_HASHES, &hash, &height_key)
+            .unwrap();
 
         let request = SyncRequest::BlockByHash(BlockByHashRequest {
             block_hashes: vec![hash],

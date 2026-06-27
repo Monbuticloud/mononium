@@ -339,8 +339,8 @@ mod tests {
         let mut ps = PeerScore::new();
         ps.apply_ban(100);
         // banned_at_height = 100, BAN_DURATION = 720
-        assert!(ps.is_banned(100));   // 100 < 820
-        assert!(ps.is_banned(819));   // 819 < 820
+        assert!(ps.is_banned(100)); // 100 < 820
+        assert!(ps.is_banned(819)); // 819 < 820
     }
 
     #[test]
@@ -348,8 +348,8 @@ mod tests {
         let mut ps = PeerScore::new();
         ps.apply_ban(100);
         // banned_at_height = 100, BAN_DURATION = 720
-        assert!(!ps.is_banned(820));  // 820 >= 820
-        assert!(!ps.is_banned(900));  // well past expiry
+        assert!(!ps.is_banned(820)); // 820 >= 820
+        assert!(!ps.is_banned(900)); // well past expiry
     }
 
     #[test]
@@ -362,7 +362,7 @@ mod tests {
         // Banned while within duration
         assert!(ps.is_banned(50));
         assert!(ps.is_banned(769)); // 50 + 720 - 1
-        // Ban expires
+                                    // Ban expires
         assert!(!ps.is_banned(770)); // 50 + 720
     }
 

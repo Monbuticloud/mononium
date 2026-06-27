@@ -94,11 +94,7 @@ impl CappedInflation {
     /// Create a policy with custom parameters (for tests / dev variants).
     #[allow(dead_code)]
     #[must_use]
-    pub fn with_params(
-        base_max_supply: U256,
-        ceiling_rate: u32,
-        headroom_rate: u32,
-    ) -> Self {
+    pub fn with_params(base_max_supply: U256, ceiling_rate: u32, headroom_rate: u32) -> Self {
         Self {
             base_max_supply,
             ceiling_rate,
@@ -160,8 +156,14 @@ mod tests {
     #[test]
     fn test_fixed_supply_always_zero() {
         let fs = FixedSupply::new();
-        assert_eq!(fs.block_reward(0, U256::zero(), U256::from(1000)), U256::zero());
-        assert_eq!(fs.block_reward(1_000_000, U256::from(500), U256::from(1000)), U256::zero());
+        assert_eq!(
+            fs.block_reward(0, U256::zero(), U256::from(1000)),
+            U256::zero()
+        );
+        assert_eq!(
+            fs.block_reward(1_000_000, U256::from(500), U256::from(1000)),
+            U256::zero()
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -174,8 +176,8 @@ mod tests {
         let reward = CappedInflation::compute_reward(
             U256::zero(),
             effective_max,
-            350,  // 3.5%
-            500,  // 5.0%
+            350, // 3.5%
+            500, // 5.0%
         );
         // At supply=0: headroom = 10B, ceiling term = 350M/yr, headroom term = 500M/yr
         // min = 350M/yr → 350M / 6.3M ≈ 55.5
@@ -187,24 +189,14 @@ mod tests {
     #[test]
     fn test_at_cap_returns_zero() {
         let effective_max = U256::from(10_000_000_000u64);
-        let reward = CappedInflation::compute_reward(
-            effective_max,
-            effective_max,
-            350,
-            500,
-        );
+        let reward = CappedInflation::compute_reward(effective_max, effective_max, 350, 500);
         assert_eq!(reward, U256::zero());
     }
 
     #[test]
     fn test_above_cap_returns_zero() {
         let max = U256::from(1_000);
-        let reward = CappedInflation::compute_reward(
-            U256::from(1_500),
-            max,
-            350,
-            500,
-        );
+        let reward = CappedInflation::compute_reward(U256::from(1_500), max, 350, 500);
         assert_eq!(reward, U256::zero());
     }
 
@@ -275,10 +267,10 @@ mod tests {
         let effective_max = U256::from(10_000_000_000u64);
         // headroom rate = 500 (5%), ceiling rate = 500 (5%)
         let reward = CappedInflation::compute_reward(
-            U256::zero(),  // supply=0, headroom = max
+            U256::zero(), // supply=0, headroom = max
             effective_max,
-            500,  // ceiling = 5%
-            500,  // headroom = 5%
+            500, // ceiling = 5%
+            500, // headroom = 5%
         );
         // Both terms = 5% * 10B / 6.3M ≈ 79
         assert_eq!(reward, U256::from(79));
@@ -302,8 +294,8 @@ mod tests {
     fn test_with_params_non_default() {
         let ci = CappedInflation::with_params(
             U256::from(1_000),
-            100,  // 1%
-            200,  // 2%
+            100, // 1%
+            200, // 2%
         );
         assert_eq!(ci.base_max_supply, U256::from(1_000));
         assert_eq!(ci.ceiling_rate, 100);

@@ -4,9 +4,9 @@
 //! Mononium network. Used by the state machine for staking operations
 //! and by the consensus engine for proposer election.
 
+use parity_scale_codec::{Decode, Encode};
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
-use parity_scale_codec::{Decode, Encode};
 
 use crate::core::account::Address;
 
@@ -15,7 +15,7 @@ use crate::core::account::Address;
 // ---------------------------------------------------------------------------
 
 mod pubkey_serde {
-    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+    use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(key: &[u8; 897], serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&hex::encode(key))
@@ -45,23 +45,16 @@ pub enum ValidatorStatus {
     Registered,
     /// Staked with a balance but not in the active set.
     #[codec(index = 1)]
-    Staked {
-        stake: U256,
-    },
+    Staked { stake: U256 },
     /// Currently in the active validator set — proposes and votes.
     #[codec(index = 2)]
     Active,
     /// Withdrawal initiated — cooldown in progress.
     #[codec(index = 3)]
-    Unstaking {
-        release_era: u64,
-        amount: U256,
-    },
+    Unstaking { release_era: u64, amount: U256 },
     /// Frozen after slashing — cannot propose, vote, or receive rewards.
     #[codec(index = 4)]
-    Frozen {
-        frozen_until: u64,
-    },
+    Frozen { frozen_until: u64 },
     /// Previously frozen, now eligible to re-enter the candidate pool.
     #[codec(index = 5)]
     Thawed,
@@ -105,7 +98,9 @@ mod tests {
 
     #[test]
     fn test_validator_status_staked_scale_roundtrip() {
-        let status = ValidatorStatus::Staked { stake: U256::from(100) };
+        let status = ValidatorStatus::Staked {
+            stake: U256::from(100),
+        };
         let encoded = status.encode();
         let decoded = ValidatorStatus::decode(&mut &encoded[..]).unwrap();
         assert_eq!(status, decoded);
@@ -113,7 +108,9 @@ mod tests {
 
     #[test]
     fn test_validator_status_staked_json_roundtrip() {
-        let status = ValidatorStatus::Staked { stake: U256::from(100) };
+        let status = ValidatorStatus::Staked {
+            stake: U256::from(100),
+        };
         let json = serde_json::to_string(&status).unwrap();
         let decoded: ValidatorStatus = serde_json::from_str(&json).unwrap();
         assert_eq!(status, decoded);
@@ -175,7 +172,9 @@ mod tests {
             address: Address::from([0xABu8; 32]),
             public_key: [0xBCu8; 897],
             stake: U256::from(10_000),
-            status: ValidatorStatus::Staked { stake: U256::from(10_000) },
+            status: ValidatorStatus::Staked {
+                stake: U256::from(10_000),
+            },
             registration_era: 0,
         };
         let encoded = entry.encode();
@@ -189,7 +188,9 @@ mod tests {
             address: Address::from([0xABu8; 32]),
             public_key: [0xBCu8; 897],
             stake: U256::from(10_000),
-            status: ValidatorStatus::Staked { stake: U256::from(10_000) },
+            status: ValidatorStatus::Staked {
+                stake: U256::from(10_000),
+            },
             registration_era: 0,
         };
         let json = serde_json::to_string(&entry).unwrap();
@@ -203,7 +204,9 @@ mod tests {
             address: Address::from([0xABu8; 32]),
             public_key: [0xBCu8; 897],
             stake: U256::from(10_000),
-            status: ValidatorStatus::Staked { stake: U256::from(10_000) },
+            status: ValidatorStatus::Staked {
+                stake: U256::from(10_000),
+            },
             registration_era: 0,
         };
         let mut json = serde_json::to_value(&entry).unwrap();

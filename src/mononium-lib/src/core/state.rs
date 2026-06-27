@@ -7,13 +7,13 @@ use std::collections::HashSet;
 
 use primitive_types::U256;
 
-use crate::core::account::{Account, Address, scale_encode_account};
+use crate::core::account::{scale_encode_account, Account, Address};
 use crate::core::block::Block;
 use crate::core::transaction::{BurnTarget, TxBody};
-use parity_scale_codec::{Decode, Encode};
 use crate::core::validator::{ValidatorEntry, ValidatorStatus};
-use crate::crypto::trie::{SparseMerkleTree, namespace_key, NS_ACCOUNTS, NS_VALIDATORS};
+use crate::crypto::trie::{namespace_key, SparseMerkleTree, NS_ACCOUNTS, NS_VALIDATORS};
 use crate::error::{HexBytes, LibError, Result};
+use parity_scale_codec::{Decode, Encode};
 
 /// Receipt returned after successfully applying a block.
 #[derive(Debug, Clone)]
@@ -72,7 +72,11 @@ impl StateMachine {
             let value = crate::core::account::scale_encode_account(&acct);
             state.insert(&key, value);
         }
-        Self { state, active_set: vec![], validators: HashSet::new() }
+        Self {
+            state,
+            active_set: vec![],
+            validators: HashSet::new(),
+        }
     }
 
     /// Return the current state root hash.
@@ -139,35 +143,29 @@ impl StateMachine {
                     };
                     self.try_transfer(&mut sender_acct, &destination, *amount, tx.fee, tx.nonce)
                 }
-                TxBody::RegisterValidator { public_key } => {
-                    self.apply_register_validator(
-                        &mut sender_acct,
-                        &tx.sender,
-                        public_key,
-                        tx.fee,
-                        tx.nonce,
-                    )
-                }
-                TxBody::Stake { validator, amount } => {
-                    self.apply_stake(
-                        &mut sender_acct,
-                        &tx.sender,
-                        validator,
-                        *amount,
-                        tx.fee,
-                        tx.nonce,
-                    )
-                }
-                TxBody::RegisterAndStake { validator, amount } => {
-                    self.apply_register_and_stake(
-                        &mut sender_acct,
-                        &tx.sender,
-                        validator,
-                        *amount,
-                        tx.fee,
-                        tx.nonce,
-                    )
-                }
+                TxBody::RegisterValidator { public_key } => self.apply_register_validator(
+                    &mut sender_acct,
+                    &tx.sender,
+                    public_key,
+                    tx.fee,
+                    tx.nonce,
+                ),
+                TxBody::Stake { validator, amount } => self.apply_stake(
+                    &mut sender_acct,
+                    &tx.sender,
+                    validator,
+                    *amount,
+                    tx.fee,
+                    tx.nonce,
+                ),
+                TxBody::RegisterAndStake { validator, amount } => self.apply_register_and_stake(
+                    &mut sender_acct,
+                    &tx.sender,
+                    validator,
+                    *amount,
+                    tx.fee,
+                    tx.nonce,
+                ),
                 TxBody::Unstake { validator, amount } => {
                     self.apply_unstake(
                         &mut sender_acct,
@@ -179,15 +177,39 @@ impl StateMachine {
                         0, // current_era = 0 for now
                     )
                 }
-                TxBody::Propose { proposal_id, title, description, actions } => {
-                    self.apply_propose(&mut sender_acct, &tx.sender, proposal_id, title, description, actions, tx.fee, tx.nonce)
-                }
-                TxBody::Vote { proposal_id, approve } => {
-                    self.apply_gov_vote(&mut sender_acct, &tx.sender, proposal_id, *approve, tx.fee, tx.nonce)
-                }
-                TxBody::CancelProposal { proposal_id } => {
-                    self.apply_cancel_proposal(&mut sender_acct, &tx.sender, proposal_id, tx.fee, tx.nonce)
-                }
+                TxBody::Propose {
+                    proposal_id,
+                    title,
+                    description,
+                    actions,
+                } => self.apply_propose(
+                    &mut sender_acct,
+                    &tx.sender,
+                    proposal_id,
+                    title,
+                    description,
+                    actions,
+                    tx.fee,
+                    tx.nonce,
+                ),
+                TxBody::Vote {
+                    proposal_id,
+                    approve,
+                } => self.apply_gov_vote(
+                    &mut sender_acct,
+                    &tx.sender,
+                    proposal_id,
+                    *approve,
+                    tx.fee,
+                    tx.nonce,
+                ),
+                TxBody::CancelProposal { proposal_id } => self.apply_cancel_proposal(
+                    &mut sender_acct,
+                    &tx.sender,
+                    proposal_id,
+                    tx.fee,
+                    tx.nonce,
+                ),
             };
 
             if executed.is_ok() {
@@ -282,7 +304,9 @@ impl StateMachine {
 
     /// Credit an account's balance (create account if missing).
     fn credit_balance(&mut self, addr: &Address, amount: U256) {
-        let mut acct = self.get_account(addr).unwrap_or_else(|| Account::new(U256::zero()));
+        let mut acct = self
+            .get_account(addr)
+            .unwrap_or_else(|| Account::new(U256::zero()));
         acct.balance = acct.balance.saturating_add(amount);
         self.set_account(addr, &acct);
     }
@@ -313,7 +337,9 @@ impl StateMachine {
         sender.nonce += 1;
 
         // Credit recipient
-        let mut recipient_acct = self.get_account(recipient).unwrap_or_else(|| Account::new(U256::zero()));
+        let mut recipient_acct = self
+            .get_account(recipient)
+            .unwrap_or_else(|| Account::new(U256::zero()));
         recipient_acct.balance += amount;
         self.set_account(recipient, &recipient_acct);
 
@@ -322,12 +348,7 @@ impl StateMachine {
 
     /// Try to deduct fee only (for tx types without transfer execution).
     /// Validates nonce and balance.
-    fn try_deduct_fee_only(
-        &self,
-        sender: &mut Account,
-        fee: U256,
-        nonce: u64,
-    ) -> Result<()> {
+    fn try_deduct_fee_only(&self, sender: &mut Account, fee: U256, nonce: u64) -> Result<()> {
         if sender.nonce != nonce {
             return Err(LibError::InvalidNonce(sender.nonce, nonce));
         }
@@ -445,9 +466,9 @@ impl StateMachine {
 
         // Look up validator
         let Some(mut entry) = self.get_validator(validator_addr) else {
-            return Err(LibError::ValidatorNotFound(
-                HexBytes(validator_addr.into_bytes()),
-            ));
+            return Err(LibError::ValidatorNotFound(HexBytes(
+                validator_addr.into_bytes(),
+            )));
         };
 
         // Verify validator is not frozen or unstaking
@@ -474,7 +495,9 @@ impl StateMachine {
         sender.nonce += 1;
 
         // Add to validator stake (defensive overflow check)
-        let new_stake = entry.stake.checked_add(amount)
+        let new_stake = entry
+            .stake
+            .checked_add(amount)
             .ok_or_else(|| LibError::Consensus("stake overflow"))?;
         entry.stake = new_stake;
 
@@ -568,9 +591,9 @@ impl StateMachine {
 
         // Look up validator
         let Some(mut entry) = self.get_validator(validator_addr) else {
-            return Err(LibError::ValidatorNotFound(
-                HexBytes(validator_addr.into_bytes()),
-            ));
+            return Err(LibError::ValidatorNotFound(HexBytes(
+                validator_addr.into_bytes(),
+            )));
         };
 
         // Verify validator is not frozen
@@ -585,7 +608,9 @@ impl StateMachine {
 
         // Verify amount ≤ validator.stake
         if amount > entry.stake {
-            return Err(LibError::Consensus("unstake amount exceeds validator stake"));
+            return Err(LibError::Consensus(
+                "unstake amount exceeds validator stake",
+            ));
         }
 
         // Verify sender can afford fee
@@ -602,8 +627,12 @@ impl StateMachine {
 
         // Allow nested unstaking: if already Unstaking, add to existing amount
         match &entry.status {
-            ValidatorStatus::Unstaking { release_era: existing_era, amount: existing_amount } => {
-                let new_amount = existing_amount.checked_add(amount)
+            ValidatorStatus::Unstaking {
+                release_era: existing_era,
+                amount: existing_amount,
+            } => {
+                let new_amount = existing_amount
+                    .checked_add(amount)
                     .ok_or_else(|| LibError::Consensus("unstake overflow"))?;
                 if new_amount > entry.stake {
                     return Err(LibError::Consensus(
@@ -646,7 +675,11 @@ impl StateMachine {
             return Ok(()); // silently skip non-existent
         };
 
-        let ValidatorStatus::Unstaking { release_era, amount } = entry.status else {
+        let ValidatorStatus::Unstaking {
+            release_era,
+            amount,
+        } = entry.status
+        else {
             return Ok(()); // not unstaking, skip
         };
 
@@ -768,14 +801,19 @@ impl StateMachine {
         let elected = if era == 0 {
             // Era 0: Open — first max_validators by registration order,
             // exclude Frozen/Unstaking (already filtered above)
-            eligible.into_iter().take(max_validators).collect::<Vec<_>>()
+            eligible
+                .into_iter()
+                .take(max_validators)
+                .collect::<Vec<_>>()
         } else {
             // Era 1+: Top-N by stake
             eligible.sort_by(|a, b| {
-                b.stake.cmp(&a.stake)
+                b.stake
+                    .cmp(&a.stake)
                     .then_with(|| a.registration_era.cmp(&b.registration_era))
             });
-            eligible.into_iter()
+            eligible
+                .into_iter()
                 .filter(|e| e.stake >= min_stake)
                 .take(max_validators)
                 .collect::<Vec<_>>()
@@ -786,7 +824,8 @@ impl StateMachine {
         // Set elected validators to Active
         for entry in elected {
             let new_status = match entry.status {
-                ValidatorStatus::Registered | ValidatorStatus::Staked { .. }
+                ValidatorStatus::Registered
+                | ValidatorStatus::Staked { .. }
                 | ValidatorStatus::Thawed => ValidatorStatus::Active,
                 other => other, // shouldn't happen, but preserve
             };
@@ -828,8 +867,8 @@ impl StateMachine {
         // Compute slash amounts: 90% of total stake
         let slashed = entry.stake * U256::from(90) / U256::from(100);
         let burn_amount = slashed * U256::from(90) / U256::from(100); // 81% of original
-        let bounty = slashed * U256::from(10) / U256::from(100);      // 9% of original
-        let remaining = entry.stake - slashed;                         // 10% of original
+        let bounty = slashed * U256::from(10) / U256::from(100); // 9% of original
+        let remaining = entry.stake - slashed; // 10% of original
 
         // Burn to 0x00..00 (permanent destruction)
         let burn_addr = crate::core::account::burn_address();
@@ -953,14 +992,18 @@ fn fee_as_u128(fee: U256) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitive_types::U256;
     use crate::core::block::{Block, BlockBody, BlockHeader};
     use crate::core::transaction::{Transaction, TxBody};
+    use crate::crypto::constants::{FALCON_PUBLIC_KEY_SIZE, FALCON_SIGNATURE_SIZE};
     use crate::crypto::falcon::Falcon512Signature;
-    use crate::crypto::constants::{FALCON_SIGNATURE_SIZE, FALCON_PUBLIC_KEY_SIZE};
+    use primitive_types::U256;
 
-    fn alice() -> Address { Address::from([0xAAu8; 32]) }
-    fn bob() -> Address { Address::from([0xBBu8; 32]) }
+    fn alice() -> Address {
+        Address::from([0xAAu8; 32])
+    }
+    fn bob() -> Address {
+        Address::from([0xBBu8; 32])
+    }
 
     fn dummy_sig() -> Falcon512Signature {
         Falcon512Signature::from_bytes(&[0xEEu8; FALCON_SIGNATURE_SIZE]).unwrap()
@@ -980,14 +1023,24 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer,
                 chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         }
     }
 
-    fn transfer_block(sender: Address, recipient: Address, amount: u64,
-                       nonce: u64, chain_id: u64) -> Block {
+    fn transfer_block(
+        sender: Address,
+        recipient: Address,
+        amount: u64,
+        nonce: u64,
+        chain_id: u64,
+    ) -> Block {
         let tx = Transaction {
             chain_id,
             nonce,
@@ -1008,9 +1061,14 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: Address::from([0u8; 32]),
                 chain_id,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         }
     }
 
@@ -1051,10 +1109,7 @@ mod tests {
 
     #[test]
     fn test_transfer_moves_balance() {
-        let accounts = vec![
-            (alice(), make_account(1000)),
-            (bob(), make_account(0)),
-        ];
+        let accounts = vec![(alice(), make_account(1000)), (bob(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
         let block = transfer_block(alice(), bob(), 100, 0, 0);
         let receipt = sm.apply_block(&block).unwrap();
@@ -1121,9 +1176,14 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: alice(),
                 chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
@@ -1141,32 +1201,48 @@ mod tests {
 
     #[test]
     fn test_multiple_transfers_in_block() {
-        let accounts = vec![
-            (alice(), make_account(1000)),
-            (bob(), make_account(0)),
-        ];
+        let accounts = vec![(alice(), make_account(1000)), (bob(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
 
         let tx1 = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::Transfer { recipient: bob(), amount: U256::from(100) },
+            body: TxBody::Transfer {
+                recipient: bob(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let tx2 = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::Transfer { recipient: bob(), amount: U256::from(200) },
+            body: TxBody::Transfer {
+                recipient: bob(),
+                amount: U256::from(200),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx1, tx2] },
+            body: BlockBody {
+                transactions: vec![tx1, tx2],
+            },
         };
 
         let receipt = sm.apply_block(&block).unwrap();
@@ -1186,19 +1262,33 @@ mod tests {
         let mut sm = StateMachine::new(accounts);
         // Test mismatch between tx.chain_id and block.header.chain_id
         let tx = Transaction {
-            chain_id: 99, nonce: 0, sender: alice(),
+            chain_id: 99,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(100),
-            body: TxBody::Transfer { recipient: bob(), amount: U256::from(100) },
+            body: TxBody::Transfer {
+                recipient: bob(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1239,19 +1329,32 @@ mod tests {
         let value = crate::core::account::scale_encode_account(&acct);
         sm.state.insert(&key, value);
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
+            body: TxBody::RegisterValidator {
+                public_key: [0x42u8; 897],
+            },
             signature: dummy_sig(),
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
@@ -1272,19 +1375,33 @@ mod tests {
 
         // Alice stakes 200 to Bob
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(75),
-            body: TxBody::Stake { validator: bob(), amount: U256::from(200) },
+            body: TxBody::Stake {
+                validator: bob(),
+                amount: U256::from(200),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
             header: BlockHeader {
-                height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: bob(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: bob(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
@@ -1316,9 +1433,13 @@ mod tests {
 
     fn make_register_tx(nonce: u64, fee: u64) -> Transaction {
         Transaction {
-            chain_id: 0, nonce, sender: alice(),
+            chain_id: 0,
+            nonce,
+            sender: alice(),
             fee: U256::from(fee),
-            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
+            body: TxBody::RegisterValidator {
+                public_key: [0x42u8; 897],
+            },
             signature: dummy_sig(),
         }
     }
@@ -1332,29 +1453,53 @@ mod tests {
 
         // First registration succeeds (nonce 0)
         let block1 = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
+            body: BlockBody {
+                transactions: vec![make_register_tx(0, 50)],
+            },
         };
         sm.apply_block(&block1).unwrap();
 
         // Second registration with correct nonce (1) — fails because already registered
         let tx2 = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::RegisterValidator { public_key: [0x43u8; 897] },
+            body: TxBody::RegisterValidator {
+                public_key: [0x43u8; 897],
+            },
             signature: dummy_sig(),
         };
         let block2 = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx2] },
+            body: BlockBody {
+                transactions: vec![tx2],
+            },
         };
         let receipt = sm.apply_block(&block2).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1374,12 +1519,22 @@ mod tests {
 
         // Nonce 5 but account nonce is 0
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![make_register_tx(5, 50)] },
+            body: BlockBody {
+                transactions: vec![make_register_tx(5, 50)],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1397,12 +1552,22 @@ mod tests {
 
         // 100 < 50 + deposit → execution fails, but fee-only path deducts 50
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
+            body: BlockBody {
+                transactions: vec![make_register_tx(0, 50)],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1419,12 +1584,22 @@ mod tests {
         setup_alice_with_balance(&mut sm, U256::from(30));
 
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![make_register_tx(0, 50)] },
+            body: BlockBody {
+                transactions: vec![make_register_tx(0, 50)],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1441,10 +1616,8 @@ mod tests {
     fn setup_bob_with_balance(sm: &mut StateMachine, balance: U256) {
         let mut acct = sm.get_account(&bob()).unwrap();
         acct.balance = balance;
-        let key = crate::crypto::trie::namespace_key(
-            crate::crypto::trie::NS_ACCOUNTS,
-            bob().as_bytes(),
-        );
+        let key =
+            crate::crypto::trie::namespace_key(crate::crypto::trie::NS_ACCOUNTS, bob().as_bytes());
         let value = crate::core::account::scale_encode_account(&acct);
         sm.state.insert(&key, value);
     }
@@ -1462,29 +1635,52 @@ mod tests {
         // Bob stakes 500 to Alice
         let stake_amount = U256::from(500);
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: bob(),
+            chain_id: 0,
+            nonce: 0,
+            sender: bob(),
             fee: U256::from(50),
-            body: TxBody::Stake { validator: alice(), amount: stake_amount },
+            body: TxBody::Stake {
+                validator: alice(),
+                amount: stake_amount,
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
 
         let entry = sm.get_validator(&alice()).unwrap();
         assert_eq!(entry.stake, stake_amount);
-        assert_eq!(entry.status, ValidatorStatus::Staked { stake: stake_amount });
+        assert_eq!(
+            entry.status,
+            ValidatorStatus::Staked {
+                stake: stake_amount
+            }
+        );
 
         // Bob's balance decreased by fee + amount
         let bob_post = sm.get_account(&bob()).unwrap();
-        assert_eq!(bob_post.balance, U256::from(1000) - stake_amount - U256::from(50));
+        assert_eq!(
+            bob_post.balance,
+            U256::from(1000) - stake_amount - U256::from(50)
+        );
         assert_eq!(bob_post.nonce, 1);
     }
 
@@ -1499,18 +1695,33 @@ mod tests {
         // Self-stake: Alice stakes to herself
         let stake_amount = U256::from(300);
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::Stake { validator: alice(), amount: stake_amount },
+            body: TxBody::Stake {
+                validator: alice(),
+                amount: stake_amount,
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
@@ -1533,18 +1744,33 @@ mod tests {
         let mut sm = StateMachine::new(accounts);
 
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::Stake { validator: bob(), amount: U256::from(100) },
+            body: TxBody::Stake {
+                validator: bob(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1562,18 +1788,33 @@ mod tests {
         create_validator(&mut sm, alice(), [0x42u8; 897], 0, 0);
 
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::Stake { validator: alice(), amount: U256::zero() },
+            body: TxBody::Stake {
+                validator: alice(),
+                amount: U256::zero(),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1605,18 +1846,33 @@ mod tests {
         sm.state.insert(&key, value);
 
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::Stake { validator: bob(), amount: U256::from(100) },
+            body: TxBody::Stake {
+                validator: bob(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1625,26 +1881,32 @@ mod tests {
     }
 
     /// Helper: register Alice as a validator with the given public key.
-    fn create_validator(
-        sm: &mut StateMachine,
-        addr: Address,
-        pk: [u8; 897],
-        nonce: u64,
-        fee: u64,
-    ) {
+    fn create_validator(sm: &mut StateMachine, addr: Address, pk: [u8; 897], nonce: u64, fee: u64) {
         let tx = Transaction {
-            chain_id: 0, nonce, sender: addr,
+            chain_id: 0,
+            nonce,
+            sender: addr,
             fee: U256::from(fee),
             body: TxBody::RegisterValidator { public_key: pk },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: addr, chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: addr,
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         sm.apply_block(&block).unwrap();
     }
@@ -1662,25 +1924,45 @@ mod tests {
 
         // Alice registers and stakes to herself in one tx
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::RegisterAndStake { validator: alice(), amount: U256::from(500) },
+            body: TxBody::RegisterAndStake {
+                validator: alice(),
+                amount: U256::from(500),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
 
         let entry = sm.get_validator(&alice()).unwrap();
         assert_eq!(entry.stake, U256::from(500));
-        assert_eq!(entry.status, ValidatorStatus::Staked { stake: U256::from(500) });
+        assert_eq!(
+            entry.status,
+            ValidatorStatus::Staked {
+                stake: U256::from(500)
+            }
+        );
         assert_eq!(entry.registration_era, 0);
 
         let alice_post = sm.get_account(&alice()).unwrap();
@@ -1697,18 +1979,33 @@ mod tests {
 
         // Alice tries to register Bob (different address) — should fail
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(60),
-            body: TxBody::RegisterAndStake { validator: bob(), amount: U256::from(300) },
+            body: TxBody::RegisterAndStake {
+                validator: bob(),
+                amount: U256::from(300),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1729,18 +2026,33 @@ mod tests {
 
         // Now try register-and-stake again — should fail (already registered)
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::RegisterAndStake { validator: alice(), amount: U256::from(100) },
+            body: TxBody::RegisterAndStake {
+                validator: alice(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1763,18 +2075,33 @@ mod tests {
     ) {
         // Register via RegisterAndStake atomic tx
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: addr,
+            chain_id: 0,
+            nonce: 0,
+            sender: addr,
             fee: U256::from(0),
-            body: TxBody::RegisterAndStake { validator: addr, amount: stake_amount },
+            body: TxBody::RegisterAndStake {
+                validator: addr,
+                amount: stake_amount,
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: addr, chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: addr,
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         sm.apply_block(&block).unwrap();
     }
@@ -1818,18 +2145,33 @@ mod tests {
 
         // Alice unstakes 200 from herself
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(40),
-            body: TxBody::Unstake { validator: alice(), amount: U256::from(200) },
+            body: TxBody::Unstake {
+                validator: alice(),
+                amount: U256::from(200),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
@@ -1857,18 +2199,33 @@ mod tests {
 
         // Bob (not Alice) unstakes 100 from Alice
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: bob(),
+            chain_id: 0,
+            nonce: 0,
+            sender: bob(),
             fee: U256::from(30),
-            body: TxBody::Unstake { validator: alice(), amount: U256::from(100) },
+            body: TxBody::Unstake {
+                validator: alice(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
@@ -1888,18 +2245,33 @@ mod tests {
         let accounts = vec![(alice(), make_account(1000))];
         let mut sm = StateMachine::new(accounts);
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(40),
-            body: TxBody::Unstake { validator: bob(), amount: U256::from(100) },
+            body: TxBody::Unstake {
+                validator: bob(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1918,18 +2290,33 @@ mod tests {
 
         // Try to unstake 500, but stake is only 300
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(40),
-            body: TxBody::Unstake { validator: alice(), amount: U256::from(500) },
+            body: TxBody::Unstake {
+                validator: alice(),
+                amount: U256::from(500),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1944,18 +2331,33 @@ mod tests {
         make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(300));
 
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(40),
-            body: TxBody::Unstake { validator: alice(), amount: U256::zero() },
+            body: TxBody::Unstake {
+                validator: alice(),
+                amount: U256::zero(),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1965,19 +2367,33 @@ mod tests {
     fn test_missing_sender_account_increments_failed_count() {
         let mut sm = StateMachine::new(vec![]); // empty state
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(100),
-            body: TxBody::Transfer { recipient: bob(), amount: U256::from(100) },
+            body: TxBody::Transfer {
+                recipient: bob(),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -1989,7 +2405,9 @@ mod tests {
         let accounts = vec![(alice(), make_account(1000))];
         let mut sm = StateMachine::new(accounts);
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(50),
             body: TxBody::Burn {
                 target: BurnTarget::CapRefill,
@@ -1999,12 +2417,21 @@ mod tests {
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.tx_count, 1);
@@ -2023,19 +2450,33 @@ mod tests {
         let accounts = vec![(alice(), make_account(1000))];
         let mut sm = StateMachine::new(accounts);
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: alice(),
+            chain_id: 0,
+            nonce: 0,
+            sender: alice(),
             fee: U256::from(50),
-            body: TxBody::Transfer { recipient: bob(), amount: U256::from(2000) },
+            body: TxBody::Transfer {
+                recipient: bob(),
+                amount: U256::from(2000),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert_eq!(receipt.failed_count, 1);
@@ -2088,12 +2529,21 @@ mod tests {
         };
         let block = Block {
             header: BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: alice_addr, chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: alice_addr,
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
 
         let receipt = sm.apply_block(&block).unwrap();
@@ -2127,18 +2577,33 @@ mod tests {
 
         // Unstake full amount (500)
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(40),
-            body: TxBody::Unstake { validator: alice(), amount: U256::from(500) },
+            body: TxBody::Unstake {
+                validator: alice(),
+                amount: U256::from(500),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         sm.apply_block(&block).unwrap();
 
@@ -2160,23 +2625,43 @@ mod tests {
         let initial = one_monex * U256::from(100) + deposit;
         let mut sm = StateMachine::new(vec![(alice(), make_account(0))]);
         setup_alice_with_balance(&mut sm, initial);
-        make_staked_validator(&mut sm, alice(), [0x42u8; 897], U256::from(50) * crate::core::constants::ONE_MONEX);
+        make_staked_validator(
+            &mut sm,
+            alice(),
+            [0x42u8; 897],
+            U256::from(50) * crate::core::constants::ONE_MONEX,
+        );
 
         // Unstake 20 MONEX (partial)
         let unstake_amount = U256::from(20) * one_monex;
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(40),
-            body: TxBody::Unstake { validator: alice(), amount: unstake_amount },
+            body: TxBody::Unstake {
+                validator: alice(),
+                amount: unstake_amount,
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: alice(), chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: alice(),
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         sm.apply_block(&block).unwrap();
 
@@ -2187,7 +2672,9 @@ mod tests {
         assert_eq!(entry.stake, U256::from(30) * one_monex);
         assert_eq!(
             entry.status,
-            ValidatorStatus::Staked { stake: U256::from(30) * one_monex }
+            ValidatorStatus::Staked {
+                stake: U256::from(30) * one_monex
+            }
         );
     }
 
@@ -2209,10 +2696,7 @@ mod tests {
         // Thaw at era 719 → not yet
         sm.process_thaw(&alice(), 719).unwrap();
         let entry = sm.get_validator(&alice()).unwrap();
-        assert_eq!(
-            entry.status,
-            ValidatorStatus::Frozen { frozen_until: 720 }
-        );
+        assert_eq!(entry.status, ValidatorStatus::Frozen { frozen_until: 720 });
 
         // Thaw at era 720+ → thawed
         sm.process_thaw(&alice(), 720).unwrap();
@@ -2238,8 +2722,14 @@ mod tests {
         let count = sm.thaw_all(&[al, bob, charlie], 700);
         assert_eq!(count, 2, "alice + bob thawed, charlie unfrozen");
 
-        assert_eq!(sm.get_validator(&al).unwrap().status, ValidatorStatus::Thawed);
-        assert_eq!(sm.get_validator(&bob).unwrap().status, ValidatorStatus::Registered);
+        assert_eq!(
+            sm.get_validator(&al).unwrap().status,
+            ValidatorStatus::Thawed
+        );
+        assert_eq!(
+            sm.get_validator(&bob).unwrap().status,
+            ValidatorStatus::Registered
+        );
         assert_eq!(
             sm.get_validator(&charlie).unwrap().status,
             ValidatorStatus::Active,
@@ -2341,18 +2831,33 @@ mod tests {
 
         // Alice sends 10 MONEX to bob with a 5 MONEX fee
         let tx = Transaction {
-            chain_id: 0, nonce: 0, sender: al,
+            chain_id: 0,
+            nonce: 0,
+            sender: al,
             fee: one_monex * 5, // 5 MONEX
-            body: TxBody::Transfer { recipient: bob, amount: one_monex * 10 },
+            body: TxBody::Transfer {
+                recipient: bob,
+                amount: one_monex * 10,
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: al, chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+            header: BlockHeader {
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: al,
+                chain_id: 0,
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         let receipt = sm.apply_block(&block).unwrap();
         assert!(receipt.total_fees > 0, "fees collected");
@@ -2441,7 +2946,9 @@ mod tests {
         let entry = sm.get_validator(&Address::from([1u8; 32])).unwrap();
         assert_eq!(
             entry.status,
-            ValidatorStatus::Staked { stake: U256::from(50) * one_monex }
+            ValidatorStatus::Staked {
+                stake: U256::from(50) * one_monex
+            }
         );
     }
 
@@ -2452,7 +2959,9 @@ mod tests {
             let status = if i == 1 {
                 ValidatorStatus::Frozen { frozen_until: 999 }
             } else {
-                ValidatorStatus::Staked { stake: U256::from(100) }
+                ValidatorStatus::Staked {
+                    stake: U256::from(100),
+                }
             };
             let addr = Address::from([i; 32]);
             let entry = ValidatorEntry {
@@ -2530,8 +3039,14 @@ mod tests {
 
         // 10 MONEX → 9 slashed, 8.1 burned, 0.9 bounty, 1 remaining
         assert_eq!(result.slashed_amount, U256::from(9) * one_monex);
-        assert_eq!(result.burn_amount, U256::from(9) * one_monex * U256::from(90) / U256::from(100));
-        assert_eq!(result.bounty_amount, U256::from(9) * one_monex * U256::from(10) / U256::from(100));
+        assert_eq!(
+            result.burn_amount,
+            U256::from(9) * one_monex * U256::from(90) / U256::from(100)
+        );
+        assert_eq!(
+            result.bounty_amount,
+            U256::from(9) * one_monex * U256::from(10) / U256::from(100)
+        );
         assert_eq!(result.remaining_stake, one_monex);
 
         // frozen_until = current_era(5) + 72 = 77
@@ -2576,7 +3091,8 @@ mod tests {
         // Give reporter some initial balance to verify it's credited correctly
         let mut reporter_acct = Account::new(U256::from(100) * one_monex);
         let reporter_key = namespace_key(NS_ACCOUNTS, reporter_addr.as_bytes());
-        sm.state.insert(&reporter_key, scale_encode_account(&reporter_acct));
+        sm.state
+            .insert(&reporter_key, scale_encode_account(&reporter_acct));
 
         let entry = ValidatorEntry {
             address: val_addr,
@@ -2646,10 +3162,7 @@ mod tests {
     #[test]
     fn test_list_validator_addresses_multiple() {
         let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
-        let accounts = vec![
-            (alice(), make_account(0)),
-            (bob(), make_account(0)),
-        ];
+        let accounts = vec![(alice(), make_account(0)), (bob(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
         setup_alice_with_balance(&mut sm, U256::from(1000) + deposit);
         setup_bob_with_balance(&mut sm, U256::from(1000) + deposit);
@@ -2665,10 +3178,7 @@ mod tests {
     #[test]
     fn test_list_validator_addresses_after_stake() {
         let deposit = crate::core::constants::ANTI_SPAM_DEPOSIT;
-        let accounts = vec![
-            (alice(), make_account(0)),
-            (bob(), make_account(0)),
-        ];
+        let accounts = vec![(alice(), make_account(0)), (bob(), make_account(0))];
         let mut sm = StateMachine::new(accounts);
         setup_alice_with_balance(&mut sm, U256::from(2000) + deposit);
         setup_bob_with_balance(&mut sm, U256::from(2000) + deposit);
@@ -2678,20 +3188,33 @@ mod tests {
         create_validator(&mut sm, bob(), [0x43u8; 897], 0, 50);
 
         let tx = Transaction {
-            chain_id: 0, nonce: 1, sender: alice(),
+            chain_id: 0,
+            nonce: 1,
+            sender: alice(),
             fee: U256::from(75),
-            body: TxBody::Stake { validator: bob(), amount: U256::from(200) },
+            body: TxBody::Stake {
+                validator: bob(),
+                amount: U256::from(200),
+            },
             signature: dummy_sig(),
         };
         let block = Block {
-            header: BlockHeader { height: 2, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_001, proposer: bob(), chain_id: 0,
+            header: BlockHeader {
+                height: 2,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_001,
+                proposer: bob(),
+                chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![tx] },
+            body: BlockBody {
+                transactions: vec![tx],
+            },
         };
         sm.apply_block(&block).unwrap();
 

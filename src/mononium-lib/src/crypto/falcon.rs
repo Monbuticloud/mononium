@@ -4,12 +4,12 @@
 //! [`SignatureScheme`] trait. All protocol signing uses Falcon-512
 //! (NIST Level I, logn = 9).
 
-use crate::error::{LibError, Result};
 use crate::crypto::constants::{
     FALCON_LOGN, FALCON_PRIVATE_KEY_SIZE, FALCON_PUBLIC_KEY_SIZE, FALCON_SEED_SIZE,
     FALCON_SIGNATURE_SIZE,
 };
 use crate::crypto::signature::SignatureScheme;
+use crate::error::{LibError, Result};
 
 use falcon::safe_api::{DomainSeparation, FnDsaKeyPair, FnDsaSignature};
 
@@ -206,10 +206,7 @@ mod tests {
 
         let kp_a = Falcon512::generate(&seed_a).unwrap();
         let kp_b = Falcon512::generate(&seed_b).unwrap();
-        assert_ne!(
-            Falcon512::public_key(&kp_a),
-            Falcon512::public_key(&kp_b)
-        );
+        assert_ne!(Falcon512::public_key(&kp_a), Falcon512::public_key(&kp_b));
     }
 
     #[test]
@@ -426,7 +423,11 @@ mod tests {
         pk_arr.copy_from_slice(&pk_bytes);
         let pk_reconstructed = Falcon512PublicKey(pk_arr);
 
-        assert!(Falcon512::verify(&pk_reconstructed, msg, &sig_reconstructed));
+        assert!(Falcon512::verify(
+            &pk_reconstructed,
+            msg,
+            &sig_reconstructed
+        ));
     }
 
     #[test]
@@ -445,7 +446,10 @@ mod tests {
     #[test]
     fn test_from_private_key_too_short_fails() {
         let err = Falcon512::from_private_key(&[0u8; 4]).unwrap_err();
-        assert!(err.to_string().contains("invalid private key"), "got: {err}");
+        assert!(
+            err.to_string().contains("invalid private key"),
+            "got: {err}"
+        );
     }
 
     #[test]

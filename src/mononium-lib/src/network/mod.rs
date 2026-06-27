@@ -13,8 +13,8 @@ use libp2p::kad::{self, store::MemoryStore};
 use libp2p::mdns;
 use libp2p::ping;
 use libp2p::swarm::{NetworkBehaviour, SwarmEvent};
-use libp2p_request_response::{self as request_response, json};
 use libp2p::{identity, Multiaddr, PeerId, Swarm};
+use libp2p_request_response::{self as request_response, json};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -58,22 +58,34 @@ pub enum CombinedEvent {
 }
 
 impl From<gossipsub::Event> for CombinedEvent {
-    fn from(e: gossipsub::Event) -> Self { Self::Gossipsub(e) }
+    fn from(e: gossipsub::Event) -> Self {
+        Self::Gossipsub(e)
+    }
 }
 impl From<kad::Event> for CombinedEvent {
-    fn from(e: kad::Event) -> Self { Self::Kademlia(e) }
+    fn from(e: kad::Event) -> Self {
+        Self::Kademlia(e)
+    }
 }
 impl From<mdns::Event> for CombinedEvent {
-    fn from(e: mdns::Event) -> Self { Self::Mdns(e) }
+    fn from(e: mdns::Event) -> Self {
+        Self::Mdns(e)
+    }
 }
 impl From<identify::Event> for CombinedEvent {
-    fn from(e: identify::Event) -> Self { Self::Identify(e) }
+    fn from(e: identify::Event) -> Self {
+        Self::Identify(e)
+    }
 }
 impl From<ping::Event> for CombinedEvent {
-    fn from(e: ping::Event) -> Self { Self::Ping(e) }
+    fn from(e: ping::Event) -> Self {
+        Self::Ping(e)
+    }
 }
 impl From<request_response::Event<SyncRequest, SyncResponse>> for CombinedEvent {
-    fn from(e: request_response::Event<SyncRequest, SyncResponse>) -> Self { Self::Sync(e) }
+    fn from(e: request_response::Event<SyncRequest, SyncResponse>) -> Self {
+        Self::Sync(e)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -89,15 +101,9 @@ pub enum P2pEvent {
         txs: Vec<Transaction>,
     },
     /// A gossip message containing a block was received.
-    BlockReceived {
-        source: PeerId,
-        block: Box<Block>,
-    },
+    BlockReceived { source: PeerId, block: Box<Block> },
     /// A gossip message containing a commit vote was received.
-    VoteReceived {
-        source: PeerId,
-        vote: CommitVote,
-    },
+    VoteReceived { source: PeerId, vote: CommitVote },
     /// A gossip message containing equivocation evidence was received.
     EvidenceReceived {
         source: PeerId,
@@ -143,10 +149,7 @@ pub(crate) enum P2pCommand {
     PublishBlock(Box<Block>),
     PublishVote(CommitVote),
     PublishEvidence(Box<EquivocationEvidence>),
-    SendSyncRequest {
-        peer: PeerId,
-        request: SyncRequest,
-    },
+    SendSyncRequest { peer: PeerId, request: SyncRequest },
     GetPeers(oneshot::Sender<Vec<PeerId>>),
     Shutdown,
 }
@@ -168,12 +171,18 @@ pub struct P2pHandle {
 pub fn dummy_p2p_handle() -> P2pHandle {
     let (cmd_tx, _) = mpsc::channel(64);
     let (event_tx, _) = broadcast::channel(64);
-    P2pHandle { cmd_tx, local_peer_id: PeerId::random(), event_tx }
+    P2pHandle {
+        cmd_tx,
+        local_peer_id: PeerId::random(),
+        event_tx,
+    }
 }
 
 impl P2pHandle {
     #[must_use]
-    pub fn local_peer_id(&self) -> &PeerId { &self.local_peer_id }
+    pub fn local_peer_id(&self) -> &PeerId {
+        &self.local_peer_id
+    }
 
     /// Subscribe to events emitted by this P2P node.
     #[must_use]
@@ -188,14 +197,19 @@ impl P2pHandle {
     }
 
     /// Publish transactions to the gossip network.
-    pub async fn publish_tx(&self, txs: Vec<Transaction>) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn publish_tx(
+        &self,
+        txs: Vec<Transaction>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         self.cmd_tx.send(P2pCommand::PublishTx(txs)).await?;
         Ok(())
     }
 
     /// Publish a block to the gossip network.
     pub async fn publish_block(&self, block: Block) -> Result<(), Box<dyn std::error::Error>> {
-        self.cmd_tx.send(P2pCommand::PublishBlock(Box::new(block))).await?;
+        self.cmd_tx
+            .send(P2pCommand::PublishBlock(Box::new(block)))
+            .await?;
         Ok(())
     }
 
@@ -206,8 +220,13 @@ impl P2pHandle {
     }
 
     /// Publish equivocation evidence to the gossip network.
-    pub async fn publish_evidence(&self, evidence: EquivocationEvidence) -> Result<(), Box<dyn std::error::Error>> {
-        self.cmd_tx.send(P2pCommand::PublishEvidence(Box::new(evidence))).await?;
+    pub async fn publish_evidence(
+        &self,
+        evidence: EquivocationEvidence,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.cmd_tx
+            .send(P2pCommand::PublishEvidence(Box::new(evidence)))
+            .await?;
         Ok(())
     }
 
@@ -302,22 +321,17 @@ impl P2pService {
         )?;
 
         // Kademlia
-        let kademlia = kad::Behaviour::new(
-            local_peer_id,
-            MemoryStore::new(local_peer_id),
-        );
+        let kademlia = kad::Behaviour::new(local_peer_id, MemoryStore::new(local_peer_id));
 
         // mDNS (always enabled; `enable_mdns` config flag is accepted but
         // unconditional in libp2p 0.56 — harmless when no responders exist)
         let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
 
         // Identify
-        let identify = identify::Behaviour::new(
-            identify::Config::new(
-                constants::PROTOCOL_VERSION.to_string(),
-                local_key.public(),
-            ),
-        );
+        let identify = identify::Behaviour::new(identify::Config::new(
+            constants::PROTOCOL_VERSION.to_string(),
+            local_key.public(),
+        ));
 
         // Ping
         let ping = ping::Behaviour::default();
@@ -378,8 +392,7 @@ impl P2pService {
 
     /// Start the P2P event loop. Consumes `self` and returns a [`P2pHandle`].
     pub fn start(mut self) -> Result<P2pHandle, Box<dyn std::error::Error>> {
-        let listen_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{}", self.p2p_port)
-            .parse()?;
+        let listen_addr: Multiaddr = format!("/ip4/127.0.0.1/tcp/{}", self.p2p_port).parse()?;
         self.swarm.listen_on(listen_addr)?;
 
         for topic in TopicConfig::standard_topics(self.chain_id) {
@@ -484,32 +497,57 @@ impl P2pService {
             }
         });
 
-        Ok(P2pHandle { cmd_tx, local_peer_id, event_tx })
+        Ok(P2pHandle {
+            cmd_tx,
+            local_peer_id,
+            event_tx,
+        })
     }
 
     fn handle_event(&mut self, event: SwarmEvent<CombinedEvent>) {
         match event {
             SwarmEvent::Behaviour(CombinedEvent::Gossipsub(e)) => {
-                if let gossipsub::Event::Message { propagation_source, message, .. } = e {
+                if let gossipsub::Event::Message {
+                    propagation_source,
+                    message,
+                    ..
+                } = e
+                {
                     let event_tx = self.event_tx.clone();
                     match GossipMessage::decode(&mut &message.data[..]) {
                         Ok(GossipMessage::Txs(txs)) => {
-                            self.peer_scores.apply_event(&propagation_source, ScoreEvent::ValidBlockPropagated);
-                            let _ = event_tx.send(P2pEvent::TxReceived { source: propagation_source, txs });
+                            self.peer_scores
+                                .apply_event(&propagation_source, ScoreEvent::ValidBlockPropagated);
+                            let _ = event_tx.send(P2pEvent::TxReceived {
+                                source: propagation_source,
+                                txs,
+                            });
                         }
                         Ok(GossipMessage::Block(block)) => {
-                            self.peer_scores.apply_event(&propagation_source, ScoreEvent::ValidBlockPropagated);
-                            let _ = event_tx.send(P2pEvent::BlockReceived { source: propagation_source, block });
+                            self.peer_scores
+                                .apply_event(&propagation_source, ScoreEvent::ValidBlockPropagated);
+                            let _ = event_tx.send(P2pEvent::BlockReceived {
+                                source: propagation_source,
+                                block,
+                            });
                         }
                         Ok(GossipMessage::Vote(vote)) => {
-                            self.peer_scores.apply_event(&propagation_source, ScoreEvent::ValidVotePropagated);
-                            let _ = event_tx.send(P2pEvent::VoteReceived { source: propagation_source, vote });
+                            self.peer_scores
+                                .apply_event(&propagation_source, ScoreEvent::ValidVotePropagated);
+                            let _ = event_tx.send(P2pEvent::VoteReceived {
+                                source: propagation_source,
+                                vote,
+                            });
                         }
                         Ok(GossipMessage::Evidence(evidence)) => {
-                            let _ = event_tx.send(P2pEvent::EvidenceReceived { source: propagation_source, evidence });
+                            let _ = event_tx.send(P2pEvent::EvidenceReceived {
+                                source: propagation_source,
+                                evidence,
+                            });
                         }
                         Err(_) => {
-                            self.peer_scores.apply_event(&propagation_source, ScoreEvent::InvalidBlockGossiped);
+                            self.peer_scores
+                                .apply_event(&propagation_source, ScoreEvent::InvalidBlockGossiped);
                         }
                     }
                 }
@@ -518,20 +556,19 @@ impl P2pService {
                 match event {
                     request_response::Event::Message { peer, message, .. } => {
                         match message {
-                            request_response::Message::Request { request, channel, .. } => {
+                            request_response::Message::Request {
+                                request, channel, ..
+                            } => {
                                 // Compute the response first to avoid borrow conflicts
                                 // with self.swarm.behaviour_mut().
-                                let response = self
-                                    .storage
-                                    .as_ref()
-                                    .and_then(|storage| {
-                                        serve_sync_request(
-                                            &request,
-                                            storage.as_ref(),
-                                            &self.genesis_hash,
-                                            self.highest_known_height,
-                                        )
-                                    });
+                                let response = self.storage.as_ref().and_then(|storage| {
+                                    serve_sync_request(
+                                        &request,
+                                        storage.as_ref(),
+                                        &self.genesis_hash,
+                                        self.highest_known_height,
+                                    )
+                                });
                                 if let Some(resp) = response {
                                     self.swarm.behaviour_mut().sync.send_response(channel, resp);
                                 }
@@ -603,8 +640,14 @@ mod tests {
         let port1 = pick_unused_port();
         let port2 = pick_unused_port();
 
-        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
-        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+        let cfg1 = P2pConfig {
+            p2p_port: port1,
+            ..Default::default()
+        };
+        let cfg2 = P2pConfig {
+            p2p_port: port2,
+            ..Default::default()
+        };
 
         let node1 = P2pService::new(cfg1, 0).unwrap();
         let node2 = P2pService::new(cfg2, 0).unwrap();
@@ -630,8 +673,14 @@ mod tests {
         let port1 = pick_unused_port();
         let port2 = pick_unused_port();
 
-        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
-        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+        let cfg1 = P2pConfig {
+            p2p_port: port1,
+            ..Default::default()
+        };
+        let cfg2 = P2pConfig {
+            p2p_port: port2,
+            ..Default::default()
+        };
 
         let node1 = P2pService::new(cfg1, 0).unwrap();
         let node2 = P2pService::new(cfg2, 0).unwrap();
@@ -650,8 +699,8 @@ mod tests {
         // Publish a transaction from node1
         use crate::core::account::Address;
         use crate::core::transaction::Transaction;
-        use crate::crypto::falcon::Falcon512Signature;
         use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        use crate::crypto::falcon::Falcon512Signature;
         use primitive_types::U256;
 
         let tx = Transaction {
@@ -690,8 +739,16 @@ mod tests {
         let port2 = pick_unused_port();
         let addr1: Multiaddr = format!("/ip4/127.0.0.1/tcp/{port1}").parse().unwrap();
 
-        let cfg1 = P2pConfig { p2p_port: port1, bootstrap_peers: vec![], ..Default::default() };
-        let cfg2 = P2pConfig { p2p_port: port2, bootstrap_peers: vec![addr1], ..Default::default() };
+        let cfg1 = P2pConfig {
+            p2p_port: port1,
+            bootstrap_peers: vec![],
+            ..Default::default()
+        };
+        let cfg2 = P2pConfig {
+            p2p_port: port2,
+            bootstrap_peers: vec![addr1],
+            ..Default::default()
+        };
 
         let node1 = P2pService::new(cfg1, 0).unwrap();
         let node2 = P2pService::new(cfg2, 0).unwrap();
@@ -708,8 +765,8 @@ mod tests {
         // Verify: node2 publishes a tx → node1 receives it via event channel
         use crate::core::account::Address;
         use crate::core::transaction::Transaction;
-        use crate::crypto::falcon::Falcon512Signature;
         use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        use crate::crypto::falcon::Falcon512Signature;
         use primitive_types::U256;
 
         let tx = Transaction {
@@ -742,13 +799,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_p2p_publish_block_delivers_block_received_event() {
-        use crate::core::block::{BlockHeader, BlockBody};
+        use crate::core::block::{BlockBody, BlockHeader};
 
         let port1 = pick_unused_port();
         let port2 = pick_unused_port();
 
-        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
-        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+        let cfg1 = P2pConfig {
+            p2p_port: port1,
+            ..Default::default()
+        };
+        let cfg2 = P2pConfig {
+            p2p_port: port2,
+            ..Default::default()
+        };
 
         let node1 = P2pService::new(cfg1, 0).unwrap();
         let node2 = P2pService::new(cfg2, 0).unwrap();
@@ -773,9 +836,14 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: crate::core::account::Address::from([0xDDu8; 32]),
                 chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         handle2.publish_block(block).await.unwrap();
 
@@ -800,8 +868,14 @@ mod tests {
         let port1 = pick_unused_port();
         let port2 = pick_unused_port();
 
-        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
-        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+        let cfg1 = P2pConfig {
+            p2p_port: port1,
+            ..Default::default()
+        };
+        let cfg2 = P2pConfig {
+            p2p_port: port2,
+            ..Default::default()
+        };
 
         let node1 = P2pService::new(cfg1, 0).unwrap();
         let node2 = P2pService::new(cfg2, 0).unwrap();
@@ -816,8 +890,8 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
         // Node2 publishes a vote
-        use crate::crypto::falcon::Falcon512Signature;
         use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        use crate::crypto::falcon::Falcon512Signature;
         let vote = CommitVote {
             height: 1,
             block_hash: [0xEEu8; 32],
@@ -868,19 +942,31 @@ mod tests {
                     )
                     .unwrap(),
                 },
-                body: crate::core::block::BlockBody { transactions: vec![] },
+                body: crate::core::block::BlockBody {
+                    transactions: vec![],
+                },
             };
             let key = h.to_be_bytes();
             let encoded = parity_scale_codec::Encode::encode(&block);
-            engine.put(crate::storage::tables::BLOCKS, &key, &encoded).unwrap();
+            engine
+                .put(crate::storage::tables::BLOCKS, &key, &encoded)
+                .unwrap();
         }
 
         let storage: Arc<dyn StorageEngine> = Arc::new(engine);
 
-        let cfg1 = P2pConfig { p2p_port: port1, ..Default::default() };
-        let cfg2 = P2pConfig { p2p_port: port2, ..Default::default() };
+        let cfg1 = P2pConfig {
+            p2p_port: port1,
+            ..Default::default()
+        };
+        let cfg2 = P2pConfig {
+            p2p_port: port2,
+            ..Default::default()
+        };
 
-        let mut node1 = P2pService::new(cfg1, 0).unwrap().with_storage(storage, genesis_hash);
+        let mut node1 = P2pService::new(cfg1, 0)
+            .unwrap()
+            .with_storage(storage, genesis_hash);
         node1.set_highest_known_height(5);
         let handle1 = node1.start().unwrap();
 
@@ -970,7 +1056,8 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let handle = crate::network::dummy_p2p_handle();
         let tx = crate::core::transaction::Transaction {
-            chain_id: 0, nonce: 0,
+            chain_id: 0,
+            nonce: 0,
             sender: crate::core::account::Address::from([0xAAu8; 32]),
             fee: 0u64.into(),
             body: crate::core::transaction::TxBody::Transfer {
@@ -979,7 +1066,8 @@ mod tests {
             },
             signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                 &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-            ).unwrap(),
+            )
+            .unwrap(),
         };
         // publish_tx on dummy handle should fail gracefully (no event loop)
         let result = rt.block_on(handle.publish_tx(vec![tx]));
@@ -999,15 +1087,21 @@ mod tests {
         let handle = crate::network::dummy_p2p_handle();
         let block = crate::core::block::Block {
             header: crate::core::block::BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 0, proposer: crate::core::account::Address::from([0u8; 32]),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 0,
+                proposer: crate::core::account::Address::from([0u8; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: crate::core::block::BlockBody { transactions: vec![] },
+            body: crate::core::block::BlockBody {
+                transactions: vec![],
+            },
         };
         let result = rt.block_on(handle.publish_block(block));
         assert!(result.is_err());
@@ -1020,9 +1114,11 @@ mod tests {
         let peer = handle.local_peer_id().clone();
         let req = crate::network::sync_protocol::SyncRequest::BlockSync(
             crate::network::messages::BlockSyncRequest {
-                start_height: 1, max_blocks: 1, direction: crate::network::messages::SyncDirection::Forward,
+                start_height: 1,
+                max_blocks: 1,
+                direction: crate::network::messages::SyncDirection::Forward,
                 known_block_hash: None,
-            }
+            },
         );
         let result = rt.block_on(handle.send_sync_request(peer, req));
         assert!(result.is_err());
@@ -1033,11 +1129,13 @@ mod tests {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let handle = crate::network::dummy_p2p_handle();
         let vote = crate::core::block::CommitVote {
-            height: 1, block_hash: [0u8; 32],
+            height: 1,
+            block_hash: [0u8; 32],
             validator: crate::core::account::Address::from([0u8; 32]),
             signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                 &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-            ).unwrap(),
+            )
+            .unwrap(),
         };
         let result = rt.block_on(handle.publish_vote(vote));
         assert!(result.is_err());
@@ -1049,23 +1147,31 @@ mod tests {
         let handle = crate::network::dummy_p2p_handle();
         let evidence = crate::network::messages::EquivocationEvidence {
             header_a: crate::core::block::BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 0, proposer: crate::core::account::Address::from([0u8; 32]),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 0,
+                proposer: crate::core::account::Address::from([0u8; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_a: [0xAAu8; 666],
             header_b: crate::core::block::BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1, proposer: crate::core::account::Address::from([0u8; 32]),
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1,
+                proposer: crate::core::account::Address::from([0u8; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_b: [0xBBu8; 666],
             proposer: [0u8; 32],
@@ -1079,33 +1185,40 @@ mod tests {
         let block_topic = TopicConfig::standard_topics(0)[1].clone(); // blocks topic = 500KB
         let big_block = GossipMessage::Block(Box::new(crate::core::block::Block {
             header: crate::core::block::BlockHeader {
-                height: 1, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
+                height: 1,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
                 timestamp: 0,
                 proposer: crate::core::account::Address::from([0u8; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             body: crate::core::block::BlockBody {
-                transactions: (0..10_000).map(|i| crate::core::transaction::Transaction {
-                    chain_id: 0, nonce: i,
-                    sender: {
-                        let mut addr_bytes = [0u8; 32];
-                        let le = (i as u128).to_le_bytes();
-                        addr_bytes[..16].copy_from_slice(&le);
-                        crate::core::account::Address::from(addr_bytes)
-                    },
-                    fee: 0u64.into(),
-                    body: crate::core::transaction::TxBody::Transfer {
-                        recipient: crate::core::account::Address::from([0xBBu8; 32]),
-                        amount: 1u64.into(),
-                    },
-                    signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
-                        &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                    ).unwrap(),
-                }).collect(),
+                transactions: (0..10_000)
+                    .map(|i| crate::core::transaction::Transaction {
+                        chain_id: 0,
+                        nonce: i,
+                        sender: {
+                            let mut addr_bytes = [0u8; 32];
+                            let le = (i as u128).to_le_bytes();
+                            addr_bytes[..16].copy_from_slice(&le);
+                            crate::core::account::Address::from(addr_bytes)
+                        },
+                        fee: 0u64.into(),
+                        body: crate::core::transaction::TxBody::Transfer {
+                            recipient: crate::core::account::Address::from([0xBBu8; 32]),
+                            amount: 1u64.into(),
+                        },
+                        signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                            &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                        )
+                        .unwrap(),
+                    })
+                    .collect(),
             },
         }));
         let result = prepare_gossip_message(&big_block, &block_topic);

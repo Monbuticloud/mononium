@@ -137,6 +137,6 @@ mod tests {
         assert_eq!(txs[0].fee(), U256::from(200)); // best (highest fee)
         assert_eq!(txs[1].fee(), U256::from(100)); // mid2 (earliest time)
         assert_eq!(txs[2].fee(), U256::from(100)); // mid (later time)
-        assert_eq!(txs[3].fee(), U256::from(50));  // worst (lowest fee)
+        assert_eq!(txs[3].fee(), U256::from(50)); // worst (lowest fee)
     }
 }

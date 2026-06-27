@@ -13,12 +13,9 @@ use parity_scale_codec::Encode;
 
 use crate::error::{LibError, Result};
 use crate::governance::constants::{
-    MAX_ACTIVE_PROPOSALS_PER_PROPOSER, MAX_PROPOSALS_PER_ERA, PROPOSAL_DEPOSIT,
-    VOTING_WINDOW_ERAS,
+    MAX_ACTIVE_PROPOSALS_PER_PROPOSER, MAX_PROPOSALS_PER_ERA, PROPOSAL_DEPOSIT, VOTING_WINDOW_ERAS,
 };
-use crate::governance::types::{
-    GovernanceAction, GovernanceParam, Proposal, ProposalStatus, Vote,
-};
+use crate::governance::types::{GovernanceAction, GovernanceParam, Proposal, ProposalStatus, Vote};
 
 // ---------------------------------------------------------------------------
 // Sub-key helpers
@@ -95,7 +92,10 @@ impl<'a> GovernanceEngine<'a> {
             return Err(LibError::AccountNotFound((*proposer.as_bytes()).into()));
         };
         if acct.balance < PROPOSAL_DEPOSIT {
-            return Err(LibError::InsufficientBalance(acct.balance, PROPOSAL_DEPOSIT));
+            return Err(LibError::InsufficientBalance(
+                acct.balance,
+                PROPOSAL_DEPOSIT,
+            ));
         }
 
         // Title max 256 bytes
@@ -105,12 +105,16 @@ impl<'a> GovernanceEngine<'a> {
 
         // Description max 4096 bytes
         if description.len() > 4096 {
-            return Err(LibError::GovernanceRejected("description exceeds 4096 bytes"));
+            return Err(LibError::GovernanceRejected(
+                "description exceeds 4096 bytes",
+            ));
         }
 
         // Actions must be non-empty and respect param bounds
         if actions.is_empty() {
-            return Err(LibError::GovernanceRejected("proposal must have at least one action"));
+            return Err(LibError::GovernanceRejected(
+                "proposal must have at least one action",
+            ));
         }
         for action in actions {
             self.validate_action(action)?;
@@ -119,12 +123,16 @@ impl<'a> GovernanceEngine<'a> {
         // Rate limits
         let proposer_count = self.proposer_active_count(proposer);
         if proposer_count >= MAX_ACTIVE_PROPOSALS_PER_PROPOSER as u64 {
-            return Err(LibError::GovernanceRejected("max 5 active proposals per proposer"));
+            return Err(LibError::GovernanceRejected(
+                "max 5 active proposals per proposer",
+            ));
         }
 
         let global_count = self.global_active_count();
         if global_count >= MAX_PROPOSALS_PER_ERA as u64 {
-            return Err(LibError::GovernanceRejected("max 50 proposals per era reached"));
+            return Err(LibError::GovernanceRejected(
+                "max 50 proposals per era reached",
+            ));
         }
 
         // Param lock: no active proposal for same param
@@ -230,11 +238,7 @@ impl<'a> GovernanceEngine<'a> {
     /// Cancel a proposal (before any votes are cast).
     ///
     /// Only the original proposer may cancel. Deposit is returned.
-    pub fn cancel_proposal(
-        &mut self,
-        proposal_id: &[u8; 32],
-        caller: &Address,
-    ) -> Result<()> {
+    pub fn cancel_proposal(&mut self, proposal_id: &[u8; 32], caller: &Address) -> Result<()> {
         let Some(mut proposal) = self.get_proposal(proposal_id) else {
             return Err(LibError::ProposalNotFound);
         };
@@ -251,7 +255,9 @@ impl<'a> GovernanceEngine<'a> {
 
         // No votes yet
         if self.has_any_votes(proposal_id) {
-            return Err(LibError::GovernanceRejected("cannot cancel after votes are cast"));
+            return Err(LibError::GovernanceRejected(
+                "cannot cancel after votes are cast",
+            ));
         }
 
         // Return deposit
@@ -325,9 +331,8 @@ impl<'a> GovernanceEngine<'a> {
     fn validate_action(&self, action: &GovernanceAction) -> Result<()> {
         match action {
             GovernanceAction::UpdateParam { param, new_value } => {
-                let bounds = param_bounds_for(param).ok_or_else(|| {
-                    LibError::GovernanceRejected("unknown governance parameter")
-                })?;
+                let bounds = param_bounds_for(param)
+                    .ok_or_else(|| LibError::GovernanceRejected("unknown governance parameter"))?;
                 if *new_value < bounds.0 || *new_value > bounds.1 {
                     return Err(LibError::GovernanceRejected(
                         "new value is out of bounds for this parameter",
@@ -380,7 +385,11 @@ impl<'a> GovernanceEngine<'a> {
 
     /// Count active proposals for a proposer.
     fn proposer_active_count(&self, proposer: &Address) -> u64 {
-        let key = [GOV_PROPOSER_COUNT_PREFIX, &hex::encode(proposer.as_bytes()).as_bytes()].concat();
+        let key = [
+            GOV_PROPOSER_COUNT_PREFIX,
+            &hex::encode(proposer.as_bytes()).as_bytes(),
+        ]
+        .concat();
         self.state
             .governance_get(&key)
             .and_then(|v| u64::decode(&mut &v[..]).ok())
@@ -396,13 +405,21 @@ impl<'a> GovernanceEngine<'a> {
     }
 
     fn increment_proposer_count(&mut self, proposer: &Address) {
-        let key = [GOV_PROPOSER_COUNT_PREFIX, &hex::encode(proposer.as_bytes()).as_bytes()].concat();
+        let key = [
+            GOV_PROPOSER_COUNT_PREFIX,
+            &hex::encode(proposer.as_bytes()).as_bytes(),
+        ]
+        .concat();
         let current = self.proposer_active_count(proposer);
         self.state.governance_insert(&key, (current + 1).encode());
     }
 
     fn decrement_proposer_count(&mut self, proposer: &Address) {
-        let key = [GOV_PROPOSER_COUNT_PREFIX, &hex::encode(proposer.as_bytes()).as_bytes()].concat();
+        let key = [
+            GOV_PROPOSER_COUNT_PREFIX,
+            &hex::encode(proposer.as_bytes()).as_bytes(),
+        ]
+        .concat();
         let current = self.proposer_active_count(proposer);
         if current > 0 {
             self.state.governance_insert(&key, (current - 1).encode());
@@ -411,13 +428,15 @@ impl<'a> GovernanceEngine<'a> {
 
     fn increment_global_count(&mut self) {
         let current = self.global_active_count();
-        self.state.governance_insert(GOV_ACTIVE_COUNT, (current + 1).encode());
+        self.state
+            .governance_insert(GOV_ACTIVE_COUNT, (current + 1).encode());
     }
 
     fn decrement_global_count(&mut self) {
         let current = self.global_active_count();
         if current > 0 {
-            self.state.governance_insert(GOV_ACTIVE_COUNT, (current - 1).encode());
+            self.state
+                .governance_insert(GOV_ACTIVE_COUNT, (current - 1).encode());
         }
     }
 
@@ -463,7 +482,7 @@ mod tests {
     use crate::core::account::Account;
     use crate::core::constants::ONE_MONEX;
     use crate::core::validator::{ValidatorEntry, ValidatorStatus};
-    use crate::crypto::trie::{NS_VALIDATORS, namespace_key};
+    use crate::crypto::trie::{namespace_key, NS_VALIDATORS};
     use parity_scale_codec::Encode;
 
     fn addr(b: u8) -> Address {
@@ -475,7 +494,10 @@ mod tests {
     }
 
     fn setup_state() -> StateMachine {
-        let mut sm = StateMachine::new(vec![(addr(1), Account::new(PROPOSAL_DEPOSIT * U256::from(5)))]);
+        let mut sm = StateMachine::new(vec![(
+            addr(1),
+            Account::new(PROPOSAL_DEPOSIT * U256::from(5)),
+        )]);
         // Add a staked validator for voting
         let val = ValidatorEntry {
             address: addr(2),
@@ -755,7 +777,9 @@ mod tests {
                 engine.set_proposal_status(&pid, ProposalStatus::Approved);
             }
 
-            engine.execute_approved(&[proposal_id(1), proposal_id(2)]).unwrap();
+            engine
+                .execute_approved(&[proposal_id(1), proposal_id(2)])
+                .unwrap();
         }
 
         let pk = param_key(&GovernanceParam::MaxValidators);

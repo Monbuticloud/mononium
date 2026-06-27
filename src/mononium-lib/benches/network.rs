@@ -13,8 +13,8 @@ use mononium_lib::core::transaction::{Transaction, TxBody};
 use mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE;
 use mononium_lib::crypto::falcon::Falcon512Signature;
 use mononium_lib::network::messages::{
-    compute_batch_hash, BlockByHashRequest, BlockSyncRequest,
-    BlockSyncResponse, EquivocationEvidence, GossipMessage, SyncDirection,
+    compute_batch_hash, BlockByHashRequest, BlockSyncRequest, BlockSyncResponse,
+    EquivocationEvidence, GossipMessage, SyncDirection,
 };
 
 // ---------------------------------------------------------------------------
@@ -207,11 +207,13 @@ fn bench_scale_encode_by_hash_request(c: &mut Criterion) {
 
 fn bench_compute_batch_hash_10_blocks(c: &mut Criterion) {
     let genesis = [0x01; 32];
-    let blocks: Vec<Block> = (0..10).map(|i| {
-        let mut b = dummy_block(50);
-        b.header.height = i;
-        b
-    }).collect();
+    let blocks: Vec<Block> = (0..10)
+        .map(|i| {
+            let mut b = dummy_block(50);
+            b.header.height = i;
+            b
+        })
+        .collect();
 
     c.bench_function("compute_batch_hash/10_blocks", |b| {
         b.iter(|| {
@@ -222,11 +224,13 @@ fn bench_compute_batch_hash_10_blocks(c: &mut Criterion) {
 
 fn bench_compute_batch_hash_100_blocks(c: &mut Criterion) {
     let genesis = [0x01; 32];
-    let blocks: Vec<Block> = (0..100).map(|i| {
-        let mut b = dummy_block(10);
-        b.header.height = i;
-        b
-    }).collect();
+    let blocks: Vec<Block> = (0..100)
+        .map(|i| {
+            let mut b = dummy_block(10);
+            b.header.height = i;
+            b
+        })
+        .collect();
 
     c.bench_function("compute_batch_hash/100_blocks", |b| {
         b.iter(|| {
@@ -242,14 +246,24 @@ fn bench_compute_batch_hash_100_blocks(c: &mut Criterion) {
 fn bench_scale_encode_equivocation(c: &mut Criterion) {
     let evidence = EquivocationEvidence {
         header_a: BlockHeader {
-            height: 42, parent_hash: [0xAA; 32], global_state_root: [0; 32],
-            tx_root: [0; 32], timestamp: 100, proposer: addr(0xDD), chain_id: 0,
+            height: 42,
+            parent_hash: [0xAA; 32],
+            global_state_root: [0; 32],
+            tx_root: [0; 32],
+            timestamp: 100,
+            proposer: addr(0xDD),
+            chain_id: 0,
             proposer_signature: dummy_sig(),
         },
         signature_a: [0x11u8; 666],
         header_b: BlockHeader {
-            height: 43, parent_hash: [0xBB; 32], global_state_root: [0; 32],
-            tx_root: [0; 32], timestamp: 101, proposer: addr(0xEE), chain_id: 0,
+            height: 43,
+            parent_hash: [0xBB; 32],
+            global_state_root: [0; 32],
+            tx_root: [0; 32],
+            timestamp: 101,
+            proposer: addr(0xEE),
+            chain_id: 0,
             proposer_signature: dummy_sig(),
         },
         signature_b: [0x22u8; 666],

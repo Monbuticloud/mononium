@@ -108,7 +108,9 @@ fn bench_storage_get_missing(c: &mut Criterion) {
 
     c.bench_function("storage/get/missing", |b| {
         b.iter(|| {
-            let val = engine.get(tables::BLOCKS, black_box(b"nonexistent")).unwrap();
+            let val = engine
+                .get(tables::BLOCKS, black_box(b"nonexistent"))
+                .unwrap();
             black_box(val);
         })
     });

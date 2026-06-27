@@ -123,7 +123,10 @@ mod tests {
         assert_eq!(RpcErrorCode::Success.message(), "success");
         assert_eq!(RpcErrorCode::Internal.message(), "internal error");
         assert_eq!(RpcErrorCode::InvalidParams.message(), "invalid parameters");
-        assert_eq!(RpcErrorCode::TxValidation.message(), "transaction validation failed");
+        assert_eq!(
+            RpcErrorCode::TxValidation.message(),
+            "transaction validation failed"
+        );
         assert_eq!(RpcErrorCode::BlockNotFound.message(), "block not found");
         assert_eq!(RpcErrorCode::TxNotFound.message(), "transaction not found");
         assert_eq!(RpcErrorCode::AddressNotFound.message(), "address not found");

@@ -58,8 +58,8 @@ mod tests {
     use super::*;
     use crate::crypto::constants::FALCON_PUBLIC_KEY_SIZE;
     use crate::crypto::falcon::Falcon512;
-    use crate::crypto::signature::SignatureScheme;
     use crate::crypto::hash::blake3_hash;
+    use crate::crypto::signature::SignatureScheme;
 
     /// A fixed 48-byte seed for deterministic tests.
     fn test_seed() -> [u8; 48] {

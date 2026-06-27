@@ -98,7 +98,9 @@ mod tests {
     #[test]
     fn test_separate_tables_dont_clash() {
         let (_dir, engine) = setup_engine();
-        engine.put(tables::ACCOUNTS, b"key", b"account-data").unwrap();
+        engine
+            .put(tables::ACCOUNTS, b"key", b"account-data")
+            .unwrap();
         engine.put(tables::META, b"key", b"meta-data").unwrap();
         assert_eq!(
             engine.get(tables::ACCOUNTS, b"key").unwrap().unwrap(),
@@ -117,8 +119,7 @@ mod tests {
         engine.put(tables::ACCOUNTS, b"b", b"2").unwrap();
         engine.put(tables::ACCOUNTS, b"c", b"3").unwrap();
         let mut keys = engine.list_keys(tables::ACCOUNTS).unwrap();
-        let mut expected: Vec<Vec<u8>> =
-            vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()];
+        let mut expected: Vec<Vec<u8>> = vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()];
         keys.sort();
         expected.sort();
         assert_eq!(keys, expected);
@@ -165,7 +166,11 @@ mod tests {
     fn test_list_keys_empty_table() {
         let (_dir, engine) = setup_engine();
         let keys = engine.list_keys(tables::BLOCKS).unwrap();
-        assert!(keys.is_empty(), "expected empty table, got {} keys", keys.len());
+        assert!(
+            keys.is_empty(),
+            "expected empty table, got {} keys",
+            keys.len()
+        );
         let keys = engine.list_keys(tables::TXS).unwrap();
         assert!(keys.is_empty());
         let keys = engine.list_keys(tables::VOTES).unwrap();
@@ -231,9 +236,7 @@ mod tests {
     #[test]
     fn test_open_fails_at_invalid_path() {
         // Parent directory doesn't exist → Database::create fails → map_db_err
-        let result = RedbEngine::open(
-            &Path::new("/tmp/mononium-test-nonexistent-dir/test.redb"),
-        );
+        let result = RedbEngine::open(&Path::new("/tmp/mononium-test-nonexistent-dir/test.redb"));
         match result {
             Err(err) => assert!(err.to_string().contains("redb database"), "got: {err}"),
             Ok(_) => panic!("expected Err, got Ok"),

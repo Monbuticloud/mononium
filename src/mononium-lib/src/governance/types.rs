@@ -50,10 +50,7 @@ pub enum GovernanceAction {
         new_value: U256,
     },
     #[codec(index = 1)]
-    IncreaseShards {
-        new_count: u16,
-        effective_era: u64,
-    },
+    IncreaseShards { new_count: u16, effective_era: u64 },
 }
 
 // ---------------------------------------------------------------------------
@@ -184,9 +181,13 @@ mod tests {
 
     #[test]
     fn test_proposal_status_scale_roundtrip_all() {
-        for status in &[ProposalStatus::Active, ProposalStatus::Approved,
-                         ProposalStatus::Rejected, ProposalStatus::Expired,
-                         ProposalStatus::Cancelled] {
+        for status in &[
+            ProposalStatus::Active,
+            ProposalStatus::Approved,
+            ProposalStatus::Rejected,
+            ProposalStatus::Expired,
+            ProposalStatus::Cancelled,
+        ] {
             let encoded = status.encode();
             let decoded = ProposalStatus::decode(&mut &encoded[..]).unwrap();
             assert_eq!(*status, decoded);
@@ -204,12 +205,10 @@ mod tests {
             proposer: Address::from([0xBB; 32]),
             title: b"Test Proposal".to_vec(),
             description: b"Description".to_vec(),
-            actions: vec![
-                GovernanceAction::UpdateParam {
-                    param: GovernanceParam::EraLength,
-                    new_value: U256::from(360),
-                },
-            ],
+            actions: vec![GovernanceAction::UpdateParam {
+                param: GovernanceParam::EraLength,
+                new_value: U256::from(360),
+            }],
             deposit: U256::from(100),
             submission_era: 5,
             status: ProposalStatus::Active,

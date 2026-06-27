@@ -21,10 +21,10 @@ use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tracing_subscriber::EnvFilter;
 
-use mononium_lib::config::NodeConfig;
 use mononium_lib::config::CliOverrides;
-use mononium_lib::consensus::era;
+use mononium_lib::config::NodeConfig;
 use mononium_lib::consensus::engine::{ConsensusEngine, LocalValidatorKey};
+use mononium_lib::consensus::era;
 use mononium_lib::consensus::ConsensusConfig;
 use mononium_lib::core::account::Address;
 use mononium_lib::core::block::{Block, BlockBody, BlockHeader};
@@ -35,10 +35,10 @@ use mononium_lib::mempool::{Mempool, MempoolConfig};
 use mononium_lib::rpc::server::start_rpc_server;
 use mononium_lib::rpc::state::AppState as RpcAppState;
 use mononium_lib::storage::genesis::load_genesis;
-use parity_scale_codec::Decode;
 use mononium_lib::storage::redb::RedbEngine;
 use mononium_lib::storage::tables;
 use mononium_lib::storage::StorageEngine;
+use parity_scale_codec::Decode;
 
 use crate::NodeArgs;
 
@@ -95,18 +95,17 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     tokio::fs::create_dir_all(db_dir).await?;
     let db_path = db_dir.join("chain.redb");
     tracing::info!(path = %db_path.display(), "opening database");
-    let engine = RedbEngine::open(&db_path)
-        .context("failed to open database")?;
+    let engine = RedbEngine::open(&db_path).context("failed to open database")?;
 
     // ---------- 7. Load genesis ----------
     {
         let genesis_loaded = engine.exists(tables::META, tables::GENESIS_LOADED_KEY)?;
         if !genesis_loaded {
-            let genesis_path = config.genesis_path()
+            let genesis_path = config
+                .genesis_path()
                 .context("genesis path not configured")?;
             tracing::info!(path = genesis_path, "loading genesis");
-            load_genesis(&engine, Path::new(genesis_path))
-                .context("failed to load genesis")?;
+            load_genesis(&engine, Path::new(genesis_path)).context("failed to load genesis")?;
         } else {
             tracing::info!("genesis already loaded, skipping");
         }
@@ -167,25 +166,25 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     let p2p_handle: Arc<mononium_lib::network::P2pHandle> = if p2p_port > 0 {
         let p2p_config = mononium_lib::network::P2pConfig {
             p2p_port,
-            bootstrap_peers: config.bootnodes().iter()
+            bootstrap_peers: config
+                .bootnodes()
+                .iter()
                 .filter_map(|s| s.parse::<libp2p::Multiaddr>().ok())
                 .collect(),
             enable_mdns: config.enable_mdns(),
             max_peers: 50,
         };
         match mononium_lib::network::P2pService::new(p2p_config, chain_id) {
-            Ok(service) => {
-                match service.start() {
-                    Ok(handle) => {
-                        tracing::info!("P2P networking started on port {p2p_port}");
-                        Arc::new(handle)
-                    }
-                    Err(e) => {
-                        tracing::error!("P2P start failed: {e}");
-                        Arc::new(mononium_lib::network::dummy_p2p_handle())
-                    }
+            Ok(service) => match service.start() {
+                Ok(handle) => {
+                    tracing::info!("P2P networking started on port {p2p_port}");
+                    Arc::new(handle)
                 }
-            }
+                Err(e) => {
+                    tracing::error!("P2P start failed: {e}");
+                    Arc::new(mononium_lib::network::dummy_p2p_handle())
+                }
+            },
             Err(e) => {
                 tracing::error!("P2P service creation failed: {e}");
                 Arc::new(mononium_lib::network::dummy_p2p_handle())
@@ -290,9 +289,8 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     });
 
     // ---------- 17. Wire consensus engine ----------
-    let mut consensus_engine = ConsensusEngine::new(
-        ConsensusConfig::new(Duration::from_secs(5), 720, 100)
-    );
+    let mut consensus_engine =
+        ConsensusEngine::new(ConsensusConfig::new(Duration::from_secs(5), 720, 100));
     consensus_engine.set_current_height(current_height);
 
     if !config.observer {
@@ -305,9 +303,8 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
                             let mut addr_arr = [0u8; 32];
                             addr_arr.copy_from_slice(&bytes[..32]);
                             let addr = Address::from(addr_arr);
-                            consensus_engine.set_local_validator(
-                                LocalValidatorKey { address: addr }
-                            );
+                            consensus_engine
+                                .set_local_validator(LocalValidatorKey { address: addr });
                             tracing::info!(address = %kf.address, "local validator identity");
                         }
                     }
@@ -324,13 +321,15 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
     tracing::info!("starting consensus loop (5s blocks)");
 
     let consensus_handle = tokio::spawn(async move {
-        consensus_engine.start_consensus_loop(
-            state_shared,
-            mempool_shared,
-            &*consensus_p2p,
-            &*engine_for_consensus,
-            consensus_genesis_hash,
-        ).await;
+        consensus_engine
+            .start_consensus_loop(
+                state_shared,
+                mempool_shared,
+                &*consensus_p2p,
+                &*engine_for_consensus,
+                consensus_genesis_hash,
+            )
+            .await;
     });
 
     // ---------- 18. Wait for signal or consensus exit ----------
@@ -549,9 +548,7 @@ async fn health_handler(State(state): State<SharedState>) -> Json<HealthResponse
 async fn height_handler(State(state): State<SharedState>) -> Json<HeightResponse> {
     let guard = state.lock().await;
     let height = load_latest_height(&*guard.engine).unwrap_or(guard.current_height);
-    Json(HeightResponse {
-        height,
-    })
+    Json(HeightResponse { height })
 }
 
 async fn era_handler(State(state): State<SharedState>) -> Json<EraResponse> {
@@ -596,14 +593,18 @@ struct ValidatorInfo {
 
 async fn validators_handler(State(state): State<SharedState>) -> Json<ValidatorsListResponse> {
     let guard = state.lock().await;
-    let keys = guard.engine.list_keys(tables::VALIDATORS).unwrap_or_default();
+    let keys = guard
+        .engine
+        .list_keys(tables::VALIDATORS)
+        .unwrap_or_default();
     let mut validators = Vec::new();
     for key in &keys {
         if key.len() != 32 {
             continue;
         }
         if let Ok(Some(raw)) = guard.engine.get(tables::VALIDATORS, key) {
-            if let Ok(entry) = mononium_lib::core::validator::ValidatorEntry::decode(&mut &raw[..]) {
+            if let Ok(entry) = mononium_lib::core::validator::ValidatorEntry::decode(&mut &raw[..])
+            {
                 validators.push(ValidatorInfo {
                     address: hex::encode(&key[..]),
                     stake: format!("{:#x}", entry.stake),
@@ -622,8 +623,8 @@ async fn block_latest_handler(
     if height == 0 {
         return Err(err_response(404, "no blocks yet".to_string()));
     }
-    let block = load_block_json(&*guard.engine, height)
-        .map_err(|e| err_response(500, format!("{e}")))?;
+    let block =
+        load_block_json(&*guard.engine, height).map_err(|e| err_response(500, format!("{e}")))?;
     Ok(Json(block))
 }
 
@@ -647,7 +648,10 @@ async fn block_by_hash_handler(
         return Err(err_response(400, "hash must be 32 bytes".to_string()));
     }
     let guard = state.lock().await;
-    let keys = guard.engine.list_keys(tables::BLOCKS).map_err(|_| err_response(500, "storage error".to_string()))?;
+    let keys = guard
+        .engine
+        .list_keys(tables::BLOCKS)
+        .map_err(|_| err_response(500, "storage error".to_string()))?;
     for key in &keys {
         if key.len() != 8 {
             continue;
@@ -780,7 +784,10 @@ fn parse_raw_address(s: &str) -> std::result::Result<[u8; 32], LibError> {
 }
 
 /// Load a block from storage, decode from SCALE, convert to JSON.
-fn load_block_json(engine: &dyn StorageEngine, height: u64) -> std::result::Result<serde_json::Value, LibError> {
+fn load_block_json(
+    engine: &dyn StorageEngine,
+    height: u64,
+) -> std::result::Result<serde_json::Value, LibError> {
     let key = height.to_be_bytes();
     let raw = engine
         .get(tables::BLOCKS, &key)?
@@ -797,8 +804,8 @@ fn load_block_json(engine: &dyn StorageEngine, height: u64) -> std::result::Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mononium_lib::storage::StorageEngine;
     use mononium_lib::storage::redb::RedbEngine;
+    use mononium_lib::storage::StorageEngine;
 
     #[test]
     fn test_parse_raw_address_valid() {
@@ -848,16 +855,29 @@ mod tests {
         let key = 5u64.to_be_bytes();
         let block = Block {
             header: BlockHeader {
-                height: 5, parent_hash: [0u8; 32],
-                global_state_root: [0u8; 32], tx_root: [0u8; 32],
-                timestamp: 1_700_000_000, proposer: Address::from([0xAAu8; 32]), chain_id: 0,
+                height: 5,
+                parent_hash: [0u8; 32],
+                global_state_root: [0u8; 32],
+                tx_root: [0u8; 32],
+                timestamp: 1_700_000_000,
+                proposer: Address::from([0xAAu8; 32]),
+                chain_id: 0,
                 proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
-        engine.put(tables::BLOCKS, &key, &parity_scale_codec::Encode::encode(&block)).unwrap();
+        engine
+            .put(
+                tables::BLOCKS,
+                &key,
+                &parity_scale_codec::Encode::encode(&block),
+            )
+            .unwrap();
         let height = load_latest_height(&engine).unwrap();
         assert_eq!(height, 5);
     }
@@ -866,7 +886,11 @@ mod tests {
     fn test_load_block_json_not_found() {
         let engine = setup_engine();
         let err = load_block_json(&engine, 99).unwrap_err();
-        assert!(err.to_string().contains("block not found") || err.to_string().contains("BlockNotFound"), "got: {err}");
+        assert!(
+            err.to_string().contains("block not found")
+                || err.to_string().contains("BlockNotFound"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -883,9 +907,12 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         let key = 1u64.to_be_bytes();
         let encoded = parity_scale_codec::Encode::encode(&block);
@@ -935,12 +962,21 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         let key = 5u64.to_be_bytes();
-        engine.put(tables::BLOCKS, &key, &parity_scale_codec::Encode::encode(&block)).unwrap();
+        engine
+            .put(
+                tables::BLOCKS,
+                &key,
+                &parity_scale_codec::Encode::encode(&block),
+            )
+            .unwrap();
 
         verify_state_consistency(&mut sm, &engine, 5).unwrap();
     }
@@ -962,15 +998,27 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: mononium_lib::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCD; mononium_lib::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         let key = 3u64.to_be_bytes();
-        engine.put(tables::BLOCKS, &key, &parity_scale_codec::Encode::encode(&block)).unwrap();
+        engine
+            .put(
+                tables::BLOCKS,
+                &key,
+                &parity_scale_codec::Encode::encode(&block),
+            )
+            .unwrap();
 
         let err = verify_state_consistency(&mut sm, &engine, 3).unwrap_err();
-        assert!(err.to_string().contains("state root mismatch"), "got: {err}");
+        assert!(
+            err.to_string().contains("state root mismatch"),
+            "got: {err}"
+        );
     }
 
     #[test]

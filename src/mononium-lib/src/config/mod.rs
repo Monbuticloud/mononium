@@ -83,7 +83,9 @@ pub struct NetworkSection {
     pub enable_mdns: bool,
 }
 
-const fn default_mdns() -> bool { true }
+const fn default_mdns() -> bool {
+    true
+}
 
 impl Default for NetworkSection {
     fn default() -> Self {
@@ -199,10 +201,7 @@ impl NodeConfig {
         let content = std::fs::read_to_string(path)
             .map_err(|e| LibError::Storage(format!("cannot read config: {e}")))?;
 
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
         match ext {
             "yaml" | "yml" => serde_yaml::from_str(&content)
@@ -217,21 +216,51 @@ impl NodeConfig {
 
     /// Merge CLI flag overrides on top of the current config.
     pub fn merge_cli(&mut self, cli: CliOverrides) {
-        if let Some(v) = cli.genesis { self.genesis = Some(v); }
-        if let Some(v) = cli.key { self.key = Some(v); }
-        if let Some(v) = cli.key_file { self.key_file = Some(v); }
-        if let Some(v) = cli.observer { self.observer = v; }
-        if let Some(v) = cli.p2p_port { self.network.p2p_port = Some(v); }
-        if let Some(v) = cli.rpc_port { self.network.rpc_port = Some(v); }
-        if let Some(v) = cli.rest_port { self.network.rest_port = Some(v); }
-        if let Some(v) = cli.bootnodes { self.network.bootnodes = Some(v); }
-        if let Some(v) = cli.data_dir { self.node.data_dir = Some(v); }
-        if let Some(v) = cli.storage_mode { self.storage.mode = Some(v); }
-        if let Some(v) = cli.compact_eras { self.storage.compact_eras = Some(v); }
-        if let Some(v) = cli.full_node_rpc { self.storage.full_node_rpc = Some(v); }
-        if let Some(v) = cli.log_level { self.log.level = Some(v); }
-        if let Some(v) = cli.log_json { self.log.json = Some(v); }
-        if let Some(v) = cli.unlock_timeout { self.node.unlock_timeout = Some(v); }
+        if let Some(v) = cli.genesis {
+            self.genesis = Some(v);
+        }
+        if let Some(v) = cli.key {
+            self.key = Some(v);
+        }
+        if let Some(v) = cli.key_file {
+            self.key_file = Some(v);
+        }
+        if let Some(v) = cli.observer {
+            self.observer = v;
+        }
+        if let Some(v) = cli.p2p_port {
+            self.network.p2p_port = Some(v);
+        }
+        if let Some(v) = cli.rpc_port {
+            self.network.rpc_port = Some(v);
+        }
+        if let Some(v) = cli.rest_port {
+            self.network.rest_port = Some(v);
+        }
+        if let Some(v) = cli.bootnodes {
+            self.network.bootnodes = Some(v);
+        }
+        if let Some(v) = cli.data_dir {
+            self.node.data_dir = Some(v);
+        }
+        if let Some(v) = cli.storage_mode {
+            self.storage.mode = Some(v);
+        }
+        if let Some(v) = cli.compact_eras {
+            self.storage.compact_eras = Some(v);
+        }
+        if let Some(v) = cli.full_node_rpc {
+            self.storage.full_node_rpc = Some(v);
+        }
+        if let Some(v) = cli.log_level {
+            self.log.level = Some(v);
+        }
+        if let Some(v) = cli.log_json {
+            self.log.json = Some(v);
+        }
+        if let Some(v) = cli.unlock_timeout {
+            self.node.unlock_timeout = Some(v);
+        }
     }
 
     /// Resolve the genesis path.
@@ -252,7 +281,9 @@ impl NodeConfig {
     }
 
     pub fn unlock_timeout(&self) -> u64 {
-        self.node.unlock_timeout.unwrap_or(constants::DEFAULT_UNLOCK_TIMEOUT_SECS)
+        self.node
+            .unlock_timeout
+            .unwrap_or(constants::DEFAULT_UNLOCK_TIMEOUT_SECS)
     }
 
     pub fn p2p_port(&self) -> u16 {
@@ -264,7 +295,9 @@ impl NodeConfig {
     }
 
     pub fn rest_port(&self) -> u16 {
-        self.network.rest_port.unwrap_or(constants::DEFAULT_REST_PORT)
+        self.network
+            .rest_port
+            .unwrap_or(constants::DEFAULT_REST_PORT)
     }
 
     pub fn bootnodes(&self) -> &[String] {
@@ -276,11 +309,16 @@ impl NodeConfig {
     }
 
     pub fn storage_mode(&self) -> &str {
-        self.storage.mode.as_deref().unwrap_or(constants::DEFAULT_STORAGE_MODE)
+        self.storage
+            .mode
+            .as_deref()
+            .unwrap_or(constants::DEFAULT_STORAGE_MODE)
     }
 
     pub fn compact_eras(&self) -> u32 {
-        self.storage.compact_eras.unwrap_or(constants::DEFAULT_COMPACT_ERAS)
+        self.storage
+            .compact_eras
+            .unwrap_or(constants::DEFAULT_COMPACT_ERAS)
     }
 
     pub fn full_node_rpc(&self) -> &[String] {
@@ -288,7 +326,9 @@ impl NodeConfig {
     }
 
     pub fn max_tx_per_account(&self) -> usize {
-        self.mempool.max_tx_per_account.unwrap_or(constants::DEFAULT_MAX_TX_PER_ACCOUNT)
+        self.mempool
+            .max_tx_per_account
+            .unwrap_or(constants::DEFAULT_MAX_TX_PER_ACCOUNT)
     }
 
     pub fn log_level(&self) -> &str {
@@ -334,8 +374,7 @@ impl NodeConfig {
 
         if self.genesis.is_none() {
             return Err(LibError::Storage(
-                "genesis path must be configured (use --genesis or config file)"
-                    .to_string(),
+                "genesis path must be configured (use --genesis or config file)".to_string(),
             ));
         }
 
@@ -570,7 +609,10 @@ mode = "compact"
         cfg.network.p2p_port = Some(0);
         cfg.network.rpc_port = Some(0);
         cfg.network.rest_port = Some(9933);
-        assert!(cfg.validate().is_ok(), "both p2p and rpc disabled (0) should be valid");
+        assert!(
+            cfg.validate().is_ok(),
+            "both p2p and rpc disabled (0) should be valid"
+        );
     }
 
     #[test]
@@ -599,7 +641,10 @@ mode = "compact"
         cfg.network.p2p_port = Some(9933);
         cfg.network.rest_port = Some(9933);
         let err = cfg.validate().unwrap_err();
-        assert!(err.to_string().contains("p2p_port") && err.to_string().contains("rest_port"), "got: {err}");
+        assert!(
+            err.to_string().contains("p2p_port") && err.to_string().contains("rest_port"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -610,7 +655,10 @@ mode = "compact"
         cfg.network.p2p_port = Some(9944);
         cfg.network.rpc_port = Some(9944);
         let err = cfg.validate().unwrap_err();
-        assert!(err.to_string().contains("p2p_port") && err.to_string().contains("rpc_port"), "got: {err}");
+        assert!(
+            err.to_string().contains("p2p_port") && err.to_string().contains("rpc_port"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -621,7 +669,10 @@ mode = "compact"
         cfg.network.rest_port = Some(9955);
         cfg.network.rpc_port = Some(9955);
         let err = cfg.validate().unwrap_err();
-        assert!(err.to_string().contains("rest_port") && err.to_string().contains("rpc_port"), "got: {err}");
+        assert!(
+            err.to_string().contains("rest_port") && err.to_string().contains("rpc_port"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -658,7 +709,11 @@ mode = "compact"
     fn test_load_toml_file() {
         let dir = std::env::temp_dir();
         let path = dir.join("test_mononium_cfg.toml");
-        std::fs::write(&path, "key = \"test\"\nobserver = false\ngenesis = \"test.json\"\n").unwrap();
+        std::fs::write(
+            &path,
+            "key = \"test\"\nobserver = false\ngenesis = \"test.json\"\n",
+        )
+        .unwrap();
         let cfg = NodeConfig::load(&path).unwrap();
         assert_eq!(cfg.key, Some("test".to_string()));
         std::fs::remove_file(&path).ok();
@@ -815,7 +870,10 @@ mode = "compact"
     fn test_merge_cli_observer_false() {
         let mut cfg = defaults();
         cfg.observer = true;
-        cfg.merge_cli(CliOverrides { observer: Some(false), ..Default::default() });
+        cfg.merge_cli(CliOverrides {
+            observer: Some(false),
+            ..Default::default()
+        });
         assert!(!cfg.observer);
     }
 

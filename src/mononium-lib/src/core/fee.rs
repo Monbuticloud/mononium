@@ -3,9 +3,7 @@
 
 use primitive_types::U256;
 
-use crate::core::constants::{
-    DEFAULT_FLAT_FEE, DEFAULT_PER_BYTE_RATE, BURN_FLAT_FEE,
-};
+use crate::core::constants::{BURN_FLAT_FEE, DEFAULT_FLAT_FEE, DEFAULT_PER_BYTE_RATE};
 use crate::core::transaction::{Transaction, TxBody};
 
 /// Pluggable fee calculation policy.
@@ -56,12 +54,11 @@ impl FeePolicy for HybridFee {
         match tx.body {
             TxBody::Burn { .. } => BURN_FLAT_FEE,
             _ => {
-                self.flat_fee
-                    + self.per_byte_rate * U256::from(Self::encoded_size(tx))
-                    // tip is part of Transaction.fee — the sender sets it as the
-                    // total fee they're willing to pay. The policy computes the
-                    // minimum expected fee; the actual declared fee is `tx.fee`.
-                    // For the base calculation we return the minimum.
+                self.flat_fee + self.per_byte_rate * U256::from(Self::encoded_size(tx))
+                // tip is part of Transaction.fee — the sender sets it as the
+                // total fee they're willing to pay. The policy computes the
+                // minimum expected fee; the actual declared fee is `tx.fee`.
+                // For the base calculation we return the minimum.
             }
         }
     }
@@ -75,8 +72,8 @@ impl FeePolicy for HybridFee {
 mod tests {
     use super::*;
     use crate::core::account::Address;
-    use crate::crypto::falcon::Falcon512Signature;
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+    use crate::crypto::falcon::Falcon512Signature;
 
     fn dummy_sig() -> Falcon512Signature {
         Falcon512Signature::from_bytes(&[0xEEu8; FALCON_SIGNATURE_SIZE]).unwrap()
@@ -130,7 +127,9 @@ mod tests {
             nonce: 0,
             sender: Address::from([0x05u8; 32]),
             fee: U256::from(1000),
-            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
+            body: TxBody::RegisterValidator {
+                public_key: [0x42u8; 897],
+            },
             signature: dummy_sig(),
         }
     }
@@ -288,18 +287,29 @@ mod tests {
         let transfer = dummy_transfer_tx();
         let reg_validator = dummy_register_validator_tx();
         // Register validator has more data → larger encoded size
-        assert!(HybridFee::encoded_size(&reg_validator) > HybridFee::encoded_size(&transfer),
-            "complex tx should be larger");
+        assert!(
+            HybridFee::encoded_size(&reg_validator) > HybridFee::encoded_size(&transfer),
+            "complex tx should be larger"
+        );
         // Same type different amounts → same encoded size (amount is U256, same size)
         let tx_a = Transaction {
-            body: TxBody::Transfer { recipient: Address::from([0xAA; 32]), amount: U256::from(1) },
+            body: TxBody::Transfer {
+                recipient: Address::from([0xAA; 32]),
+                amount: U256::from(1),
+            },
             ..transfer.clone()
         };
         let tx_b = Transaction {
-            body: TxBody::Transfer { recipient: Address::from([0xBB; 32]), amount: U256::MAX },
+            body: TxBody::Transfer {
+                recipient: Address::from([0xBB; 32]),
+                amount: U256::MAX,
+            },
             ..transfer
         };
-        assert_eq!(HybridFee::encoded_size(&tx_a), HybridFee::encoded_size(&tx_b),
-            "same tx type should have same encoded size regardless of values");
+        assert_eq!(
+            HybridFee::encoded_size(&tx_a),
+            HybridFee::encoded_size(&tx_b),
+            "same tx type should have same encoded size regardless of values"
+        );
     }
 }

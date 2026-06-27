@@ -15,7 +15,7 @@ use crate::core::transaction::Transaction;
 // ---------------------------------------------------------------------------
 
 mod sig_serde {
-    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+    use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(key: &[u8; 666], serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&hex::encode(key))
@@ -185,9 +185,9 @@ pub enum GossipMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::account::Address;
     use crate::core::block::CommitVote;
     use crate::core::block::{BlockBody, BlockHeader};
-    use crate::core::account::Address;
     use proptest::prelude::*;
 
     fn dummy_block() -> Block {
@@ -200,9 +200,14 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: Address::from([0x01; 32]),
                 chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         }
     }
 
@@ -318,7 +323,8 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xEEu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_a: [0x11u8; 666],
             header_b: BlockHeader {
@@ -331,7 +337,8 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xEEu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_b: [0x22u8; 666],
             proposer: [0xFFu8; 32],
@@ -346,21 +353,31 @@ mod tests {
         // Build a valid serialization then swap in wrong-length sig hex
         let evidence = EquivocationEvidence {
             header_a: BlockHeader {
-                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
-                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                height: 1,
+                parent_hash: [0; 32],
+                global_state_root: [0; 32],
+                tx_root: [0; 32],
+                timestamp: 0,
+                proposer: Address::from([0; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_a: [0x11u8; 666],
             header_b: BlockHeader {
-                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
-                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                height: 1,
+                parent_hash: [0; 32],
+                global_state_root: [0; 32],
+                tx_root: [0; 32],
+                timestamp: 0,
+                proposer: Address::from([0; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_b: [0x22u8; 666],
             proposer: [0xFFu8; 32],
@@ -376,21 +393,31 @@ mod tests {
     fn test_equivocation_evidence_json_invalid_hex() {
         let evidence = EquivocationEvidence {
             header_a: BlockHeader {
-                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
-                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                height: 1,
+                parent_hash: [0; 32],
+                global_state_root: [0; 32],
+                tx_root: [0; 32],
+                timestamp: 0,
+                proposer: Address::from([0; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_a: [0x11u8; 666],
             header_b: BlockHeader {
-                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
-                tx_root: [0; 32], timestamp: 0, proposer: Address::from([0; 32]),
+                height: 1,
+                parent_hash: [0; 32],
+                global_state_root: [0; 32],
+                tx_root: [0; 32],
+                timestamp: 0,
+                proposer: Address::from([0; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_b: [0x22u8; 666],
             proposer: [0xFFu8; 32],
@@ -419,7 +446,10 @@ mod tests {
     #[test]
     fn test_validate_sync_request_zero_blocks() {
         let req = BlockSyncRequest {
-            start_height: 1, max_blocks: 0, direction: SyncDirection::Forward, known_block_hash: None,
+            start_height: 1,
+            max_blocks: 0,
+            direction: SyncDirection::Forward,
+            known_block_hash: None,
         };
         assert!(validate_sync_request(&req).is_err());
     }
@@ -427,7 +457,10 @@ mod tests {
     #[test]
     fn test_validate_sync_request_exceeds_max() {
         let req = BlockSyncRequest {
-            start_height: 1, max_blocks: 501, direction: SyncDirection::Forward, known_block_hash: None,
+            start_height: 1,
+            max_blocks: 501,
+            direction: SyncDirection::Forward,
+            known_block_hash: None,
         };
         assert!(validate_sync_request(&req).is_err());
     }
@@ -435,7 +468,10 @@ mod tests {
     #[test]
     fn test_validate_sync_request_max_allowed() {
         let req = BlockSyncRequest {
-            start_height: 1, max_blocks: 500, direction: SyncDirection::Forward, known_block_hash: None,
+            start_height: 1,
+            max_blocks: 500,
+            direction: SyncDirection::Forward,
+            known_block_hash: None,
         };
         assert!(validate_sync_request(&req).is_ok());
     }
@@ -450,7 +486,9 @@ mod tests {
 
     #[test]
     fn test_validate_by_hash_request_empty() {
-        let req = BlockByHashRequest { block_hashes: vec![] };
+        let req = BlockByHashRequest {
+            block_hashes: vec![],
+        };
         assert!(validate_by_hash_request(&req).is_err());
     }
 
@@ -568,9 +606,14 @@ mod tests {
                 timestamp: 1_700_000_000,
                 proposer: crate::core::account::Address::from([0xEEu8; 32]),
                 chain_id: 0,
-                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(&[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap(),
+                proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
+                    &[0xCD; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+                )
+                .unwrap(),
             },
-            body: crate::core::block::BlockBody { transactions: vec![dummy_tx()] },
+            body: crate::core::block::BlockBody {
+                transactions: vec![dummy_tx()],
+            },
         };
         let msg = GossipMessage::Block(Box::new(block));
         let encoded = msg.encode();
@@ -607,9 +650,12 @@ mod tests {
                 chain_id: 1,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xAB; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: crate::core::block::BlockBody { transactions: vec![dummy_tx()] },
+            body: crate::core::block::BlockBody {
+                transactions: vec![dummy_tx()],
+            },
         };
         let msg = GossipMessage::Block(Box::new(block.clone()));
         let json = serde_json::to_string(&msg).unwrap();
@@ -620,21 +666,31 @@ mod tests {
     fn dummy_equivocation_evidence() -> EquivocationEvidence {
         EquivocationEvidence {
             header_a: crate::core::block::BlockHeader {
-                height: 1, parent_hash: [0; 32], global_state_root: [0; 32],
-                tx_root: [0; 32], timestamp: 0, proposer: crate::core::account::Address::from([0; 32]),
+                height: 1,
+                parent_hash: [0; 32],
+                global_state_root: [0; 32],
+                tx_root: [0; 32],
+                timestamp: 0,
+                proposer: crate::core::account::Address::from([0; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_a: [0x11u8; 666],
             header_b: crate::core::block::BlockHeader {
-                height: 2, parent_hash: [0xFF; 32], global_state_root: [0xEE; 32],
-                tx_root: [0xDD; 32], timestamp: 1, proposer: crate::core::account::Address::from([0x01; 32]),
+                height: 2,
+                parent_hash: [0xFF; 32],
+                global_state_root: [0xEE; 32],
+                tx_root: [0xDD; 32],
+                timestamp: 1,
+                proposer: crate::core::account::Address::from([0x01; 32]),
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
             signature_b: [0x22u8; 666],
             proposer: [0xFFu8; 32],

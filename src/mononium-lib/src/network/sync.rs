@@ -248,26 +248,28 @@ pub async fn run_sync_loop(
 
         p2p.send_sync_request(peer, sync_req).await?;
 
-        let response = match tokio::time::timeout(SYNC_TIMEOUT, wait_for_sync_response(&mut events, peer)).await
-        {
-            Ok(Some(resp)) => resp,
-            Ok(None) => {
-                warn!("sync: peer {peer} returned no response, trying next");
-                consecutive_failures += 1;
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                    return Err("sync: too many consecutive failures".into());
+        let response =
+            match tokio::time::timeout(SYNC_TIMEOUT, wait_for_sync_response(&mut events, peer))
+                .await
+            {
+                Ok(Some(resp)) => resp,
+                Ok(None) => {
+                    warn!("sync: peer {peer} returned no response, trying next");
+                    consecutive_failures += 1;
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                        return Err("sync: too many consecutive failures".into());
+                    }
+                    continue;
                 }
-                continue;
-            }
-            Err(_) => {
-                warn!("sync: timeout from peer {peer}, trying next");
-                consecutive_failures += 1;
-                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
-                    return Err("sync: too many consecutive timeouts".into());
+                Err(_) => {
+                    warn!("sync: timeout from peer {peer}, trying next");
+                    consecutive_failures += 1;
+                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                        return Err("sync: too many consecutive timeouts".into());
+                    }
+                    continue;
                 }
-                continue;
-            }
-        };
+            };
 
         let SyncResponse::BlockSync(bsr) = response else {
             warn!("sync: unexpected response type, trying next");
@@ -300,10 +302,7 @@ pub async fn run_sync_loop(
         let mut valid = true;
         for block in &bsr.blocks {
             if block.header.parent_hash != prev_hash {
-                warn!(
-                    height = block.header.height,
-                    "sync: parent hash mismatch"
-                );
+                warn!(height = block.header.height, "sync: parent hash mismatch");
                 valid = false;
                 break;
             }
@@ -374,7 +373,6 @@ async fn wait_for_sync_response(
 mod tests {
     use super::*;
     use proptest::prelude::*;
-    
 
     // -----------------------------------------------------------------------
     // construction
@@ -579,13 +577,13 @@ mod tests {
         assert_eq!(cursor.gap(), 100); // 100 − 0
 
         cursor.advance(30, [0xAA; 32]);
-        assert_eq!(cursor.gap(), 70);  // 100 − 30
+        assert_eq!(cursor.gap(), 70); // 100 − 30
 
         cursor.advance(80, [0xBB; 32]);
-        assert_eq!(cursor.gap(), 20);  // 100 − 80
+        assert_eq!(cursor.gap(), 20); // 100 − 80
 
         cursor.advance(100, [0xCC; 32]);
-        assert_eq!(cursor.gap(), 0);   // 100 − 100
+        assert_eq!(cursor.gap(), 0); // 100 − 100
     }
 
     #[test]
@@ -606,16 +604,19 @@ mod tests {
         let check = |gap, era_len, expected| {
             let mut cursor = SyncCursor::new([0; 32]);
             cursor.set_target(gap);
-            assert_eq!(cursor.needs_checkpoint(era_len), expected,
-                "gap={gap} era_len={era_len}");
+            assert_eq!(
+                cursor.needs_checkpoint(era_len),
+                expected,
+                "gap={gap} era_len={era_len}"
+            );
         };
-        check(0,   720, false);
-        check(1,   720, false);
+        check(0, 720, false);
+        check(1, 720, false);
         check(1439, 720, false);
-        check(1440, 720, true);  // 2 × 720
+        check(1440, 720, true); // 2 × 720
         check(1441, 720, true);
-        check(0,   100, false);
-        check(200, 100, true);   // 2 × 100
+        check(0, 100, false);
+        check(200, 100, true); // 2 × 100
         check(199, 100, false);
     }
 
@@ -644,8 +645,16 @@ mod tests {
     #[test]
     fn test_set_pending_overwrites_previous() {
         let mut cursor = SyncCursor::new([0; 32]);
-        cursor.set_pending(HeightRange { start: 1, end: 10, peer_id: "A".into() });
-        cursor.set_pending(HeightRange { start: 10, end: 20, peer_id: "B".into() });
+        cursor.set_pending(HeightRange {
+            start: 1,
+            end: 10,
+            peer_id: "A".into(),
+        });
+        cursor.set_pending(HeightRange {
+            start: 10,
+            end: 20,
+            peer_id: "B".into(),
+        });
         assert_eq!(cursor.pending_range.as_ref().unwrap().peer_id, "B");
         assert_eq!(cursor.pending_range.as_ref().unwrap().start, 10);
     }
@@ -653,9 +662,9 @@ mod tests {
     #[test]
     fn test_clear_pending_idempotent() {
         let mut cursor = SyncCursor::new([0; 32]);
-        cursor.clear_pending();           // nothing to clear
+        cursor.clear_pending(); // nothing to clear
         assert!(cursor.pending_range.is_none());
-        cursor.clear_pending();           // still nothing
+        cursor.clear_pending(); // still nothing
         assert!(cursor.pending_range.is_none());
     }
 

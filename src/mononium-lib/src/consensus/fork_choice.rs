@@ -59,10 +59,7 @@ impl ForkChoice {
     /// (prevents a single high-stake validator from dominating the weight
     /// by proposing many blocks).
     #[must_use]
-    pub fn total_stake_backing(
-        chain: &[Block],
-        stake_weights: &HashMap<Address, U256>,
-    ) -> U256 {
+    pub fn total_stake_backing(chain: &[Block], stake_weights: &HashMap<Address, U256>) -> U256 {
         let unique_proposers: HashSet<&Address> =
             chain.iter().map(|b| &b.header.proposer).collect();
 
@@ -82,8 +79,8 @@ mod tests {
     use super::*;
     use crate::core::block::BlockBody;
     use crate::core::block::BlockHeader;
-    use crate::crypto::falcon::Falcon512Signature;
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+    use crate::crypto::falcon::Falcon512Signature;
 
     fn addr(b: u8) -> Address {
         Address::from([b; 32])
@@ -105,12 +102,16 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: dummy_sig(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         }
     }
 
     fn hashmap(data: &[(u8, u64)]) -> HashMap<Address, U256> {
-        data.iter().map(|&(b, w)| (addr(b), U256::from(w))).collect()
+        data.iter()
+            .map(|&(b, w)| (addr(b), U256::from(w)))
+            .collect()
     }
 
     #[test]
@@ -170,7 +171,10 @@ mod tests {
         let chain = vec![block(addr(1)), block(addr(99))];
         let stakes = hashmap(&[(1, 100)]);
         // addr(99) has no stake → weight is just 100 (unique count)
-        assert_eq!(ForkChoice::total_stake_backing(&chain, &stakes), U256::from(100));
+        assert_eq!(
+            ForkChoice::total_stake_backing(&chain, &stakes),
+            U256::from(100)
+        );
     }
 
     #[test]
@@ -183,6 +187,9 @@ mod tests {
     fn test_empty_stakes_returns_zero() {
         let chain = vec![block(addr(1))];
         let stakes = HashMap::new();
-        assert_eq!(ForkChoice::total_stake_backing(&chain, &stakes), U256::zero());
+        assert_eq!(
+            ForkChoice::total_stake_backing(&chain, &stakes),
+            U256::zero()
+        );
     }
 }

@@ -3,8 +3,8 @@
 //! Defines the [`ValidatorElection`] trait and the V1 [`TopNElection`]
 //! implementation. Per ADR-002, Phragmén (V2+) can be swapped in via DI.
 
-use primitive_types::U256;
 use async_trait::async_trait;
+use primitive_types::U256;
 
 use crate::core::account::Address;
 
@@ -93,11 +93,7 @@ impl ValidatorElection for TopNElection {
                 .then_with(|| a.address.as_bytes().cmp(b.address.as_bytes()))
         });
 
-        sorted
-            .into_iter()
-            .take(max)
-            .map(|c| c.address)
-            .collect()
+        sorted.into_iter().take(max).map(|c| c.address).collect()
     }
 }
 

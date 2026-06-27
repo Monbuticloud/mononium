@@ -6,9 +6,9 @@
 
 use std::path::Path;
 
+use parity_scale_codec::Encode;
 use primitive_types::U256;
 use serde::Deserialize;
-use parity_scale_codec::Encode;
 
 use crate::core::account::{Account, Address};
 use crate::core::block::{Block, BlockBody, BlockHeader};
@@ -48,15 +48,14 @@ pub struct GenesisValidator {
 
 /// Parse a decimal string into `U256`.
 fn parse_u256(s: &str) -> IoResult<U256> {
-    U256::from_dec_str(s)
-        .map_err(|e| LibError::Storage(format!("invalid decimal U256 '{s}': {e}")))
+    U256::from_dec_str(s).map_err(|e| LibError::Storage(format!("invalid decimal U256 '{s}': {e}")))
 }
 
 /// Parse a hex address string (with or without `0x` prefix) into raw 32 bytes.
 fn parse_hex_addr(s: &str) -> IoResult<[u8; 32]> {
     let s = s.strip_prefix("0x").unwrap_or(s);
-    let bytes = hex::decode(s)
-        .map_err(|e| LibError::Storage(format!("invalid hex address '{s}': {e}")))?;
+    let bytes =
+        hex::decode(s).map_err(|e| LibError::Storage(format!("invalid hex address '{s}': {e}")))?;
     if bytes.len() != 32 {
         return Err(LibError::Storage(format!(
             "address must be 32 bytes, got {}",
@@ -79,12 +78,8 @@ fn parse_hex_addr(s: &str) -> IoResult<[u8; 32]> {
 /// - Addresses are malformed.
 pub fn load_genesis(engine: &impl StorageEngine, genesis_path: &Path) -> Result<()> {
     // ---------- duplicate detection ----------
-    if engine
-        .exists(tables::META, tables::GENESIS_LOADED_KEY)?
-    {
-        return Err(LibError::Storage(
-            "genesis already loaded".to_string(),
-        ));
+    if engine.exists(tables::META, tables::GENESIS_LOADED_KEY)? {
+        return Err(LibError::Storage("genesis already loaded".to_string()));
     }
 
     // ---------- parse ----------
@@ -121,7 +116,11 @@ pub fn load_genesis(engine: &impl StorageEngine, genesis_path: &Path) -> Result<
 
     // ---------- store genesis hash (BLAKE3 of raw JSON) ----------
     let genesis_hash = blake3::hash(json_str.as_bytes());
-    engine.put(tables::META, tables::GENESIS_HASH_KEY, genesis_hash.as_bytes())?;
+    engine.put(
+        tables::META,
+        tables::GENESIS_HASH_KEY,
+        genesis_hash.as_bytes(),
+    )?;
 
     // ---------- store genesis block (height 0) ----------
     // Required by the consensus engine which needs a parent block to build on.
@@ -138,7 +137,9 @@ pub fn load_genesis(engine: &impl StorageEngine, genesis_path: &Path) -> Result<
             chain_id: config.chain_id,
             proposer_signature: sig,
         },
-        body: BlockBody { transactions: vec![] },
+        body: BlockBody {
+            transactions: vec![],
+        },
     };
     engine.put(tables::BLOCKS, &[0u8; 8], &genesis_block.encode())?;
 
@@ -188,7 +189,10 @@ mod tests {
         let path = write_genesis_json(dir.path(), &minimal_genesis_json());
         load_genesis(&engine, &path).unwrap();
 
-        let raw = engine.get(tables::META, tables::CHAIN_ID_KEY).unwrap().unwrap();
+        let raw = engine
+            .get(tables::META, tables::CHAIN_ID_KEY)
+            .unwrap()
+            .unwrap();
         let chain_id = u64::from_le_bytes(raw.try_into().unwrap());
         assert_eq!(chain_id, 0);
     }
@@ -203,7 +207,10 @@ mod tests {
         let raw_addr = parse_hex_addr(addr_hex).unwrap();
         let raw = engine.get(tables::ACCOUNTS, &raw_addr).unwrap().unwrap();
         let account = Account::decode(&mut &raw[..]).unwrap();
-        assert_eq!(account.balance, U256::from_dec_str("1000000000000000000000000000000000").unwrap());
+        assert_eq!(
+            account.balance,
+            U256::from_dec_str("1000000000000000000000000000000000").unwrap()
+        );
         assert_eq!(account.nonce, 0);
     }
 
@@ -213,7 +220,10 @@ mod tests {
         let path = write_genesis_json(dir.path(), &minimal_genesis_json());
         load_genesis(&engine, &path).unwrap();
 
-        let raw = engine.get(tables::META, tables::GENESIS_HASH_KEY).unwrap().unwrap();
+        let raw = engine
+            .get(tables::META, tables::GENESIS_HASH_KEY)
+            .unwrap()
+            .unwrap();
         assert_eq!(raw.len(), 32, "genesis hash must be 32 bytes");
         // Deterministic: same JSON → same hash
         let expected = blake3::hash(minimal_genesis_json().as_bytes());
@@ -227,7 +237,10 @@ mod tests {
         load_genesis(&engine, &path).unwrap();
 
         let err = load_genesis(&engine, &path).unwrap_err();
-        assert!(err.to_string().contains("genesis already loaded"), "got: {err}");
+        assert!(
+            err.to_string().contains("genesis already loaded"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -235,7 +248,10 @@ mod tests {
         let (dir, engine) = setup_engine();
         let path = write_genesis_json(dir.path(), "not json");
         let err = load_genesis(&engine, &path).unwrap_err();
-        assert!(err.to_string().contains("invalid genesis JSON"), "got: {err}");
+        assert!(
+            err.to_string().contains("invalid genesis JSON"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -287,19 +303,26 @@ mod tests {
         let path = write_genesis_json(dir.path(), json);
         load_genesis(&engine, &path).unwrap();
 
-        let raw_addr = parse_hex_addr("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+        let raw_addr =
+            parse_hex_addr("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .unwrap();
         let raw = engine.get(tables::VALIDATORS, &raw_addr).unwrap().unwrap();
         // First 32 bytes = address, next 32 bytes = stake (U256 LE)
         assert_eq!(&raw[..32], &raw_addr);
         let stake_bytes: [u8; 32] = raw[32..64].try_into().unwrap();
         let stake = U256::from_little_endian(&stake_bytes);
-        assert_eq!(stake, U256::from_dec_str("50000000000000000000000000000000000").unwrap());
+        assert_eq!(
+            stake,
+            U256::from_dec_str("50000000000000000000000000000000000").unwrap()
+        );
     }
 
     #[test]
     fn test_fresh_db_no_genesis_marker() {
         let (_dir, engine) = setup_engine();
-        assert!(!engine.exists(tables::META, tables::GENESIS_LOADED_KEY).unwrap());
+        assert!(!engine
+            .exists(tables::META, tables::GENESIS_LOADED_KEY)
+            .unwrap());
     }
 
     #[test]
@@ -307,7 +330,9 @@ mod tests {
         let (dir, engine) = setup_engine();
         let path = write_genesis_json(dir.path(), &minimal_genesis_json());
         load_genesis(&engine, &path).unwrap();
-        assert!(engine.exists(tables::META, tables::GENESIS_LOADED_KEY).unwrap());
+        assert!(engine
+            .exists(tables::META, tables::GENESIS_LOADED_KEY)
+            .unwrap());
     }
 
     #[test]
@@ -326,7 +351,9 @@ mod tests {
 
     #[test]
     fn test_parse_hex_addr_invalid_chars() {
-        let err = parse_hex_addr("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz").unwrap_err();
+        let err =
+            parse_hex_addr("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
+                .unwrap_err();
         assert!(err.to_string().contains("invalid hex"), "got: {err}");
     }
 
@@ -382,7 +409,9 @@ mod tests {
         let path = write_genesis_json(dir.path(), json);
         load_genesis(&engine, &path).unwrap();
 
-        let raw_addr = parse_hex_addr("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc").unwrap();
+        let raw_addr =
+            parse_hex_addr("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+                .unwrap();
         let raw = engine.get(tables::ACCOUNTS, &raw_addr).unwrap().unwrap();
         let account = Account::decode(&mut &raw[..]).unwrap();
         assert_eq!(account.balance, U256::from(5000));
@@ -399,14 +428,19 @@ mod tests {
         }"#;
         let path = write_genesis_json(dir.path(), json);
         load_genesis(&engine, &path).unwrap();
-        assert!(engine.exists(tables::META, tables::GENESIS_LOADED_KEY).unwrap());
+        assert!(engine
+            .exists(tables::META, tables::GENESIS_LOADED_KEY)
+            .unwrap());
     }
 
     #[test]
     fn test_load_genesis_nonexistent_file() {
         let (dir, engine) = setup_engine();
         let err = load_genesis(&engine, &dir.path().join("nonexistent.json")).unwrap_err();
-        assert!(err.to_string().contains("cannot read genesis file"), "got: {err}");
+        assert!(
+            err.to_string().contains("cannot read genesis file"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -447,7 +481,11 @@ mod tests {
         let path = write_genesis_json(dir.path(), json);
         load_genesis(&engine, &path).unwrap();
         let keys = engine.list_keys(tables::VALIDATORS).unwrap();
-        assert!(keys.is_empty(), "expected no validators, got {}", keys.len());
+        assert!(
+            keys.is_empty(),
+            "expected no validators, got {}",
+            keys.len()
+        );
     }
 
     #[test]
@@ -463,6 +501,9 @@ mod tests {
         let (dir, engine) = setup_engine();
         // A directory path is not a readable JSON file → different error path
         let err = load_genesis(&engine, dir.path()).unwrap_err();
-        assert!(err.to_string().contains("cannot read genesis file"), "got: {err}");
+        assert!(
+            err.to_string().contains("cannot read genesis file"),
+            "got: {err}"
+        );
     }
 }

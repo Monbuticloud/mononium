@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, Subcommand, Args};
+use clap::{Args, Parser, Subcommand};
 
 mod node;
 mod wallet;
@@ -246,21 +246,28 @@ async fn run_wallet(args: WalletArgs) -> anyhow::Result<()> {
     match args.action {
         WalletAction::Keygen { name } => wallet::keygen(&name),
         WalletAction::Balance { address, node } => wallet::balance(&address, &node).await,
-        WalletAction::Transfer { to, amount, key, node } => {
-            wallet::transfer(&to, &amount, &key, &node).await
-        }
-        WalletAction::Register { key, node } => {
-            wallet::register_validator(&key, &node).await
-        }
-        WalletAction::Stake { validator, amount, key, node } => {
-            wallet::stake(&validator, &amount, &key, &node).await
-        }
+        WalletAction::Transfer {
+            to,
+            amount,
+            key,
+            node,
+        } => wallet::transfer(&to, &amount, &key, &node).await,
+        WalletAction::Register { key, node } => wallet::register_validator(&key, &node).await,
+        WalletAction::Stake {
+            validator,
+            amount,
+            key,
+            node,
+        } => wallet::stake(&validator, &amount, &key, &node).await,
         WalletAction::RegisterAndStake { amount, key, node } => {
             wallet::register_and_stake(&amount, &key, &node).await
         }
-        WalletAction::Unstake { validator, amount, key, node } => {
-            wallet::unstake(&validator, &amount, &key, &node).await
-        }
+        WalletAction::Unstake {
+            validator,
+            amount,
+            key,
+            node,
+        } => wallet::unstake(&validator, &amount, &key, &node).await,
     }
 }
 
@@ -275,7 +282,11 @@ async fn run_query(args: QueryArgs) -> anyhow::Result<()> {
             let url = format!("{base_url}/nonce/{address}");
             let resp = reqwest::get(&url).await?;
             if !resp.status().is_success() {
-                anyhow::bail!("RPC error ({}): {}", resp.status(), resp.text().await.unwrap_or_default());
+                anyhow::bail!(
+                    "RPC error ({}): {}",
+                    resp.status(),
+                    resp.text().await.unwrap_or_default()
+                );
             }
             let data: serde_json::Value = resp.json().await?;
             println!("Nonce: {}", data["nonce"]);
@@ -286,7 +297,11 @@ async fn run_query(args: QueryArgs) -> anyhow::Result<()> {
             let url = format!("{base_url}/validator/{address}");
             let resp = reqwest::get(&url).await?;
             if !resp.status().is_success() {
-                anyhow::bail!("RPC error ({}): {}", resp.status(), resp.text().await.unwrap_or_default());
+                anyhow::bail!(
+                    "RPC error ({}): {}",
+                    resp.status(),
+                    resp.text().await.unwrap_or_default()
+                );
             }
             let data: serde_json::Value = resp.json().await?;
             println!("Validator: {address}");
@@ -321,7 +336,9 @@ async fn run_query(args: QueryArgs) -> anyhow::Result<()> {
         anyhow::bail!("RPC error ({}): {}", status, text);
     }
 
-    let json: serde_json::Value = resp.json().await
+    let json: serde_json::Value = resp
+        .json()
+        .await
         .map_err(|e| anyhow::anyhow!("failed to parse response: {e}"))?;
     println!("{}", serde_json::to_string_pretty(&json).unwrap());
     Ok(())
@@ -359,7 +376,14 @@ mod tests {
 
     #[test]
     fn test_cli_node_minimal() {
-        let cli = Cli::try_parse_from(["mononium-cli", "node", "--genesis", "gen.json", "--observer"]).unwrap();
+        let cli = Cli::try_parse_from([
+            "mononium-cli",
+            "node",
+            "--genesis",
+            "gen.json",
+            "--observer",
+        ])
+        .unwrap();
         match cli.command {
             Command::Node(args) => {
                 assert!(args.observer);
@@ -372,7 +396,9 @@ mod tests {
     fn test_cli_wallet_keygen() {
         let cli = Cli::try_parse_from(["mononium-cli", "wallet", "keygen", "test-key"]).unwrap();
         match cli.command {
-            Command::Wallet(WalletArgs { action: WalletAction::Keygen { name } }) => {
+            Command::Wallet(WalletArgs {
+                action: WalletAction::Keygen { name },
+            }) => {
                 assert_eq!(name, "test-key");
             }
             _ => panic!("unexpected command"),
@@ -382,12 +408,18 @@ mod tests {
     #[test]
     fn test_cli_wallet_balance() {
         let cli = Cli::try_parse_from([
-            "mononium-cli", "wallet", "balance",
+            "mononium-cli",
+            "wallet",
+            "balance",
             "0xabcd",
-            "--node", "http://localhost:9999",
-        ]).unwrap();
+            "--node",
+            "http://localhost:9999",
+        ])
+        .unwrap();
         match cli.command {
-            Command::Wallet(WalletArgs { action: WalletAction::Balance { address, node } }) => {
+            Command::Wallet(WalletArgs {
+                action: WalletAction::Balance { address, node },
+            }) => {
                 assert_eq!(address, "0xabcd");
                 assert_eq!(node, "http://localhost:9999");
             }
@@ -398,13 +430,25 @@ mod tests {
     #[test]
     fn test_cli_wallet_transfer() {
         let cli = Cli::try_parse_from([
-            "mononium-cli", "wallet", "transfer",
+            "mononium-cli",
+            "wallet",
+            "transfer",
             "0xrecipient",
             "1.5",
-            "--key", "my-key",
-        ]).unwrap();
+            "--key",
+            "my-key",
+        ])
+        .unwrap();
         match cli.command {
-            Command::Wallet(WalletArgs { action: WalletAction::Transfer { to, amount, key, node } }) => {
+            Command::Wallet(WalletArgs {
+                action:
+                    WalletAction::Transfer {
+                        to,
+                        amount,
+                        key,
+                        node,
+                    },
+            }) => {
                 assert_eq!(to, "0xrecipient");
                 assert_eq!(amount, "1.5");
                 assert_eq!(key, "my-key");
@@ -416,11 +460,11 @@ mod tests {
 
     #[test]
     fn test_cli_query_block() {
-        let cli = Cli::try_parse_from([
-            "mononium-cli", "query", "block", "42",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["mononium-cli", "query", "block", "42"]).unwrap();
         match cli.command {
-            Command::Query(QueryArgs { action: QueryAction::Block { height, .. } }) => {
+            Command::Query(QueryArgs {
+                action: QueryAction::Block { height, .. },
+            }) => {
                 assert_eq!(height, 42);
             }
             _ => panic!("unexpected command"),
@@ -429,11 +473,11 @@ mod tests {
 
     #[test]
     fn test_cli_query_latest_default_node() {
-        let cli = Cli::try_parse_from([
-            "mononium-cli", "query", "latest",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["mononium-cli", "query", "latest"]).unwrap();
         match cli.command {
-            Command::Query(QueryArgs { action: QueryAction::Latest { node } }) => {
+            Command::Query(QueryArgs {
+                action: QueryAction::Latest { node },
+            }) => {
                 assert_eq!(node, "http://localhost:9933");
             }
             _ => panic!("unexpected command"),
@@ -452,21 +496,36 @@ mod tests {
     #[test]
     fn test_cli_node_all_flags() {
         let cli = Cli::try_parse_from([
-            "mononium-cli", "node",
-            "--config", "/path/config.yaml",
-            "--genesis", "/path/genesis.json",
-            "--key", "validator1",
-            "--p2p-port", "30444",
-            "--rpc-port", "9955",
-            "--rest-port", "9944",
-            "--bootnode", "/ip4/1.2.3.4/tcp/30333",
-            "--bootnode", "/ip4/5.6.7.8/tcp/30333",
-            "--data-dir", "/data/mononium",
-            "--storage-mode", "archive",
-            "--log-level", "debug",
-            "--log-format", "json",
-            "--unlock-timeout", "300",
-        ]).unwrap();
+            "mononium-cli",
+            "node",
+            "--config",
+            "/path/config.yaml",
+            "--genesis",
+            "/path/genesis.json",
+            "--key",
+            "validator1",
+            "--p2p-port",
+            "30444",
+            "--rpc-port",
+            "9955",
+            "--rest-port",
+            "9944",
+            "--bootnode",
+            "/ip4/1.2.3.4/tcp/30333",
+            "--bootnode",
+            "/ip4/5.6.7.8/tcp/30333",
+            "--data-dir",
+            "/data/mononium",
+            "--storage-mode",
+            "archive",
+            "--log-level",
+            "debug",
+            "--log-format",
+            "json",
+            "--unlock-timeout",
+            "300",
+        ])
+        .unwrap();
         match cli.command {
             Command::Node(args) => {
                 assert_eq!(args.config, Some(PathBuf::from("/path/config.yaml")));

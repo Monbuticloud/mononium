@@ -56,7 +56,10 @@ pub fn param_bounds() -> HashMap<GovernanceParam, (U256, U256)> {
 
     macro_rules! bound {
         ($variant:ident, $min:expr, $max:expr) => {
-            m.insert(GovernanceParam::$variant, (U256::from($min), U256::from($max)));
+            m.insert(
+                GovernanceParam::$variant,
+                (U256::from($min), U256::from($max)),
+            );
         };
     }
 
@@ -64,10 +67,26 @@ pub fn param_bounds() -> HashMap<GovernanceParam, (U256, U256)> {
     bound!(EraLength, 100, 10_000);
     bound!(BlockSizeCapBytes, 1024, 2_097_152);
     bound!(BlockTxCap, 1, 10_000);
-    bound!(FlatFee, 0, 1_000_000_000_000_000_000_000_000_000_000_000u128);         // 100 MONEX
-    bound!(PerByteRate, 0, 10_000_000_000_000_000_000_000_000_000_000_000u128);    // 1 MONEX
-    bound!(AntiSpamDeposit, 0, 1_000_000_000_000_000_000_000_000_000_000_000u128); // 100 MONEX
-    bound!(MissedSlotPenalty, 0, 100_000_000_000_000_000_000_000_000_000_000u128); // 10 MONEX
+    bound!(
+        FlatFee,
+        0,
+        1_000_000_000_000_000_000_000_000_000_000_000u128
+    ); // 100 MONEX
+    bound!(
+        PerByteRate,
+        0,
+        10_000_000_000_000_000_000_000_000_000_000_000u128
+    ); // 1 MONEX
+    bound!(
+        AntiSpamDeposit,
+        0,
+        1_000_000_000_000_000_000_000_000_000_000_000u128
+    ); // 100 MONEX
+    bound!(
+        MissedSlotPenalty,
+        0,
+        100_000_000_000_000_000_000_000_000_000_000u128
+    ); // 10 MONEX
     bound!(SupplyCeilingRate, 0, 20);
     bound!(SupplyHeadroomRate, 0, 20);
 
@@ -126,9 +145,18 @@ mod tests {
     fn test_param_bounds_contains_all_variants() {
         use GovernanceParam::*;
         let bounds = param_bounds();
-        for param in &[MaxValidators, EraLength, BlockSizeCapBytes, BlockTxCap,
-                       FlatFee, PerByteRate, AntiSpamDeposit, MissedSlotPenalty,
-                       SupplyCeilingRate, SupplyHeadroomRate] {
+        for param in &[
+            MaxValidators,
+            EraLength,
+            BlockSizeCapBytes,
+            BlockTxCap,
+            FlatFee,
+            PerByteRate,
+            AntiSpamDeposit,
+            MissedSlotPenalty,
+            SupplyCeilingRate,
+            SupplyHeadroomRate,
+        ] {
             assert!(bounds.contains_key(param), "missing bound for {param:?}");
         }
     }

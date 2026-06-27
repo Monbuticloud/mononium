@@ -91,8 +91,7 @@ pub struct CommitVote {
 pub fn test_header() -> BlockHeader {
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
     use crate::crypto::falcon::Falcon512Signature;
-    let dummy_sig =
-        Falcon512Signature::from_bytes(&[0xCDu8; FALCON_SIGNATURE_SIZE]).unwrap();
+    let dummy_sig = Falcon512Signature::from_bytes(&[0xCDu8; FALCON_SIGNATURE_SIZE]).unwrap();
     BlockHeader {
         height: 0,
         parent_hash: [0u8; 32],
@@ -108,9 +107,9 @@ pub fn test_header() -> BlockHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use primitive_types::U256;
-    use crate::crypto::falcon::Falcon512Signature;
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+    use crate::crypto::falcon::Falcon512Signature;
+    use primitive_types::U256;
 
     fn dummy_sig() -> Falcon512Signature {
         Falcon512Signature::from_bytes(&[0xCDu8; FALCON_SIGNATURE_SIZE]).unwrap()
@@ -221,14 +220,18 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: dummy_sig(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         let b2 = Block {
             header: BlockHeader {
                 height: 2,
                 ..b1.header.clone()
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         assert_ne!(b1.encode(), b2.encode());
     }
@@ -246,7 +249,9 @@ mod tests {
                 chain_id: 1,
                 proposer_signature: dummy_sig(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
         let json = serde_json::to_string(&block).unwrap();
         let decoded: Block = serde_json::from_str(&json).unwrap();
@@ -255,7 +260,9 @@ mod tests {
 
     #[test]
     fn test_block_body_empty_roundtrip() {
-        let body = BlockBody { transactions: vec![] };
+        let body = BlockBody {
+            transactions: vec![],
+        };
         let encoded = body.encode();
         let decoded = BlockBody::decode(&mut &encoded[..]).unwrap();
         assert_eq!(body, decoded);
@@ -263,7 +270,9 @@ mod tests {
 
     #[test]
     fn test_block_body_json_roundtrip() {
-        let body = BlockBody { transactions: vec![] };
+        let body = BlockBody {
+            transactions: vec![],
+        };
         let json = serde_json::to_string(&body).unwrap();
         let decoded: BlockBody = serde_json::from_str(&json).unwrap();
         assert_eq!(body, decoded);

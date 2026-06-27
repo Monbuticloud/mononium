@@ -37,10 +37,10 @@ impl TopicConfig {
     #[must_use]
     pub fn standard_topics(chain_id: u64) -> [Self; 4] {
         [
-            Self::new(format!("mononium/txs/{chain_id}"), 1_048_576, 100),   // 1 MB
-            Self::new(format!("mononium/blocks/{chain_id}"), 512_000, 10),   // 500 KB
-            Self::new(format!("mononium/votes/{chain_id}"), 1024, 50),       // 1 KB
-            Self::new(format!("mononium/evidence/{chain_id}"), 5120, 5),     // 5 KB
+            Self::new(format!("mononium/txs/{chain_id}"), 1_048_576, 100), // 1 MB
+            Self::new(format!("mononium/blocks/{chain_id}"), 512_000, 10), // 500 KB
+            Self::new(format!("mononium/votes/{chain_id}"), 1024, 50),     // 1 KB
+            Self::new(format!("mononium/evidence/{chain_id}"), 5120, 5),   // 5 KB
         ]
     }
 
@@ -256,7 +256,7 @@ mod tests {
         assert!(rl.check(peer));
         rl.increment(peer);
         assert!(!rl.check(peer)); // at limit again
-        // This covers both `check` and `increment` reset branches (lines 94, 111)
+                                  // This covers both `check` and `increment` reset branches (lines 94, 111)
     }
 
     #[test]

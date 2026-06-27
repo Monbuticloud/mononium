@@ -49,7 +49,11 @@ fn parse_address(hex_str: &str) -> Result<Address, jsonrpsee::types::ErrorObject
         jsonrpsee::types::ErrorObject::owned(-2, format!("invalid hex: {e}"), None::<()>)
     })?;
     if bytes.len() != 32 {
-        return Err(jsonrpsee::types::ErrorObject::owned(-2, "address must be 32 bytes", None::<()>));
+        return Err(jsonrpsee::types::ErrorObject::owned(
+            -2,
+            "address must be 32 bytes",
+            None::<()>,
+        ));
     }
     let mut arr = [0u8; 32];
     arr.copy_from_slice(&bytes);
@@ -57,9 +61,7 @@ fn parse_address(hex_str: &str) -> Result<Address, jsonrpsee::types::ErrorObject
 }
 
 /// Helper: decode a block from storage at the given height.
-fn load_block(storage: &dyn crate::storage::StorageEngine, height: u64)
-    -> Option<Block>
-{
+fn load_block(storage: &dyn crate::storage::StorageEngine, height: u64) -> Option<Block> {
     let key = height.to_be_bytes();
     let bytes = storage.get(crate::storage::tables::BLOCKS, &key).ok()??;
     parity_scale_codec::Decode::decode(&mut &bytes[..]).ok()
@@ -77,7 +79,10 @@ fn register_chain_methods(
     module: &mut RpcModule<Arc<AppState>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     module.register_method("chain_get_health", |_params, app, _ext| -> RpcResult {
-        let finalized = app.consensus.commit_tracker.as_ref()
+        let finalized = app
+            .consensus
+            .commit_tracker
+            .as_ref()
             .map(|ct| ct.last_finalized_height());
         Ok(serde_json::json!({
             "status": "ok",
@@ -112,7 +117,9 @@ fn register_state_methods(
     module.register_method("state_get_balance", |params, app, _ext| -> RpcResult {
         let addr_str: String = params.one::<String>()?;
         let addr = parse_address(&addr_str)?;
-        let bal = load_account(app, &addr).map(|a| a.balance).unwrap_or_default();
+        let bal = load_account(app, &addr)
+            .map(|a| a.balance)
+            .unwrap_or_default();
         Ok(serde_json::json!({"balance": format!("{bal:#x}")}))
     })?;
 
@@ -137,12 +144,15 @@ fn register_state_methods(
         let sm = app.state_machine.read().map_err(|e| {
             jsonrpsee::types::ErrorObject::owned(-1, format!("lock error: {e}"), None::<()>)
         })?;
-        let validators: Vec<serde_json::Value> = sm.active_set()
+        let validators: Vec<serde_json::Value> = sm
+            .active_set()
             .iter()
-            .map(|addr| serde_json::json!({
-                "address": hex::encode(addr.as_ref()),
-                "stake": format!("{:x}", sm.validator_stake(addr).unwrap_or_default()),
-            }))
+            .map(|addr| {
+                serde_json::json!({
+                    "address": hex::encode(addr.as_ref()),
+                    "stake": format!("{:x}", sm.validator_stake(addr).unwrap_or_default()),
+                })
+            })
             .collect();
         Ok(serde_json::json!(validators))
     })?;
@@ -168,7 +178,11 @@ fn register_block_methods(
         let height = block_id_to_height(&raw, app)?;
         match load_block(&*app.storage, height) {
             Some(block) => Ok(serde_json::to_value(&block.header).unwrap_or_default()),
-            None => Err(jsonrpsee::types::ErrorObject::owned(-4, "block not found", None::<()>)),
+            None => Err(jsonrpsee::types::ErrorObject::owned(
+                -4,
+                "block not found",
+                None::<()>,
+            )),
         }
     })?;
 
@@ -177,7 +191,11 @@ fn register_block_methods(
         let height = block_id_to_height(&raw, app)?;
         match load_block(&*app.storage, height) {
             Some(block) => Ok(serde_json::to_value(&block).unwrap_or_default()),
-            None => Err(jsonrpsee::types::ErrorObject::owned(-4, "block not found", None::<()>)),
+            None => Err(jsonrpsee::types::ErrorObject::owned(
+                -4,
+                "block not found",
+                None::<()>,
+            )),
         }
     })?;
 
@@ -191,37 +209,50 @@ fn block_id_to_height(
     app: &AppState,
 ) -> Result<u64, jsonrpsee::types::ErrorObjectOwned> {
     match raw {
-        serde_json::Value::Number(n) => {
-            n.as_u64().ok_or_else(|| {
-                jsonrpsee::types::ErrorObject::owned(-2, "invalid block height", None::<()>)
-            })
-        }
-        serde_json::Value::String(s) if s == "latest" => {
-            Ok(app.consensus.current_height)
-        }
+        serde_json::Value::Number(n) => n.as_u64().ok_or_else(|| {
+            jsonrpsee::types::ErrorObject::owned(-2, "invalid block height", None::<()>)
+        }),
+        serde_json::Value::String(s) if s == "latest" => Ok(app.consensus.current_height),
         serde_json::Value::String(s) => {
             // Hash-based lookup: walk storage from current height backward
             let s = s.trim_start_matches("0x");
             let hash = hex::decode(s).map_err(|e| {
-                jsonrpsee::types::ErrorObject::owned(-2, format!("invalid hex hash: {e}"), None::<()>)
+                jsonrpsee::types::ErrorObject::owned(
+                    -2,
+                    format!("invalid hex hash: {e}"),
+                    None::<()>,
+                )
             })?;
             if hash.len() != 32 {
-                return Err(jsonrpsee::types::ErrorObject::owned(-2, "hash must be 32 bytes", None::<()>));
+                return Err(jsonrpsee::types::ErrorObject::owned(
+                    -2,
+                    "hash must be 32 bytes",
+                    None::<()>,
+                ));
             }
             // Linear scan backward from current height (acceptable for localnet)
             let mut h = app.consensus.current_height;
             while h > 0 {
                 if let Some(block) = load_block(&*app.storage, h) {
-                    let block_hash = blake3::hash(&parity_scale_codec::Encode::encode(&block.header));
+                    let block_hash =
+                        blake3::hash(&parity_scale_codec::Encode::encode(&block.header));
                     if block_hash.as_bytes() == &hash[..] {
                         return Ok(h);
                     }
                 }
                 h -= 1;
             }
-            Err(jsonrpsee::types::ErrorObject::owned(-4, "block not found by hash", None::<()>))
+            Err(jsonrpsee::types::ErrorObject::owned(
+                -4,
+                "block not found by hash",
+                None::<()>,
+            ))
         }
-        _ => Err(jsonrpsee::types::ErrorObject::owned(-2, "block id must be number, 'latest', or hex hash", None::<()>)),
+        _ => Err(jsonrpsee::types::ErrorObject::owned(
+            -2,
+            "block id must be number, 'latest', or hex hash",
+            None::<()>,
+        )),
     }
 }
 
@@ -269,9 +300,11 @@ fn register_network_methods(
         let peers = tokio::runtime::Handle::current().block_on(app.p2p.connected_peers());
         let peers_json: Vec<serde_json::Value> = peers
             .iter()
-            .map(|pid| serde_json::json!({
-                "peer_id": pid.to_string(),
-            }))
+            .map(|pid| {
+                serde_json::json!({
+                    "peer_id": pid.to_string(),
+                })
+            })
             .collect();
         Ok(serde_json::json!(peers_json))
     })?;
@@ -308,14 +341,18 @@ fn register_subscription_methods(
         "subscribe_blocks",
         "blocks",
         "unsubscribe_blocks",
-        |_params, pending: jsonrpsee::server::PendingSubscriptionSink, app: Arc<Arc<AppState>>, _ext: jsonrpsee::server::Extensions| async move {
+        |_params,
+         pending: jsonrpsee::server::PendingSubscriptionSink,
+         app: Arc<Arc<AppState>>,
+         _ext: jsonrpsee::server::Extensions| async move {
             if let Ok(sink) = pending.accept().await {
                 let mut rx = app.block_events.subscribe();
                 loop {
                     match rx.recv().await {
                         Ok(header) => {
                             let val = serde_json::to_value(&header).unwrap_or_default();
-                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val) {
+                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val)
+                            {
                                 if sink.send(msg).await.is_err() {
                                     break;
                                 }
@@ -335,14 +372,18 @@ fn register_subscription_methods(
         "subscribe_finality",
         "finality",
         "unsubscribe_finality",
-        |_params, pending: jsonrpsee::server::PendingSubscriptionSink, app: Arc<Arc<AppState>>, _ext: jsonrpsee::server::Extensions| async move {
+        |_params,
+         pending: jsonrpsee::server::PendingSubscriptionSink,
+         app: Arc<Arc<AppState>>,
+         _ext: jsonrpsee::server::Extensions| async move {
             if let Ok(sink) = pending.accept().await {
                 let mut rx = app.finality_events.subscribe();
                 loop {
                     match rx.recv().await {
                         Ok(height) => {
                             let val = serde_json::json!({"height": height});
-                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val) {
+                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val)
+                            {
                                 if sink.send(msg).await.is_err() {
                                     break;
                                 }
@@ -362,14 +403,18 @@ fn register_subscription_methods(
         "subscribe_votes",
         "votes",
         "unsubscribe_votes",
-        |_params, pending: jsonrpsee::server::PendingSubscriptionSink, app: Arc<Arc<AppState>>, _ext: jsonrpsee::server::Extensions| async move {
+        |_params,
+         pending: jsonrpsee::server::PendingSubscriptionSink,
+         app: Arc<Arc<AppState>>,
+         _ext: jsonrpsee::server::Extensions| async move {
             if let Ok(sink) = pending.accept().await {
                 let mut rx = app.vote_events.subscribe();
                 loop {
                     match rx.recv().await {
                         Ok(vote) => {
                             let val = serde_json::to_value(&vote).unwrap_or_default();
-                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val) {
+                            if let Ok(msg) = jsonrpsee::server::SubscriptionMessage::from_json(&val)
+                            {
                                 if sink.send(msg).await.is_err() {
                                     break;
                                 }
@@ -435,11 +480,10 @@ mod tests {
         ))
     }
 
-    async fn build_server(state: &Arc<AppState>) -> (jsonrpsee::server::ServerHandle, std::net::SocketAddr) {
-        let server = ServerBuilder::default()
-            .build("127.0.0.1:0")
-            .await
-            .unwrap();
+    async fn build_server(
+        state: &Arc<AppState>,
+    ) -> (jsonrpsee::server::ServerHandle, std::net::SocketAddr) {
+        let server = ServerBuilder::default().build("127.0.0.1:0").await.unwrap();
         let addr = server.local_addr().unwrap();
         let mut module = RpcModule::new(state.clone());
         register_chain_methods(&mut module).unwrap();
@@ -469,7 +513,12 @@ mod tests {
     async fn test_chain_get_health() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "chain_get_health", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "chain_get_health",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert_eq!(resp["status"], "ok");
         assert_eq!(resp["height"], 0);
         assert_eq!(resp["chain_id"], 0);
@@ -480,7 +529,12 @@ mod tests {
     async fn test_chain_get_height() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "chain_get_height", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "chain_get_height",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert_eq!(resp, 0);
     }
 
@@ -488,7 +542,12 @@ mod tests {
     async fn test_chain_get_genesis() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "chain_get_genesis", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "chain_get_genesis",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         let hex_str = resp.as_str().unwrap();
         assert_eq!(hex_str.len(), 64); // 32 bytes in hex
     }
@@ -497,7 +556,12 @@ mod tests {
     async fn test_era_current() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "era_current", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "era_current",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert_eq!(resp, 0);
     }
 
@@ -506,7 +570,9 @@ mod tests {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
         let mut params = jsonrpsee::core::params::ArrayParams::new();
-        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        params
+            .insert("0xabababababababababababababababababababababababababababababababab")
+            .unwrap();
         let resp: serde_json::Value = rpc_call(addr, "state_get_balance", params).await;
         assert_eq!(resp["balance"], "0x0");
     }
@@ -516,7 +582,9 @@ mod tests {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
         let mut params = jsonrpsee::core::params::ArrayParams::new();
-        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        params
+            .insert("0xabababababababababababababababababababababababababababababababab")
+            .unwrap();
         let resp: serde_json::Value = rpc_call(addr, "state_get_nonce", params).await;
         assert_eq!(resp["nonce"], 0);
     }
@@ -525,7 +593,12 @@ mod tests {
     async fn test_block_latest_returns_null_when_no_blocks() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "block_latest", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "block_latest",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert!(resp.is_null());
     }
 
@@ -533,7 +606,12 @@ mod tests {
     async fn test_validator_set_empty() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "validator_set", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "validator_set",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert!(resp.is_array());
         assert!(resp.as_array().unwrap().is_empty());
     }
@@ -595,11 +673,8 @@ mod tests {
 
         // Read from the subscription stream
         let mut stream = stream.unwrap();
-        let notification = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            stream.next(),
-        )
-        .await;
+        let notification =
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream.next()).await;
         assert!(notification.is_ok(), "timed out waiting for block event");
         if let Ok(Some(Ok(val))) = notification {
             assert_eq!(val["height"], 42);
@@ -628,7 +703,8 @@ mod tests {
         let result: Result<Result<serde_json::Value, _>, _> = tokio::time::timeout(
             std::time::Duration::from_secs(3),
             client.request("network_peers", jsonrpsee::core::params::ArrayParams::new()),
-        ).await;
+        )
+        .await;
         match result {
             Ok(Ok(resp)) => assert!(resp.is_array()),
             _ => {} // timeout or error is acceptable with dummy handle
@@ -639,7 +715,12 @@ mod tests {
     async fn test_governance_proposals_returns_empty() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "governance_proposals", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "governance_proposals",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert!(resp.is_array());
         assert!(resp.as_array().unwrap().is_empty());
     }
@@ -648,7 +729,12 @@ mod tests {
     async fn test_governance_params_returns_empty() {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "governance_params", jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "governance_params",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert!(resp.is_array());
         assert!(resp.as_array().unwrap().is_empty());
     }
@@ -658,7 +744,9 @@ mod tests {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
         let mut params = jsonrpsee::core::params::ArrayParams::new();
-        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        params
+            .insert("0xabababababababababababababababababababababababababababababababab")
+            .unwrap();
         let resp: serde_json::Value = rpc_call(addr, "validator_stake", params).await;
         assert_eq!(resp["stake"], "0x0");
     }
@@ -673,8 +761,7 @@ mod tests {
             .build(&format!("ws://{addr}"))
             .await
             .unwrap();
-        let result: Result<serde_json::Value, _> = client
-            .request("block_header", params).await;
+        let result: Result<serde_json::Value, _> = client.request("block_header", params).await;
         // No blocks in storage — expect error
         assert!(result.is_err());
     }
@@ -694,7 +781,11 @@ mod tests {
                 "unsubscribe_finality",
             )
             .await;
-        assert!(stream.is_ok(), "finality subscribe failed: {:?}", stream.err());
+        assert!(
+            stream.is_ok(),
+            "finality subscribe failed: {:?}",
+            stream.err()
+        );
     }
 
     #[tokio::test]
@@ -731,13 +822,22 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: crate::core::block::BlockBody { transactions: vec![] },
+            body: crate::core::block::BlockBody {
+                transactions: vec![],
+            },
         };
         let key = 7u64.to_be_bytes();
-        state.storage.put(crate::storage::tables::BLOCKS, &key,
-            &parity_scale_codec::Encode::encode(&block)).unwrap();
+        state
+            .storage
+            .put(
+                crate::storage::tables::BLOCKS,
+                &key,
+                &parity_scale_codec::Encode::encode(&block),
+            )
+            .unwrap();
 
         let mut params = jsonrpsee::core::params::ArrayParams::new();
         params.insert(serde_json::json!(7)).unwrap();
@@ -764,7 +864,8 @@ mod tests {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
         let tx = crate::core::transaction::Transaction {
-            chain_id: 0, nonce: 0,
+            chain_id: 0,
+            nonce: 0,
             sender: crate::core::account::Address::from([0xAAu8; 32]),
             fee: 1_000u64.into(),
             body: crate::core::transaction::TxBody::Transfer {
@@ -773,7 +874,8 @@ mod tests {
             },
             signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                 &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-            ).unwrap(),
+            )
+            .unwrap(),
         };
         let encoded = parity_scale_codec::Encode::encode(&tx);
         let hex_tx = hex::encode(&encoded);
@@ -805,7 +907,9 @@ mod tests {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
         let mut params = jsonrpsee::core::params::ArrayParams::new();
-        params.insert("0xabababababababababababababababababababababababababababababababab").unwrap();
+        params
+            .insert("0xabababababababababababababababababababababababababababababababab")
+            .unwrap();
         let client = jsonrpsee::ws_client::WsClientBuilder::default()
             .build(&format!("ws://{addr}"))
             .await
@@ -855,7 +959,8 @@ mod tests {
             .build(&format!("ws://{addr}"))
             .await
             .unwrap();
-        let result: Result<serde_json::Value, _> = client.request("state_get_balance", params).await;
+        let result: Result<serde_json::Value, _> =
+            client.request("state_get_balance", params).await;
         assert!(result.is_err());
     }
 
@@ -904,15 +1009,28 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: crate::core::block::BlockBody { transactions: vec![] },
+            body: crate::core::block::BlockBody {
+                transactions: vec![],
+            },
         };
         let key = 7u64.to_be_bytes();
-        state.storage.put(crate::storage::tables::BLOCKS, &key,
-            &parity_scale_codec::Encode::encode(&block)).unwrap();
-        let resp: serde_json::Value = rpc_call(addr, "block_latest",
-            jsonrpsee::core::params::ArrayParams::new()).await;
+        state
+            .storage
+            .put(
+                crate::storage::tables::BLOCKS,
+                &key,
+                &parity_scale_codec::Encode::encode(&block),
+            )
+            .unwrap();
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "block_latest",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         assert_eq!(resp["header"]["height"], 7);
     }
 
@@ -925,8 +1043,12 @@ mod tests {
         let state = test_state_with_height(0, vec![(addr1, acct1), (addr2, acct2)]);
         // active_set is empty by default — just verify shape
         let (_handle, addr) = build_server(&state).await;
-        let resp: serde_json::Value = rpc_call(addr, "validator_set",
-            jsonrpsee::core::params::ArrayParams::new()).await;
+        let resp: serde_json::Value = rpc_call(
+            addr,
+            "validator_set",
+            jsonrpsee::core::params::ArrayParams::new(),
+        )
+        .await;
         let arr = resp.as_array().unwrap();
         // active_set starts empty; this test validates the endpoint works
         assert_eq!(arr.len(), 0);
@@ -947,13 +1069,22 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                     &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-                ).unwrap(),
+                )
+                .unwrap(),
             },
-            body: crate::core::block::BlockBody { transactions: vec![] },
+            body: crate::core::block::BlockBody {
+                transactions: vec![],
+            },
         };
         let key = 5u64.to_be_bytes();
-        state.storage.put(crate::storage::tables::BLOCKS, &key,
-            &parity_scale_codec::Encode::encode(&block)).unwrap();
+        state
+            .storage
+            .put(
+                crate::storage::tables::BLOCKS,
+                &key,
+                &parity_scale_codec::Encode::encode(&block),
+            )
+            .unwrap();
 
         let mut params = jsonrpsee::core::params::ArrayParams::new();
         params.insert(serde_json::json!(5)).unwrap();
@@ -997,7 +1128,9 @@ mod tests {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
         let mut params = jsonrpsee::core::params::ArrayParams::new();
-        params.insert("0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ").unwrap();
+        params
+            .insert("0xZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")
+            .unwrap();
         let client = jsonrpsee::ws_client::WsClientBuilder::default()
             .build(&format!("ws://{addr}"))
             .await
@@ -1027,11 +1160,8 @@ mod tests {
 
         state.finality_events.send(99).unwrap();
 
-        let notification = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            stream.next(),
-        )
-        .await;
+        let notification =
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream.next()).await;
         assert!(notification.is_ok(), "timed out waiting for finality event");
         if let Ok(Some(Ok(val))) = notification {
             assert_eq!(val["height"], 99);
@@ -1061,15 +1191,13 @@ mod tests {
             validator: crate::core::account::Address::from([0xBBu8; 32]),
             signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                 &[0xCCu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-            ).unwrap(),
+            )
+            .unwrap(),
         };
         state.vote_events.send(vote).unwrap();
 
-        let notification = tokio::time::timeout(
-            std::time::Duration::from_secs(2),
-            stream.next(),
-        )
-        .await;
+        let notification =
+            tokio::time::timeout(std::time::Duration::from_secs(2), stream.next()).await;
         assert!(notification.is_ok(), "timed out waiting for vote event");
         if let Ok(Some(Ok(val))) = notification {
             assert_eq!(val["height"], 42);
@@ -1081,7 +1209,8 @@ mod tests {
         let state = test_state();
         let (_handle, addr) = build_server(&state).await;
         let tx = crate::core::transaction::Transaction {
-            chain_id: 0, nonce: 0,
+            chain_id: 0,
+            nonce: 0,
             sender: crate::core::account::Address::from([0xCCu8; 32]),
             fee: 1_000u64.into(),
             body: crate::core::transaction::TxBody::Transfer {
@@ -1090,7 +1219,8 @@ mod tests {
             },
             signature: crate::crypto::falcon::Falcon512Signature::from_bytes(
                 &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-            ).unwrap(),
+            )
+            .unwrap(),
         };
         let encoded = parity_scale_codec::Encode::encode(&tx);
         let hex_tx = format!("0x{}", hex::encode(&encoded));

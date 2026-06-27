@@ -36,7 +36,10 @@ impl RoundRobin {
 
 impl ProposerSelection for RoundRobin {
     fn select_proposer(&self, slot: u64, active_set: &[Address]) -> Address {
-        assert!(!active_set.is_empty(), "RoundRobin requires non-empty active set");
+        assert!(
+            !active_set.is_empty(),
+            "RoundRobin requires non-empty active set"
+        );
         active_set[slot as usize % active_set.len()]
     }
 }
@@ -76,7 +79,10 @@ impl ProposerSchedule {
     /// Panics if the active set is empty (should be guarded by caller).
     #[must_use]
     pub fn proposer_for_height(&self, height: u64) -> Address {
-        assert!(!self.active_set.is_empty(), "ProposerSchedule requires non-empty active set");
+        assert!(
+            !self.active_set.is_empty(),
+            "ProposerSchedule requires non-empty active set"
+        );
         let slot = height.saturating_sub(self.start_height);
         self.active_set[slot as usize % self.active_set.len()]
     }

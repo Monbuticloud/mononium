@@ -137,9 +137,15 @@ mod tests {
             LibError::InvalidNonce(0, 5).to_string(),
             "invalid nonce: expected 0, got 5"
         );
-        assert!(LibError::Storage("disk full".to_string()).to_string().contains("disk full"));
-        assert!(LibError::Crypto("bad key".to_string()).to_string().contains("bad key"));
-        assert!(LibError::Codec("bad encode".to_string()).to_string().contains("bad encode"));
+        assert!(LibError::Storage("disk full".to_string())
+            .to_string()
+            .contains("disk full"));
+        assert!(LibError::Crypto("bad key".to_string())
+            .to_string()
+            .contains("bad key"));
+        assert!(LibError::Codec("bad encode".to_string())
+            .to_string()
+            .contains("bad encode"));
         assert_eq!(
             LibError::BlockNotFound(42).to_string(),
             "block not found: 42"
@@ -150,8 +156,12 @@ mod tests {
             LibError::Consensus("bad proposal").to_string(),
             "consensus error: bad proposal"
         );
-        assert!(LibError::Network("timeout".to_string()).to_string().contains("timeout"));
-        assert!(LibError::GovernanceRejected("no").to_string().contains("no"));
+        assert!(LibError::Network("timeout".to_string())
+            .to_string()
+            .contains("timeout"));
+        assert!(LibError::GovernanceRejected("no")
+            .to_string()
+            .contains("no"));
         assert_eq!(
             LibError::InvalidAddress("bad".to_string()).to_string(),
             "invalid address: bad"

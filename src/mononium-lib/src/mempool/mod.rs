@@ -158,11 +158,7 @@ impl Mempool {
         }
 
         // Collect all txs, sorted by priority
-        let mut all: Vec<&PoolTx> = self
-            .txs
-            .values()
-            .flat_map(|m| m.values())
-            .collect();
+        let mut all: Vec<&PoolTx> = self.txs.values().flat_map(|m| m.values()).collect();
         all.sort_by(|a, b| cmp_priority(a, b)); // ascending priority
 
         // Apply per-sender cap
@@ -231,17 +227,13 @@ impl Mempool {
     /// Number of pending transactions from a specific sender.
     #[must_use]
     pub fn sender_tx_count(&self, sender: &Address) -> usize {
-        self.txs
-            .get(sender)
-            .map_or(0, |m| m.len())
+        self.txs.get(sender).map_or(0, |m| m.len())
     }
 
     /// Check if a specific (sender, nonce) is in the pool.
     #[must_use]
     pub fn contains(&self, sender: &Address, nonce: u64) -> bool {
-        self.txs
-            .get(sender)
-            .is_some_and(|m| m.contains_key(&nonce))
+        self.txs.get(sender).is_some_and(|m| m.contains_key(&nonce))
     }
 }
 
@@ -572,8 +564,10 @@ mod tests {
         // min_fee is 10 in make_pool()
         let low_fee_tx = make_tx(1, 0, 5);
         let err = pool.insert(low_fee_tx).unwrap_err();
-        assert!(err.to_string().contains("min fee") || err.to_string().contains("fee"),
-                "got: {err}");
+        assert!(
+            err.to_string().contains("min fee") || err.to_string().contains("fee"),
+            "got: {err}"
+        );
     }
 
     #[test]
@@ -624,13 +618,20 @@ mod tests {
 
         // Select with cap of 2 per sender: all 6 fit the cap
         let selected = pool.select(20);
-        assert_eq!(selected.len(), 6,
-            "expected all 6 txs, got {}", selected.len());
+        assert_eq!(
+            selected.len(),
+            6,
+            "expected all 6 txs, got {}",
+            selected.len()
+        );
 
         // Each sender should contribute at most 2
         for byte in [1u8, 2, 3] {
             let sender_addr = Address::from([byte; 32]);
-            let count = selected.iter().filter(|tx| tx.sender == sender_addr).count();
+            let count = selected
+                .iter()
+                .filter(|tx| tx.sender == sender_addr)
+                .count();
             assert!(count <= 2, "sender {byte} contributed {count}, cap is 2");
         }
     }
@@ -652,7 +653,7 @@ mod tests {
         pool2.insert(make_tx(2, 0, 200)).unwrap();
         pool2.insert(make_tx(2, 1, 200)).unwrap();
         assert!(pool2.insert(make_tx(2, 2, 200)).is_err()); // 3rd from sender 2 → rejected by cap
-        // Only 4 should be in pool
+                                                            // Only 4 should be in pool
         assert_eq!(pool2.len(), 4);
         // Select 10 → should get 2 + 2 = 4
         let selected2 = pool2.select(10);

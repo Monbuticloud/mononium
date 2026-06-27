@@ -288,7 +288,15 @@ impl ConsensusEngine {
             });
 
             if is_our_slot {
-                self.produce_block(state.clone(), mempool.clone(), &p2p, storage, height, &schedule).await;
+                self.produce_block(
+                    state.clone(),
+                    mempool.clone(),
+                    &p2p,
+                    storage,
+                    height,
+                    &schedule,
+                )
+                .await;
                 self.current_height = height;
             } else {
                 // Non-proposer: slot handled by external event channel
@@ -341,8 +349,9 @@ impl ConsensusEngine {
 
         // Execute against state machine
         let sig_fake = Falcon512Signature::from_bytes(
-            &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE]
-        ).unwrap();
+            &[0xCDu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
+        )
+        .unwrap();
 
         let mut state_guard = state.write().await;
         let block = self.build_block(
@@ -405,11 +414,7 @@ pub fn compute_tx_root(body: &BlockBody) -> [u8; 32] {
 
 /// Check whether a block's timestamp is within tolerance of the local clock.
 #[must_use]
-pub fn is_timestamp_acceptable(
-    block_time: u64,
-    local_time: u64,
-    tolerance: u64,
-) -> bool {
+pub fn is_timestamp_acceptable(block_time: u64, local_time: u64, tolerance: u64) -> bool {
     let diff = if block_time > local_time {
         block_time - local_time
     } else {
@@ -431,10 +436,9 @@ pub const fn is_timestamp_monotonic(block_time: u64, parent_time: u64) -> bool {
 #[must_use]
 pub fn block_header_unsigned_payload(header: &crate::core::block::BlockHeader) -> Vec<u8> {
     let mut unsigned = header.clone();
-    unsigned.proposer_signature = Falcon512Signature::from_bytes(
-        &[0u8; crate::crypto::constants::FALCON_SIGNATURE_SIZE],
-    )
-    .expect("zero-filled signature is valid");
+    unsigned.proposer_signature =
+        Falcon512Signature::from_bytes(&[0u8; crate::crypto::constants::FALCON_SIGNATURE_SIZE])
+            .expect("zero-filled signature is valid");
     parity_scale_codec::Encode::encode(&unsigned)
 }
 
@@ -444,13 +448,13 @@ pub fn block_header_unsigned_payload(header: &crate::core::block::BlockHeader) -
 
 #[cfg(test)]
 mod tests {
-    use primitive_types::U256;
     use super::*;
     use crate::consensus::proposer::ProposerSchedule;
     use crate::core::account::Address;
     use crate::core::transaction::TxBody;
     use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
     use crate::crypto::falcon::Falcon512Signature;
+    use primitive_types::U256;
     use proptest::prelude::*;
 
     fn addr(b: u8) -> Address {
@@ -473,7 +477,9 @@ mod tests {
                 chain_id: 0,
                 proposer_signature: dummy_sig(),
             },
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         }
     }
 
@@ -541,13 +547,7 @@ mod tests {
             dummy_sig(),
         );
 
-        assert!(engine.validate_block(
-            &candidate,
-            &tip,
-            &schedule,
-            Duration::from_secs(5),
-            None,
-        ));
+        assert!(engine.validate_block(&candidate, &tip, &schedule, Duration::from_secs(5), None,));
     }
 
     #[test]
@@ -561,13 +561,7 @@ mod tests {
         let mut bad_block = dummy_block(1, addr(1));
         bad_block.header.parent_hash = [0xFFu8; 32];
 
-        assert!(!engine.validate_block(
-            &bad_block,
-            &tip,
-            &schedule,
-            Duration::from_secs(5),
-            None,
-        ));
+        assert!(!engine.validate_block(&bad_block, &tip, &schedule, Duration::from_secs(5), None,));
     }
 
     #[test]
@@ -588,13 +582,7 @@ mod tests {
             dummy_sig(),
         );
 
-        assert!(!engine.validate_block(
-            &candidate,
-            &tip,
-            &schedule,
-            Duration::from_secs(5),
-            None,
-        ));
+        assert!(!engine.validate_block(&candidate, &tip, &schedule, Duration::from_secs(5), None,));
     }
 
     // -------------------------------------------------------------------
@@ -619,10 +607,8 @@ mod tests {
             timestamp: 1_700_000_001,
             proposer: proposer_addr,
             chain_id: 0,
-            proposer_signature: Falcon512Signature::from_bytes(
-                &[0u8; FALCON_SIGNATURE_SIZE],
-            )
-            .unwrap(),
+            proposer_signature: Falcon512Signature::from_bytes(&[0u8; FALCON_SIGNATURE_SIZE])
+                .unwrap(),
         };
         let payload = parity_scale_codec::Encode::encode(&unsigned_header);
         let sig = Falcon512::sign(&kp, &payload).unwrap();
@@ -631,19 +617,15 @@ mod tests {
 
         let block = Block {
             header,
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
 
         let cfg = ConsensusConfig::default();
         let engine = ConsensusEngine::new(cfg);
 
-        assert!(engine.validate_block(
-            &block,
-            &tip,
-            &schedule,
-            Duration::from_secs(5),
-            Some(&pk),
-        ));
+        assert!(engine.validate_block(&block, &tip, &schedule, Duration::from_secs(5), Some(&pk),));
     }
 
     #[test]
@@ -669,10 +651,8 @@ mod tests {
             timestamp: 1_700_000_001,
             proposer: proposer_addr,
             chain_id: 0,
-            proposer_signature: Falcon512Signature::from_bytes(
-                &[0u8; FALCON_SIGNATURE_SIZE],
-            )
-            .unwrap(),
+            proposer_signature: Falcon512Signature::from_bytes(&[0u8; FALCON_SIGNATURE_SIZE])
+                .unwrap(),
         };
         let payload = parity_scale_codec::Encode::encode(&unsigned_header);
         let sig = Falcon512::sign(&kp, &payload).unwrap();
@@ -681,7 +661,9 @@ mod tests {
 
         let block = Block {
             header,
-            body: BlockBody { transactions: vec![] },
+            body: BlockBody {
+                transactions: vec![],
+            },
         };
 
         let cfg = ConsensusConfig::default();
@@ -717,13 +699,7 @@ mod tests {
         );
 
         // None pk should skip signature check entirely
-        assert!(engine.validate_block(
-            &block,
-            &tip,
-            &schedule,
-            Duration::from_secs(5),
-            None,
-        ));
+        assert!(engine.validate_block(&block, &tip, &schedule, Duration::from_secs(5), None,));
     }
 
     // -- ConsensusEngine mutator tests ------------------------------------
@@ -732,9 +708,7 @@ mod tests {
     fn test_set_local_validator() {
         let mut engine = ConsensusEngine::new(ConsensusConfig::default());
         assert!(engine.local_validator.is_none());
-        let key = LocalValidatorKey {
-            address: addr(1),
-        };
+        let key = LocalValidatorKey { address: addr(1) };
         engine.set_local_validator(key);
         assert!(engine.local_validator.is_some());
         assert_eq!(engine.local_validator.as_ref().unwrap().address, addr(1));
@@ -779,7 +753,9 @@ mod tests {
 
     #[test]
     fn test_compute_tx_root_empty() {
-        let body = BlockBody { transactions: vec![] };
+        let body = BlockBody {
+            transactions: vec![],
+        };
         let root = compute_tx_root(&body);
         let expected: [u8; 32] = *blake3::hash(&[0u8; 0]).as_bytes();
         assert_eq!(root, expected);
@@ -804,7 +780,9 @@ mod tests {
         let root = compute_tx_root(&body);
         assert_ne!(root, [0u8; 32]);
         // Deterministic: same inputs → same root
-        let body2 = BlockBody { transactions: body.transactions.clone() };
+        let body2 = BlockBody {
+            transactions: body.transactions.clone(),
+        };
         assert_eq!(root, compute_tx_root(&body2));
     }
 
@@ -884,22 +862,41 @@ mod tests {
     fn test_compute_tx_root_same_txs_different_order_same_root() {
         // compute_tx_root sorts tx hashes, so reordering gives same root
         let tx1 = Transaction {
-            chain_id: 0, nonce: 0, sender: addr(1), fee: U256::from(10),
-            body: TxBody::Transfer { recipient: addr(2), amount: U256::from(100) },
+            chain_id: 0,
+            nonce: 0,
+            sender: addr(1),
+            fee: U256::from(10),
+            body: TxBody::Transfer {
+                recipient: addr(2),
+                amount: U256::from(100),
+            },
             signature: dummy_sig(),
         };
         let tx2 = Transaction {
-            chain_id: 0, nonce: 1, sender: addr(2), fee: U256::from(10),
-            body: TxBody::Transfer { recipient: addr(1), amount: U256::from(200) },
+            chain_id: 0,
+            nonce: 1,
+            sender: addr(2),
+            fee: U256::from(10),
+            body: TxBody::Transfer {
+                recipient: addr(1),
+                amount: U256::from(200),
+            },
             signature: dummy_sig(),
         };
 
-        let body_ab = BlockBody { transactions: vec![tx1.clone(), tx2.clone()] };
-        let body_ba = BlockBody { transactions: vec![tx2, tx1] };
+        let body_ab = BlockBody {
+            transactions: vec![tx1.clone(), tx2.clone()],
+        };
+        let body_ba = BlockBody {
+            transactions: vec![tx2, tx1],
+        };
 
         let root_ab = compute_tx_root(&body_ab);
         let root_ba = compute_tx_root(&body_ba);
-        assert_eq!(root_ab, root_ba, "tx root should be order-independent (hashes sorted)");
+        assert_eq!(
+            root_ab, root_ba,
+            "tx root should be order-independent (hashes sorted)"
+        );
     }
 
     // ── Property-based tests ───────────────────────────────────────
@@ -968,8 +965,8 @@ mod tests {
 
     #[test]
     fn test_block_header_unsigned_payload_zeroes_signature() {
-        use parity_scale_codec::Decode;
         use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        use parity_scale_codec::Decode;
         let sig = Falcon512Signature::from_bytes(&[0xABu8; FALCON_SIGNATURE_SIZE]).unwrap();
         let header = crate::core::block::BlockHeader {
             height: 1,
@@ -999,8 +996,8 @@ mod tests {
 
     #[test]
     fn test_block_header_unsigned_payload_differs_from_original() {
-        use parity_scale_codec::Encode;
         use crate::crypto::constants::FALCON_SIGNATURE_SIZE;
+        use parity_scale_codec::Encode;
         let sig = Falcon512Signature::from_bytes(&[0xABu8; FALCON_SIGNATURE_SIZE]).unwrap();
         let header = crate::core::block::BlockHeader {
             height: 1,
@@ -1018,7 +1015,9 @@ mod tests {
 
         // SCALE encoding of unsigned and signed should differ (signature is part of the header)
         // Since SCALE encodes the signature field, the zero-filled vs non-zero should differ
-        assert_ne!(unsigned_bytes, original_bytes,
-            "zeroed signature should produce different SCALE bytes");
+        assert_ne!(
+            unsigned_bytes, original_bytes,
+            "zeroed signature should produce different SCALE bytes"
+        );
     }
 }

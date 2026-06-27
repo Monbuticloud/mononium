@@ -3,8 +3,8 @@
 //! [`CommitTracker`] accumulates validator commit votes and determines when
 //! a block has reached >⅔ finality.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 use primitive_types::U256;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::core::account::Address;
 use crate::core::block::CommitVote;
@@ -32,7 +32,10 @@ impl CommitTracker {
     /// Create a new tracker with the active validator stake weights.
     #[must_use]
     pub fn new(stake_weights: HashMap<Address, U256>) -> Self {
-        let total_active_stake = stake_weights.values().copied().fold(U256::zero(), |acc, w| acc.saturating_add(w));
+        let total_active_stake = stake_weights
+            .values()
+            .copied()
+            .fold(U256::zero(), |acc, w| acc.saturating_add(w));
         Self {
             commits: BTreeMap::new(),
             stake_weights,
@@ -68,7 +71,9 @@ impl CommitTracker {
         // Check if threshold is crossed (cumulative * 3 > total * 2)
         let cumul = self.cumulative_weight(height);
         if cumul.checked_mul(U256::from(3)).map_or(false, |c3| {
-            self.total_active_stake.checked_mul(U256::from(2)).map_or(true, |t2| c3 > t2)
+            self.total_active_stake
+                .checked_mul(U256::from(2))
+                .map_or(true, |t2| c3 > t2)
         }) {
             self.finalized.insert(height);
         }
@@ -203,10 +208,7 @@ mod tests {
 
     #[test]
     fn test_cumulative_weight_sums_unique_validators() {
-        let mut tracker = CommitTracker::new(weights(&[
-            (addr(0xAA), 100),
-            (addr(0xBB), 200),
-        ]));
+        let mut tracker = CommitTracker::new(weights(&[(addr(0xAA), 100), (addr(0xBB), 200)]));
         tracker.add_vote(vote(1, addr(0xAA)));
         assert_eq!(tracker.cumulative_weight(1), U256::from(100));
         tracker.add_vote(vote(1, addr(0xBB)));

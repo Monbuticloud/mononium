@@ -51,7 +51,9 @@ fn dummy_block(height: u64, parent_hash: [u8; 32]) -> Block {
             chain_id: 0,
             proposer_signature: dummy_sig(),
         },
-        body: BlockBody { transactions: vec![] },
+        body: BlockBody {
+            transactions: vec![],
+        },
     }
 }
 
@@ -74,7 +76,9 @@ fn make_tx(nonce: u64) -> Transaction {
 // ---------------------------------------------------------------------------
 
 fn bench_compute_tx_root_empty(c: &mut Criterion) {
-    let body = BlockBody { transactions: vec![] };
+    let body = BlockBody {
+        transactions: vec![],
+    };
     c.bench_function("compute_tx_root/0_txs", |b| {
         b.iter(|| black_box(compute_tx_root(black_box(&body))))
     });
@@ -187,7 +191,14 @@ fn bench_validate_block_no_sig(c: &mut Criterion) {
     let tip = dummy_block(0, [0u8; 32]);
     let candidate = {
         let mut state = StateMachine::new(vec![]);
-        engine.build_block(&mut state, vec![], &tip, &proposer, 1_700_000_001, dummy_sig())
+        engine.build_block(
+            &mut state,
+            vec![],
+            &tip,
+            &proposer,
+            1_700_000_001,
+            dummy_sig(),
+        )
     };
 
     c.bench_function("validate_block/schedule_check", |b| {
@@ -214,9 +225,8 @@ fn bench_validate_block_with_falcon_verify(c: &mut Criterion) {
     let tip = dummy_block(0, [0u8; 32]);
 
     // Build a candidate block and sign it
-    let parent_hash = mononium_lib::crypto::hash::blake3_hash(
-        &parity_scale_codec::Encode::encode(&tip.header),
-    );
+    let parent_hash =
+        mononium_lib::crypto::hash::blake3_hash(&parity_scale_codec::Encode::encode(&tip.header));
     let unsigned = BlockHeader {
         height: 1,
         parent_hash,
@@ -233,7 +243,9 @@ fn bench_validate_block_with_falcon_verify(c: &mut Criterion) {
     signed.proposer_signature = sig;
     let candidate = Block {
         header: signed,
-        body: BlockBody { transactions: vec![] },
+        body: BlockBody {
+            transactions: vec![],
+        },
     };
 
     let engine = ConsensusEngine::new(ConsensusConfig::default());

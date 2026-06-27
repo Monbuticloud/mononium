@@ -44,8 +44,7 @@ pub fn keygen(name: &str) -> Result<()> {
     rand::fill(&mut seed[..]);
 
     // Generate key pair
-    let kp = Falcon512::generate(&seed)
-        .context("failed to generate Falcon-512 key pair")?;
+    let kp = Falcon512::generate(&seed).context("failed to generate Falcon-512 key pair")?;
 
     let pk_bytes = kp.public_key_bytes();
     let _pk = Falcon512PublicKey(pk_bytes);
@@ -69,8 +68,7 @@ pub fn keygen(name: &str) -> Result<()> {
         .context(format!("failed to create keys directory at {:?}", keys_dir))?;
 
     let key_path: PathBuf = keys_dir.join(format!("{name}.json"));
-    let json = serde_json::to_string_pretty(&key_file)
-        .context("failed to serialize key file")?;
+    let json = serde_json::to_string_pretty(&key_file).context("failed to serialize key file")?;
 
     let mut file = std::fs::File::create(&key_path)
         .context(format!("failed to create key file at {:?}", key_path))?;
@@ -94,8 +92,7 @@ pub fn load_key(name: &str) -> Result<KeyFile> {
     let key_path: PathBuf = keys_dir.join(format!("{name}.json"));
     let json = std::fs::read_to_string(&key_path)
         .map_err(|e| anyhow::anyhow!("failed to read key file at {:?}: {e}", key_path))?;
-    let key_file: KeyFile = serde_json::from_str(&json)
-        .context("failed to parse key file")?;
+    let key_file: KeyFile = serde_json::from_str(&json).context("failed to parse key file")?;
     Ok(key_file)
 }
 
@@ -116,7 +113,9 @@ pub async fn balance(address: &str, node_url: &str) -> Result<()> {
         anyhow::bail!("RPC error ({}): {}", status, text);
     }
 
-    let balance_data: serde_json::Value = resp.json().await
+    let balance_data: serde_json::Value = resp
+        .json()
+        .await
         .map_err(|e| anyhow::anyhow!("failed to parse response: {e}"))?;
     let bal = balance_data["balance"].as_str().unwrap_or("0");
     let nonce = balance_data["nonce"].as_u64().unwrap_or(0);
@@ -141,8 +140,8 @@ pub async fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &s
         .private_key
         .strip_prefix("0x")
         .unwrap_or(&key_file.private_key);
-    let sk_bytes = hex::decode(sk_hex)
-        .map_err(|e| anyhow::anyhow!("invalid private key hex: {e}"))?;
+    let sk_bytes =
+        hex::decode(sk_hex).map_err(|e| anyhow::anyhow!("invalid private key hex: {e}"))?;
 
     // Reconstruct key pair from private key
     let kp = Falcon512::from_private_key(&sk_bytes)
@@ -150,8 +149,8 @@ pub async fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &s
 
     // Parse recipient address (raw hex without checksum)
     let to_hex = to.strip_prefix("0x").unwrap_or(to);
-    let to_bytes = hex::decode(to_hex)
-        .map_err(|e| anyhow::anyhow!("invalid recipient address hex: {e}"))?;
+    let to_bytes =
+        hex::decode(to_hex).map_err(|e| anyhow::anyhow!("invalid recipient address hex: {e}"))?;
     if to_bytes.len() != 32 {
         anyhow::bail!("recipient address must be 32 bytes, got {}", to_bytes.len());
     }
@@ -218,7 +217,10 @@ pub async fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &s
             .await
             .map_err(|e| anyhow::anyhow!("failed to parse response: {e}"))?;
         println!("Transaction submitted!");
-        println!("  Tx hash: {}", result["tx_hash"].as_str().unwrap_or("unknown"));
+        println!(
+            "  Tx hash: {}",
+            result["tx_hash"].as_str().unwrap_or("unknown")
+        );
     } else {
         let status = resp.status();
         let text_fut = resp.text();
@@ -234,15 +236,14 @@ pub async fn transfer(to: &str, amount_monex: &str, key_name: &str, node_url: &s
 // ---------------------------------------------------------------------------
 
 /// Common helper to build, sign, and submit a tx body.
-async fn submit_tx(
-    key_name: &str,
-    node_url: &str,
-    body: TxBody,
-) -> Result<()> {
+async fn submit_tx(key_name: &str, node_url: &str, body: TxBody) -> Result<()> {
     let key_file = load_key(key_name)?;
-    let sk_hex = key_file.private_key.strip_prefix("0x").unwrap_or(&key_file.private_key);
-    let sk_bytes = hex::decode(sk_hex)
-        .map_err(|e| anyhow::anyhow!("invalid private key hex: {e}"))?;
+    let sk_hex = key_file
+        .private_key
+        .strip_prefix("0x")
+        .unwrap_or(&key_file.private_key);
+    let sk_bytes =
+        hex::decode(sk_hex).map_err(|e| anyhow::anyhow!("invalid private key hex: {e}"))?;
     let kp = Falcon512::from_private_key(&sk_bytes)
         .map_err(|e| anyhow::anyhow!("failed to restore key pair: {e}"))?;
     let sender = derive_address(&kp.public_key_bytes());
@@ -266,7 +267,10 @@ async fn submit_tx(
     let tx_encoded = parity_scale_codec::Encode::encode(&tx);
     let sig = Falcon512::sign(&kp, &tx_encoded)
         .map_err(|e| anyhow::anyhow!("failed to sign transaction: {e}"))?;
-    let signed_tx = Transaction { signature: sig, ..tx };
+    let signed_tx = Transaction {
+        signature: sig,
+        ..tx
+    };
 
     let submit_url = format!("{base_url}/tx");
     let tx_json = serde_json::to_value(&signed_tx)
@@ -277,9 +281,16 @@ async fn submit_tx(
     if resp.status().is_success() {
         let result: serde_json::Value = resp.json().await?;
         println!("Transaction submitted!");
-        println!("  Tx hash: {}", result["tx_hash"].as_str().unwrap_or("unknown"));
+        println!(
+            "  Tx hash: {}",
+            result["tx_hash"].as_str().unwrap_or("unknown")
+        );
     } else {
-        anyhow::bail!("submit error ({}): {}", resp.status(), resp.text().await.unwrap_or_default());
+        anyhow::bail!(
+            "submit error ({}): {}",
+            resp.status(),
+            resp.text().await.unwrap_or_default()
+        );
     }
     Ok(())
 }
@@ -287,56 +298,107 @@ async fn submit_tx(
 /// Register as a validator.
 pub async fn register_validator(key_name: &str, node_url: &str) -> Result<()> {
     let key_file = load_key(key_name)?;
-    let pk_hex = key_file.public_key.strip_prefix("0x").unwrap_or(&key_file.public_key);
-    let pk_bytes = hex::decode(pk_hex)
-        .map_err(|e| anyhow::anyhow!("invalid public key hex: {e}"))?;
+    let pk_hex = key_file
+        .public_key
+        .strip_prefix("0x")
+        .unwrap_or(&key_file.public_key);
+    let pk_bytes =
+        hex::decode(pk_hex).map_err(|e| anyhow::anyhow!("invalid public key hex: {e}"))?;
     if pk_bytes.len() != 897 {
         anyhow::bail!("public key must be 897 bytes, got {}", pk_bytes.len());
     }
     let mut pk = [0u8; 897];
     pk.copy_from_slice(&pk_bytes);
 
-    submit_tx(key_name, node_url, TxBody::RegisterValidator { public_key: pk }).await
+    submit_tx(
+        key_name,
+        node_url,
+        TxBody::RegisterValidator { public_key: pk },
+    )
+    .await
 }
 
 /// Stake to a validator.
-pub async fn stake(validator_addr: &str, amount_monex: &str, key_name: &str, node_url: &str) -> Result<()> {
+pub async fn stake(
+    validator_addr: &str,
+    amount_monex: &str,
+    key_name: &str,
+    node_url: &str,
+) -> Result<()> {
     let val_hex = validator_addr.strip_prefix("0x").unwrap_or(validator_addr);
-    let val_bytes = hex::decode(val_hex)
-        .map_err(|e| anyhow::anyhow!("invalid validator address hex: {e}"))?;
+    let val_bytes =
+        hex::decode(val_hex).map_err(|e| anyhow::anyhow!("invalid validator address hex: {e}"))?;
     if val_bytes.len() != 32 {
-        anyhow::bail!("validator address must be 32 bytes, got {}", val_bytes.len());
+        anyhow::bail!(
+            "validator address must be 32 bytes, got {}",
+            val_bytes.len()
+        );
     }
     let mut raw = [0u8; 32];
     raw.copy_from_slice(&val_bytes);
     let amount = parse_monex_amount(amount_monex)?;
-    submit_tx(key_name, node_url, TxBody::Stake { validator: Address::from(raw), amount }).await
+    submit_tx(
+        key_name,
+        node_url,
+        TxBody::Stake {
+            validator: Address::from(raw),
+            amount,
+        },
+    )
+    .await
 }
 
 /// Register as validator and self-stake atomically.
 pub async fn register_and_stake(amount_monex: &str, key_name: &str, node_url: &str) -> Result<()> {
     let key_file = load_key(key_name)?;
-    let addr_hex = key_file.address.strip_prefix("0x").unwrap_or(&key_file.address);
-    let addr_bytes = hex::decode(addr_hex)
-        .map_err(|e| anyhow::anyhow!("invalid address hex: {e}"))?;
+    let addr_hex = key_file
+        .address
+        .strip_prefix("0x")
+        .unwrap_or(&key_file.address);
+    let addr_bytes =
+        hex::decode(addr_hex).map_err(|e| anyhow::anyhow!("invalid address hex: {e}"))?;
     let mut raw = [0u8; 32];
     raw.copy_from_slice(&addr_bytes);
     let amount = parse_monex_amount(amount_monex)?;
-    submit_tx(key_name, node_url, TxBody::RegisterAndStake { validator: Address::from(raw), amount }).await
+    submit_tx(
+        key_name,
+        node_url,
+        TxBody::RegisterAndStake {
+            validator: Address::from(raw),
+            amount,
+        },
+    )
+    .await
 }
 
 /// Unstake from a validator.
-pub async fn unstake(validator_addr: &str, amount_monex: &str, key_name: &str, node_url: &str) -> Result<()> {
+pub async fn unstake(
+    validator_addr: &str,
+    amount_monex: &str,
+    key_name: &str,
+    node_url: &str,
+) -> Result<()> {
     let val_hex = validator_addr.strip_prefix("0x").unwrap_or(validator_addr);
-    let val_bytes = hex::decode(val_hex)
-        .map_err(|e| anyhow::anyhow!("invalid validator address hex: {e}"))?;
+    let val_bytes =
+        hex::decode(val_hex).map_err(|e| anyhow::anyhow!("invalid validator address hex: {e}"))?;
     if val_bytes.len() != 32 {
-        anyhow::bail!("validator address must be 32 bytes, got {}", val_bytes.len());
+        anyhow::bail!(
+            "validator address must be 32 bytes, got {}",
+            val_bytes.len()
+        );
     }
     let mut raw = [0u8; 32];
     raw.copy_from_slice(&val_bytes);
     let amount = parse_monex_amount(amount_monex)?;
-    submit_tx(key_name, node_url, TxBody::Unstake { validator: Address::from(raw), amount }).await
+    submit_tx(
+        key_name,
+        node_url,
+        TxBody::Unstake {
+            validator: Address::from(raw),
+            amount,
+        },
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -368,8 +430,7 @@ fn parse_monex_amount(s: &str) -> Result<primitive_types::U256> {
 
     // Combine: integer.fractional → one big integer
     let combined = format!("{integer_str}{fractional}");
-    U256::from_dec_str(&combined)
-        .with_context(|| format!("invalid amount: {s}"))
+    U256::from_dec_str(&combined).with_context(|| format!("invalid amount: {s}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -390,7 +451,11 @@ mod tests {
     #[test]
     fn test_parse_monex_amount_decimal() {
         let val = parse_monex_amount("1.5").unwrap();
-        assert_eq!(val, primitive_types::U256::from(15u128) * primitive_types::U256::from(10u128).pow(31.into()));
+        assert_eq!(
+            val,
+            primitive_types::U256::from(15u128)
+                * primitive_types::U256::from(10u128).pow(31.into())
+        );
     }
 
     #[test]
@@ -408,7 +473,10 @@ mod tests {
     #[test]
     fn test_parse_monex_amount_small() {
         let val = parse_monex_amount("0.0000000000000000001").unwrap();
-        assert_eq!(val, primitive_types::U256::from_dec_str("10000000000000").unwrap());
+        assert_eq!(
+            val,
+            primitive_types::U256::from_dec_str("10000000000000").unwrap()
+        );
     }
 
     #[test]

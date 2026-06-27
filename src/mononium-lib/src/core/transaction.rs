@@ -3,9 +3,9 @@
 //! All protocol types support both SCALE (wire) and JSON (RPC) encoding.
 //! Signatures use Falcon-512 ([`crate::crypto::falcon::Falcon512Signature`]).
 
+use parity_scale_codec::{Decode, Encode};
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
-use parity_scale_codec::{Decode, Encode};
 
 use crate::core::account::Address;
 use crate::crypto::falcon::Falcon512Signature;
@@ -16,7 +16,7 @@ use crate::governance::types::GovernanceAction;
 // ---------------------------------------------------------------------------
 
 mod pubkey_serde {
-    use serde::{Deserialize, Deserializer, Serializer, de::Error as _};
+    use serde::{de::Error as _, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(key: &[u8; 897], serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&hex::encode(key))
@@ -56,10 +56,7 @@ pub enum BurnTarget {
 pub enum TxBody {
     /// Transfer MONEX to another account.
     #[codec(index = 0)]
-    Transfer {
-        recipient: Address,
-        amount: U256,
-    },
+    Transfer { recipient: Address, amount: U256 },
     /// Declare intent to validate — includes the Falcon-512 public key.
     #[codec(index = 1)]
     RegisterValidator {
@@ -68,28 +65,16 @@ pub enum TxBody {
     },
     /// Lock MONEX to become / activate a validator.
     #[codec(index = 2)]
-    Stake {
-        validator: Address,
-        amount: U256,
-    },
+    Stake { validator: Address, amount: U256 },
     /// Convenience: registers + stakes atomically.
     #[codec(index = 3)]
-    RegisterAndStake {
-        validator: Address,
-        amount: U256,
-    },
+    RegisterAndStake { validator: Address, amount: U256 },
     /// Begin withdrawal from validator set (168-era cooldown).
     #[codec(index = 4)]
-    Unstake {
-        validator: Address,
-        amount: U256,
-    },
+    Unstake { validator: Address, amount: U256 },
     /// Send MONEX to permanent burn or cap-refill sink.
     #[codec(index = 5)]
-    Burn {
-        target: BurnTarget,
-        amount: U256,
-    },
+    Burn { target: BurnTarget, amount: U256 },
     /// Submit a governance proposal.
     #[codec(index = 6)]
     Propose {
@@ -110,9 +95,7 @@ pub enum TxBody {
     },
     /// Cancel a proposal (proposer only, before any votes).
     #[codec(index = 8)]
-    CancelProposal {
-        proposal_id: [u8; 32],
-    },
+    CancelProposal { proposal_id: [u8; 32] },
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +130,9 @@ impl parity_scale_codec::Encode for Falcon512Signature {
 }
 
 impl parity_scale_codec::Decode for Falcon512Signature {
-    fn decode<I: parity_scale_codec::Input>(input: &mut I) -> std::result::Result<Self, parity_scale_codec::Error> {
+    fn decode<I: parity_scale_codec::Input>(
+        input: &mut I,
+    ) -> std::result::Result<Self, parity_scale_codec::Error> {
         let mut bytes = vec![0u8; crate::crypto::constants::FALCON_SIGNATURE_SIZE];
         input.read(&mut bytes)?;
         Falcon512Signature::from_bytes(&bytes).map_err(|_| "invalid signature".into())
@@ -155,16 +140,22 @@ impl parity_scale_codec::Decode for Falcon512Signature {
 }
 
 impl serde::Serialize for Falcon512Signature {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         serializer.serialize_str(&hex::encode(self.as_ref()))
     }
 }
 
 impl<'de> serde::Deserialize<'de> for Falcon512Signature {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
         let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        Falcon512Signature::from_bytes(&bytes).map_err(|_| serde::de::Error::custom("invalid signature length"))
+        Falcon512Signature::from_bytes(&bytes)
+            .map_err(|_| serde::de::Error::custom("invalid signature length"))
     }
 }
 
@@ -189,7 +180,9 @@ mod tests {
 
     #[test]
     fn test_tx_body_register_validator_scale_roundtrip() {
-        let body = TxBody::RegisterValidator { public_key: [0x42u8; 897] };
+        let body = TxBody::RegisterValidator {
+            public_key: [0x42u8; 897],
+        };
         let encoded = body.encode();
         let decoded = TxBody::decode(&mut &encoded[..]).unwrap();
         assert_eq!(body, decoded);
@@ -283,7 +276,9 @@ mod tests {
 
     #[test]
     fn test_tx_body_register_validator_json() {
-        let body = TxBody::RegisterValidator { public_key: [0x42u8; 897] };
+        let body = TxBody::RegisterValidator {
+            public_key: [0x42u8; 897],
+        };
         let json = serde_json::to_string(&body).unwrap();
         let decoded: TxBody = serde_json::from_str(&json).unwrap();
         assert_eq!(body, decoded);
@@ -338,7 +333,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     fn dummy_signature() -> Falcon512Signature {
-        Falcon512Signature::from_bytes(&[0xABu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE]).unwrap()
+        Falcon512Signature::from_bytes(&[0xABu8; crate::crypto::constants::FALCON_SIGNATURE_SIZE])
+            .unwrap()
     }
 
     #[test]
@@ -384,7 +380,9 @@ mod tests {
             nonce: 0,
             sender: Address::from([0x99u8; 32]),
             fee: U256::zero(),
-            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
+            body: TxBody::RegisterValidator {
+                public_key: [0x42u8; 897],
+            },
             signature: dummy_signature(),
         };
         let tx_b = Transaction {
@@ -392,7 +390,9 @@ mod tests {
             nonce: 0,
             sender: Address::from([0x99u8; 32]),
             fee: U256::zero(),
-            body: TxBody::RegisterValidator { public_key: [0x42u8; 897] },
+            body: TxBody::RegisterValidator {
+                public_key: [0x42u8; 897],
+            },
             signature: dummy_signature(),
         };
         assert_ne!(tx_a.encode(), tx_b.encode());
@@ -406,8 +406,7 @@ mod tests {
 
     #[test]
     fn test_signature_serde_invalid_hex() {
-        let result: std::result::Result<Falcon512Signature, _> =
-            serde_json::from_str("\"zz\"");
+        let result: std::result::Result<Falcon512Signature, _> = serde_json::from_str("\"zz\"");
         assert!(result.is_err());
     }
 
@@ -427,7 +426,8 @@ mod tests {
     #[test]
     fn test_tx_serde_signature_roundtrip() {
         let tx = Transaction {
-            chain_id: 0, nonce: 0,
+            chain_id: 0,
+            nonce: 0,
             sender: Address::from([0x12u8; 32]),
             fee: U256::from(100),
             body: TxBody::Transfer {
@@ -441,5 +441,3 @@ mod tests {
         assert_eq!(tx, decoded);
     }
 }
-
-

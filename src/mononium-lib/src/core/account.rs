@@ -65,10 +65,7 @@ impl Account {
 /// Internally stored as raw bytes. Display and serialization use the
 /// hex+checksum format (`0x` + 64 hex chars + 16 hex checksum chars).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Address(
-    #[serde(with = "hex_serde")]
-    [u8; 32]
-);
+pub struct Address(#[serde(with = "hex_serde")] [u8; 32]);
 
 impl Address {
     /// The number of raw address bytes.
@@ -238,7 +235,9 @@ impl parity_scale_codec::Encode for Address {
 }
 
 impl parity_scale_codec::Decode for Address {
-    fn decode<I: parity_scale_codec::Input>(input: &mut I) -> Result<Self, parity_scale_codec::Error> {
+    fn decode<I: parity_scale_codec::Input>(
+        input: &mut I,
+    ) -> Result<Self, parity_scale_codec::Error> {
         let mut bytes = [0u8; 32];
         input.read(&mut bytes)?;
         Ok(Self(bytes))
@@ -254,7 +253,9 @@ impl parity_scale_codec::Encode for Account {
 }
 
 impl parity_scale_codec::Decode for Account {
-    fn decode<I: parity_scale_codec::Input>(input: &mut I) -> Result<Self, parity_scale_codec::Error> {
+    fn decode<I: parity_scale_codec::Input>(
+        input: &mut I,
+    ) -> Result<Self, parity_scale_codec::Error> {
         Ok(Self {
             balance: U256::decode(input)?,
             nonce: u64::decode(input)?,
@@ -283,8 +284,8 @@ pub fn scale_decode_account(bytes: &[u8]) -> Account {
 
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_account_new() {
@@ -318,10 +319,11 @@ mod tests {
 
     #[test]
     fn test_address_display_and_parse_roundtrip() {
-        let bytes = [0x3a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x6a, 0x7b,
-                     0x8c, 0x9d, 0x0e, 0x1f, 0x2a, 0x3b, 0x4c, 0x5d,
-                     0x6e, 0x7f, 0x8a, 0x9b, 0x0c, 0x1d, 0x2e, 0x3f,
-                     0x4a, 0x5b, 0x6c, 0x7d, 0x8e, 0x9f, 0x0a, 0x1b];
+        let bytes = [
+            0x3a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x6a, 0x7b, 0x8c, 0x9d, 0x0e, 0x1f, 0x2a, 0x3b,
+            0x4c, 0x5d, 0x6e, 0x7f, 0x8a, 0x9b, 0x0c, 0x1d, 0x2e, 0x3f, 0x4a, 0x5b, 0x6c, 0x7d,
+            0x8e, 0x9f, 0x0a, 0x1b,
+        ];
         let addr = Address::from(bytes);
         let formatted = format_address(&addr);
         let parsed = parse_address(&formatted).unwrap();
@@ -439,23 +441,28 @@ mod tests {
     #[test]
     fn test_address_serde_invalid_json_not_string() {
         let err = serde_json::from_str::<Address>("123").unwrap_err();
-        assert!(err.to_string().contains("invalid type") || err.to_string().contains("expected"),
-                "got: {err}");
+        assert!(
+            err.to_string().contains("invalid type") || err.to_string().contains("expected"),
+            "got: {err}"
+        );
     }
 
     #[test]
     fn test_address_serde_invalid_hex() {
         let err = serde_json::from_str::<Address>("\"0xzz\"").unwrap_err();
-        assert!(err.to_string().contains("Invalid character") || err.to_string().contains("hex"),
-                "got: {err}");
+        assert!(
+            err.to_string().contains("Invalid character") || err.to_string().contains("hex"),
+            "got: {err}"
+        );
     }
 
     #[test]
     fn test_address_as_ref_returns_correct_bytes() {
-        let bytes = [0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04,
-                     0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
-                     0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14,
-                     0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C];
+        let bytes = [
+            0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+            0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+            0x19, 0x1A, 0x1B, 0x1C,
+        ];
         let addr = Address::from(bytes);
         let as_ref: &[u8] = addr.as_ref();
         assert_eq!(as_ref.len(), 32);
@@ -474,9 +481,18 @@ mod tests {
     fn test_parse_address_error_display() {
         let e = ParseAddressError::MissingPrefix;
         assert_eq!(e.to_string(), "address missing 0x prefix");
-        assert_eq!(ParseAddressError::TooShort.to_string(), "address too short (expected 82 chars)");
-        assert_eq!(ParseAddressError::InvalidHex.to_string(), "address contains invalid hex characters");
-        assert_eq!(ParseAddressError::ChecksumMismatch.to_string(), "address checksum mismatch");
+        assert_eq!(
+            ParseAddressError::TooShort.to_string(),
+            "address too short (expected 82 chars)"
+        );
+        assert_eq!(
+            ParseAddressError::InvalidHex.to_string(),
+            "address contains invalid hex characters"
+        );
+        assert_eq!(
+            ParseAddressError::ChecksumMismatch.to_string(),
+            "address checksum mismatch"
+        );
     }
 
     #[test]

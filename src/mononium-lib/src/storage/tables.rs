@@ -29,15 +29,7 @@ pub const VALIDATORS: &str = "validators";
 pub const META: &str = "meta";
 
 /// All table names in a single slice (for iteration / validation).
-pub const ALL_TABLES: &[&str] = &[
-    ACCOUNTS,
-    BLOCKS,
-    BLOCK_HASHES,
-    TXS,
-    VOTES,
-    VALIDATORS,
-    META,
-];
+pub const ALL_TABLES: &[&str] = &[ACCOUNTS, BLOCKS, BLOCK_HASHES, TXS, VOTES, VALIDATORS, META];
 
 /// Meta key marking that genesis has been loaded.
 pub const GENESIS_LOADED_KEY: &[u8] = b"genesis_loaded";
