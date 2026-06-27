@@ -8,8 +8,6 @@ yanked = "warn"
 ignore = []
 
 [licenses]
-unlicensed = "deny"
-allow-osi-fsf-free = "neither"
 confidence-threshold = 0.8
 allow = [
     "MIT",
