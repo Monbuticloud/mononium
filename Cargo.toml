@@ -79,6 +79,7 @@ codegen-units = 1
 
 # Flamegraph profiling — inherits release optimisation but keeps
 # debug symbols so flamegraph can resolve function names.
+# Frame pointers are set via RUSTFLAGS in CI (profile-rustflags is unstable).
 [profile.flamegraph]
 inherits = "release"
 strip = "none"

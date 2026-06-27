@@ -104,8 +104,13 @@ jobs:
           if-no-files-found: warn
 
   # ── Flamegraph (Linux perf) ─────────────────────────────────────────
-  # Scheduled nightly + manual trigger. Builds the node with debug symbols,
-  # profiles it under `perf` for 60s, and uploads the SVG.
+  # Scheduled nightly + manual trigger. Builds node + benches with debug
+  # symbols and frame pointers, then profiles both under perf.
+  #
+  # PRIMARY: benchmarks — guaranteed CPU work (crypto, consensus, storage)
+  # SECONDARY: node — captures live activity when there's p2p traffic
+  #
+  # Uses prime Hz (3989) for sampling and DWARF call-graph unwinding.
   flamegraph:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -120,14 +125,46 @@ jobs:
           sudo apt-get install -y -qq linux-tools-common linux-tools-$(uname -r) 2>/dev/null || true
           cargo install inferno --quiet 2>/dev/null
 
-      - name: Build with debug symbols
-        run: cargo build --profile flamegraph --bin mononium-cli
-
-      - name: Profile node (60s perf sampling)
+      - name: Build with debug symbols + frame pointers (node + benches)
         run: |
-          # Lower paranoid so perf works (needed on some kernel configs even with sudo)
+          RUSTFLAGS="-C force-frame-pointers=y" cargo build --profile flamegraph --bin mononium-cli
+          RUSTFLAGS="-C force-frame-pointers=y" cargo build --profile flamegraph --benches -p mononium-lib
+
+      - name: Profile consensus benchmarks (PRIMARY — guaranteed CPU work)
+        run: |
           sudo sysctl -w kernel.perf_event_paranoid=1 2>/dev/null || true
 
+          # Find the consensus bench binary built with flamegraph profile
+          BENCH_BIN=$(find target/flamegraph -executable -name 'consensus-*' -type f ! -name '*.d' 2>/dev/null | head -1)
+          if [ -z "$BENCH_BIN" ]; then
+            echo "No consensus bench binary found — listing candidates:"
+            find target/flamegraph -executable -name '*consensus*' -type f 2>/dev/null | head -10
+            find target/flamegraph -executable -type f 2>/dev/null | head -20
+            exit 1
+          fi
+
+          echo "Profiling: $BENCH_BIN"
+          sudo perf record -F 3989 --call-graph dwarf -o perf.bench.data -- "$BENCH_BIN" --bench 2>&1
+          sudo chown "$(whoami)" perf.bench.data 2>/dev/null || true
+          ls -lh perf.bench.data
+
+      - name: Generate benchmark flamegraph
+        run: |
+          mkdir -p flamegraph-output
+          perf script -i perf.bench.data 2>/dev/null | inferno-collapse-perf > bench-stacks.folded 2>/dev/null || true
+          STACKS=$(wc -l < bench-stacks.folded 2>/dev/null || echo 0)
+          echo "Bench stacks: $STACKS"
+          if [ "$STACKS" -gt 0 ] 2>/dev/null; then
+            inferno-flamegraph < bench-stacks.folded > flamegraph-output/bench-flamegraph.svg 2>/dev/null
+            echo "Bench flamegraph: $(wc -c < flamegraph-output/bench-flamegraph.svg) bytes"
+          else
+            echo "No bench stacks — dumping perf report for diagnostics:"
+            perf report -i perf.bench.data --stdio --no-children 2>/dev/null | head -60 || true
+            echo "(empty)" > flamegraph-output/bench-flamegraph.svg
+          fi
+
+      - name: Profile node (SECONDARY — captures live activity)
+        run: |
           # Start node in background (observer mode, no p2p needed)
           ./target/flamegraph/mononium-cli node \
             --observer \
@@ -140,43 +177,30 @@ jobs:
           echo "Node PID: $NODE_PID"
           sleep 5
 
-          # Verify node is still alive
           if ! kill -0 "$NODE_PID" 2>/dev/null; then
-            echo "Node died before sampling!"
-            exit 1
+            echo "Node died before sampling — skipping"
+            exit 0
           fi
 
-          # Sample with perf for 60 seconds (99 Hz = ~6000 samples)
-          echo "Sampling..."
-          sudo perf record -F 99 -p "$NODE_PID" -g -o perf.data -- sleep 60 2>&1
-          echo "Sampling done."
+          echo "Sampling node (60s)..."
+          sudo perf record -F 3989 --call-graph dwarf -p "$NODE_PID" -o perf.node.data -- sleep 60 2>&1
+          sudo chown "$(whoami)" perf.node.data 2>/dev/null || true
 
-          # Fix ownership so non-root steps can read perf.data
-          sudo chown "$(whoami)" perf.data 2>/dev/null || true
-
-          # Cleanup
           kill "$NODE_PID" 2>/dev/null || true
           wait "$NODE_PID" 2>/dev/null || true
+          ls -lh perf.node.data
 
-      - name: Generate flamegraph SVG
+      - name: Generate node flamegraph
         run: |
-          if [ ! -f perf.data ] || [ ! -s perf.data ]; then
-            echo "No perf.data captured — skipping flamegraph"
-            mkdir -p flamegraph-output
-            echo "No samples captured" > flamegraph-output/status.txt
-            exit 0
+          if [ -f perf.node.data ] && [ -s perf.node.data ]; then
+            perf script -i perf.node.data 2>/dev/null | inferno-collapse-perf > node-stacks.folded 2>/dev/null || true
+            STACKS=$(wc -l < node-stacks.folded 2>/dev/null || echo 0)
+            echo "Node stacks: $STACKS"
+            if [ "$STACKS" -gt 0 ] 2>/dev/null; then
+              inferno-flamegraph < node-stacks.folded > flamegraph-output/node-flamegraph.svg 2>/dev/null
+              echo "Node flamegraph: $(wc -c < flamegraph-output/node-flamegraph.svg) bytes"
+            fi
           fi
-          perf script -i perf.data 2>/dev/null | inferno-collapse-perf > stacks.folded 2>/dev/null || true
-          wc -l stacks.folded
-          if [ ! -s stacks.folded ]; then
-            echo "No stacks collapsed — skipping flamegraph"
-            mkdir -p flamegraph-output
-            echo "No stacks captured" > flamegraph-output/status.txt
-            exit 0
-          fi
-          mkdir -p flamegraph-output
-          inferno-flamegraph < stacks.folded > flamegraph-output/flamegraph.svg 2>/dev/null
-          echo "Flamegraph generated: $(wc -c < flamegraph-output/flamegraph.svg) bytes"
 
       - name: Upload flamegraph artifact
         uses: actions/upload-artifact@v4
