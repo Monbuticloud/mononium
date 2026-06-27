@@ -5,7 +5,15 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # vulnerability = always deny, unsound = always deny, notice = always warn.
 unmaintained = "workspace"
 yanked = "warn"
-ignore = []
+ignore = [
+    # RUSTSEC-2026-0118: NSEC3 closest-encloser proof unbounded loop in hickory-proto.
+    # No safe upgrade available (fix is in hickory-net 0.26.1 — breaking change).
+    # libp2p pins hickory-proto 0.25.x.
+    "RUSTSEC-2026-0118",
+    # RUSTSEC-2026-0119: CPU exhaustion in hickory-proto message encoding.
+    # Fixed in hickory-proto >=0.26.1, but libp2p pins 0.25.x.
+    "RUSTSEC-2026-0119",
+]
 
 [licenses]
 confidence-threshold = 0.8
@@ -18,7 +26,16 @@ allow = [
     "ISC",
     "Unicode-3.0",
     "CC0-1.0",
+    "AGPL-3.0-only",
 ]
+
+[[licenses.exceptions]]
+# webpki-root-certs uses CDLA-Permissive-2.0 (data license, not software).
+# Transitive dep via rustls-platform-verifier (which is itself a transitive dep
+# of jsonrpsee and reqwest).
+allow = ["CDLA-Permissive-2.0"]
+crate = "webpki-root-certs"
+version = "*"
 
 [licenses.private]
 ignore = true
