@@ -330,7 +330,6 @@ pub async fn run_node(args: NodeArgs) -> Result<()> {
             &*consensus_p2p,
             &*engine_for_consensus,
             consensus_genesis_hash,
-            5, // block time in seconds
         ).await;
     });
 

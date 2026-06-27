@@ -219,10 +219,8 @@ impl ConsensusEngine {
         p2p: &P2pHandle,
         storage: &dyn StorageEngine,
         _genesis_hash: [u8; 32],
-        block_time_secs: u64,
     ) {
-        let block_time = Duration::from_secs(block_time_secs);
-        let mut interval = tokio::time::interval(block_time);
+        let mut interval = tokio::time::interval(self.config.block_time);
         // Skip first immediate tick
         interval.tick().await;
 
