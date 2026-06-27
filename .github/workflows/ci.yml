@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Nightly flamegraph profiling
+    - cron: '0 6 * * *'
 
 env:
   CARGO_TERM_COLOR: always
@@ -78,3 +82,80 @@ jobs:
 
       - name: Check binary
         run: ./target/release/monium-cli --help
+
+  # ── Benchmarks ──────────────────────────────────────────────────────
+  benches:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run criterion benchmarks
+        run: cargo bench -p mononium-lib 2>&1 | tee bench_output.txt
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            target/criterion/
+            bench_output.txt
+          if-no-files-found: warn
+
+  # ── Flamegraph (Linux perf) ─────────────────────────────────────────
+  # Scheduled nightly + manual trigger. Builds the node with debug symbols,
+  # profiles it under `perf` for 60s, and uploads the SVG.
+  flamegraph:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq linux-tools-common linux-tools-$(uname -r) 2>/dev/null || true
+          cargo install inferno --quiet 2>/dev/null
+
+      - name: Build with debug symbols
+        run: cargo build --profile flamegraph --bin mononium-cli
+
+      - name: Profile node (60s perf sampling)
+        run: |
+          # Start node in background (observer mode, no p2p needed)
+          ./target/flamegraph/mononium-cli node \
+            --observer \
+            --genesis configs/genesis.devnet.json \
+            --p2p-port 0 \
+            --rpc-port 0 \
+            --rest-port 0 \
+            --log-level error &
+          NODE_PID=$!
+          echo "Node PID: $NODE_PID"
+          sleep 3
+
+          # Sample with perf for 60 seconds (99 Hz = ~6000 samples)
+          echo "Sampling..."
+          sudo perf record -F 99 -p "$NODE_PID" -g -- sleep 60 2>&1
+          echo "Sampling done."
+
+          # Cleanup
+          kill "$NODE_PID" 2>/dev/null || true
+          wait "$NODE_PID" 2>/dev/null || true
+
+      - name: Generate flamegraph SVG
+        run: |
+          perf script -i perf.data 2>/dev/null | inferno-collapse-perf > stacks.folded
+          wc -l stacks.folded
+          inferno-flamegraph < stacks.folded > flamegraph.svg 2>/dev/null
+          echo "Flamegraph generated: $(wc -c < flamegraph.svg) bytes"
+
+      - name: Upload flamegraph artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flamegraph
+          path: flamegraph.svg
+          if-no-files-found: warn
